@@ -1,7 +1,7 @@
 # dignity.js
 
 <p align="center">
-  <img src="./docs/assets/dignity-logo.svg" alt="dignity.js logo" width="860" />
+  <img src="./docs/assets/dignity-logo.png" alt="dignity.js logo" width="860" />
 </p>
 
 <p align="center">
@@ -22,8 +22,6 @@
 REST-like P2P object API for decentralized JavaScript applications.
 
 `dignity.js` lets many browsers synchronize shared objects with ownership rules and built-in anti-abuse + privacy controls.
-
-> Logo typography uses a premium editorial serif/sans stack (non-Liberation).
 
 ## Highlights
 
