@@ -32,6 +32,21 @@ async function runDemo() {
 
   await alice.start();
   await bob.start();
+  await alice.joinDiscovery('room:tictactoe', {
+    metadata: { nickname: 'alice', role: 'host' },
+    heartbeatIntervalMs: 100000,
+    ttlMs: 30000
+  });
+  await bob.joinDiscovery('room:tictactoe', {
+    metadata: { nickname: 'bob', role: 'guest' },
+    heartbeatIntervalMs: 100000,
+    ttlMs: 30000
+  });
+
+  console.log(
+    '\nPeers visible from Alice in room:tictactoe:',
+    alice.listPeers('room:tictactoe', { includeSelf: false }).map((peer) => peer.peerId)
+  );
 
   await alice.create(
     'games',
@@ -41,7 +56,7 @@ async function runDemo() {
       nextPlayer: 'alice',
       players: ['alice', 'bob']
     },
-    { id: 'ttt-1' }
+    { id: 'ttt-1', broadcastScope: 'room:tictactoe' }
   );
 
   // Owner-updated canonical state for v0.1.0:
@@ -58,11 +73,16 @@ async function runDemo() {
     board[move.index] = move.mark;
 
     const nextPlayer = move.playerId === 'alice' ? 'bob' : 'alice';
-    await move.actor.update('games', 'ttt-1', {
-      board,
-      nextPlayer,
-      lastMove: { by: move.playerId, index: move.index, mark: move.mark }
-    });
+    await move.actor.update(
+      'games',
+      'ttt-1',
+      {
+        board,
+        nextPlayer,
+        lastMove: { by: move.playerId, index: move.index, mark: move.mark }
+      },
+      { broadcastScope: 'room:tictactoe' }
+    );
   }
 
   try {
@@ -80,6 +100,8 @@ async function runDemo() {
   console.log('\nReplicated board from Bob node:');
   printBoard(finalFromBob.data.board);
 
+  await alice.leaveDiscovery('room:tictactoe');
+  await bob.leaveDiscovery('room:tictactoe');
   await alice.stop();
   await bob.stop();
 }

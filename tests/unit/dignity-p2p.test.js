@@ -4,6 +4,21 @@ const {
   InMemoryNetworkAdapter
 } = require('../../src');
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitFor(condition, timeoutMs = 2500, intervalMs = 50) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (condition()) {
+      return true;
+    }
+    await sleep(intervalMs);
+  }
+  return false;
+}
+
 describe('DignityP2P', () => {
   let hub;
   let defaultSecurity;
@@ -382,13 +397,143 @@ describe('DignityP2P', () => {
         payload: { title: 'pow-bad' }
       }
     });
-    tamperedPow.security.pow.challenge = `${tamperedPow.security.pow.challenge.slice(0, -1)}0`;
+    const originalChallenge = tamperedPow.security.pow.challenge;
+    tamperedPow.security.pow.challenge =
+      (originalChallenge[0] === 'a' ? 'b' : 'a') + originalChallenge.slice(1);
 
     await bob.handleIncomingMessage(tamperedPow);
     expect(bob.isPeerBanned('alice')).toBe(true);
 
     await new Promise((resolve) => setTimeout(resolve, 45));
     expect(bob.isPeerBanned('alice')).toBe(false);
+
+    await alice.stop();
+    await bob.stop();
+  });
+
+  test('discovers peers inside the same room scope', async () => {
+    const teamSecurity = {
+      appPassword: 'fallback-password',
+      powEnabled: false,
+      broadcastPasswords: {
+        'room:alpha': 'alpha-password',
+        'room:beta': 'beta-password'
+      },
+      powTargetMs: 5
+    };
+
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: teamSecurity
+    });
+    const bob = new DignityP2P({
+      nodeId: 'bob',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: teamSecurity
+    });
+    const carol = new DignityP2P({
+      nodeId: 'carol',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: teamSecurity
+    });
+
+    await alice.start();
+    await bob.start();
+    await carol.start();
+
+    await alice.joinDiscovery('room:alpha', { metadata: { nick: 'alice' }, ttlMs: 1000, heartbeatIntervalMs: 100000 });
+    await bob.joinDiscovery('room:alpha', { metadata: { nick: 'bob' }, ttlMs: 1000, heartbeatIntervalMs: 100000 });
+    await carol.joinDiscovery('room:beta', { metadata: { nick: 'carol' }, ttlMs: 1000, heartbeatIntervalMs: 100000 });
+    await alice.announcePresence('room:alpha');
+
+    const discovered = await waitFor(
+      () => bob.listPeers('room:alpha', { includeSelf: false }).some((peer) => peer.peerId === 'alice'),
+      3000,
+      60
+    );
+
+    const peersFromBobAlpha = bob.listPeers('room:alpha', { includeSelf: false });
+    const peersFromCarolBeta = carol.listPeers('room:beta', { includeSelf: false });
+
+    expect(discovered).toBe(true);
+    expect(peersFromBobAlpha.map((peer) => peer.peerId)).toContain('alice');
+    expect(peersFromCarolBeta.map((peer) => peer.peerId)).not.toContain('alice');
+
+    await alice.stop();
+    await bob.stop();
+    await carol.stop();
+  }, 20000);
+
+  test('leaveDiscovery removes peer presence for other peers in the room', async () => {
+    const discoverySecurity = {
+      ...defaultSecurity,
+      powEnabled: false
+    };
+
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: discoverySecurity
+    });
+    const bob = new DignityP2P({
+      nodeId: 'bob',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: discoverySecurity
+    });
+
+    await alice.start();
+    await bob.start();
+
+    await alice.joinDiscovery('main', { ttlMs: 1000, heartbeatIntervalMs: 100000 });
+    await bob.joinDiscovery('main', { ttlMs: 1000, heartbeatIntervalMs: 100000 });
+
+    const discovered = await waitFor(
+      () => bob.listPeers('main', { includeSelf: false }).some((peer) => peer.peerId === 'alice'),
+      3000,
+      60
+    );
+    expect(discovered).toBe(true);
+
+    await alice.leaveDiscovery('main');
+
+    expect(bob.listPeers('main', { includeSelf: false }).map((peer) => peer.peerId)).not.toContain('alice');
+
+    await alice.stop();
+    await bob.stop();
+  }, 15000);
+
+  test('presence entries expire by ttl', async () => {
+    let fakeNow = 1000;
+    const now = () => fakeNow;
+    const security = {
+      ...defaultSecurity,
+      presenceTtlMs: 20
+    };
+
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security,
+      now
+    });
+    const bob = new DignityP2P({
+      nodeId: 'bob',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security,
+      now
+    });
+
+    await alice.start();
+    await bob.start();
+
+    await alice.joinDiscovery('main', { ttlMs: 20, heartbeatIntervalMs: 100000 });
+    await bob.joinDiscovery('main', { ttlMs: 1000, heartbeatIntervalMs: 100000 });
+
+    expect(bob.listPeers('main', { includeSelf: false }).map((peer) => peer.peerId)).toContain('alice');
+
+    fakeNow += 30;
+    expect(bob.listPeers('main', { includeSelf: false }).map((peer) => peer.peerId)).not.toContain('alice');
 
     await alice.stop();
     await bob.stop();

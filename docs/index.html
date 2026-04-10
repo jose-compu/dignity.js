@@ -53,6 +53,11 @@ const note = alice.read('notes', 'note-1');</code></pre>
       </section>
 
       <section>
+        <h2>Room / team discovery</h2>
+        <pre><code>await node.joinDiscovery('team:red', {\n  metadata: { nickname: 'alice' },\n  heartbeatIntervalMs: 15000,\n  ttlMs: 45000\n});\n\nconst peers = node.listPeers('team:red', { includeSelf: false });\nawait node.leaveDiscovery('team:red');</code></pre>
+      </section>
+
+      <section>
         <h2>Security defaults (enabled)</h2>
         <ul>
           <li><strong>Signing:</strong> every message is signed by sender keypair.</li>

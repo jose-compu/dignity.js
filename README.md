@@ -77,8 +77,24 @@ const bob = new DignityP2P({
 await alice.start();
 await bob.start();
 
-await alice.create('notes', { title: 'hello decentralized world' }, { id: 'note-1' });
+await alice.joinDiscovery('main', {
+  metadata: { nickname: 'alice' }
+});
+await bob.joinDiscovery('main', {
+  metadata: { nickname: 'bob' }
+});
+
+const visiblePeers = alice.listPeers('main', { includeSelf: false });
+console.log('Peers in main room:', visiblePeers.map((peer) => peer.peerId));
+
+await alice.create('notes', { title: 'hello decentralized world' }, {
+  id: 'note-1',
+  broadcastScope: 'main'
+});
 console.log(bob.read('notes', 'note-1'));
+
+await alice.leaveDiscovery('main');
+await bob.leaveDiscovery('main');
 ```
 
 ## Team / Subapp Scoped Passwords
@@ -107,6 +123,21 @@ await node.create('matches', { mode: 'coop' }, {
 ```
 
 Peers with a different password for `coop:red` cannot decrypt that broadcast traffic.
+
+## Room / Team Discovery
+
+Use scoped discovery to find active peers in a room (for example `main`, `team:red`, `raid-42`).
+
+```js
+await node.joinDiscovery('team:red', {
+  metadata: { nickname: 'alice' },
+  heartbeatIntervalMs: 15000,
+  ttlMs: 45000
+});
+
+const peers = node.listPeers('team:red', { includeSelf: false });
+await node.leaveDiscovery('team:red');
+```
 
 ## Direct Secure Messaging
 

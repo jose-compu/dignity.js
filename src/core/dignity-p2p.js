@@ -43,6 +43,14 @@ class DignityP2P extends EventEmitter {
     this.resolveBroadcastScope = security && typeof security.resolveBroadcastScope === 'function'
       ? security.resolveBroadcastScope
       : (() => 'default');
+    this.defaultDiscoveryHeartbeatMs = security && typeof security.discoveryHeartbeatMs === 'number'
+      ? security.discoveryHeartbeatMs
+      : 15000;
+    this.defaultPresenceTtlMs = security && typeof security.presenceTtlMs === 'number'
+      ? security.presenceTtlMs
+      : 45000;
+    this.discoveryRooms = new Map(); // scope -> { metadata, heartbeatIntervalMs, ttlMs, timer }
+    this.presenceByScope = new Map(); // scope -> Map(peerId -> presence)
 
     this.state = new Map(); // collection -> Map(id -> record)
     this.appliedOperations = new Set();
@@ -55,6 +63,16 @@ class DignityP2P extends EventEmitter {
   }
 
   async stop() {
+    const joinedScopes = Array.from(this.discoveryRooms.keys());
+    for (const scope of joinedScopes) {
+      // Best effort leave announce; do not fail node shutdown if network is interrupted.
+      try {
+        await this.leaveDiscovery(scope);
+      } catch (error) {
+        this.emit('warning', { type: 'presence-leave-failed', scope, error });
+      }
+    }
+
     this.networkAdapter.offMessage(this.boundMessageHandler);
     await this.networkAdapter.stop();
   }
@@ -241,6 +259,149 @@ class DignityP2P extends EventEmitter {
     await this.networkAdapter.broadcast(envelope);
   }
 
+  getPresenceMap(scope) {
+    if (!this.presenceByScope.has(scope)) {
+      this.presenceByScope.set(scope, new Map());
+    }
+
+    return this.presenceByScope.get(scope);
+  }
+
+  upsertPresence(scope, peerId, metadata, ttlMs, announcedAt) {
+    const map = this.getPresenceMap(scope);
+    const existing = map.get(peerId);
+    const next = {
+      peerId,
+      scope,
+      metadata: metadata ? { ...metadata } : {},
+      lastSeenAt: announcedAt,
+      expiresAt: announcedAt + ttlMs
+    };
+    map.set(peerId, next);
+
+    if (!existing) {
+      this.emit('peerdiscovered', { scope, peerId, metadata: next.metadata });
+    }
+
+    return next;
+  }
+
+  prunePresence(scope) {
+    const map = this.presenceByScope.get(scope);
+    if (!map) {
+      return;
+    }
+
+    const now = this.now();
+    for (const [peerId, entry] of map.entries()) {
+      if (entry.expiresAt <= now) {
+        map.delete(peerId);
+        this.emit('peerleft', { scope, peerId, reason: 'timeout' });
+      }
+    }
+  }
+
+  async joinDiscovery(scope = 'main', options = {}) {
+    const normalizedScope = scope || 'main';
+    const heartbeatIntervalMs = options.heartbeatIntervalMs || this.defaultDiscoveryHeartbeatMs;
+    const ttlMs = options.ttlMs || this.defaultPresenceTtlMs;
+    const metadata = options.metadata || {};
+
+    const existing = this.discoveryRooms.get(normalizedScope);
+    if (existing && existing.timer) {
+      clearInterval(existing.timer);
+    }
+
+    const timer = setInterval(() => {
+      this.announcePresence(normalizedScope).catch((error) => {
+        this.emit('warning', { type: 'presence-heartbeat-failed', scope: normalizedScope, error });
+      });
+    }, heartbeatIntervalMs);
+
+    this.discoveryRooms.set(normalizedScope, {
+      metadata,
+      heartbeatIntervalMs,
+      ttlMs,
+      timer
+    });
+
+    this.upsertPresence(normalizedScope, this.nodeId, metadata, ttlMs, this.now());
+    await this.announcePresence(normalizedScope);
+  }
+
+  async announcePresence(scope = 'main', metadataOverride = null) {
+    const normalizedScope = scope || 'main';
+    const room = this.discoveryRooms.get(normalizedScope);
+    if (!room) {
+      throw new Error(`Scope ${normalizedScope} has not been joined for discovery`);
+    }
+
+    const metadata = metadataOverride || room.metadata || {};
+    const announcedAt = this.now();
+    this.upsertPresence(normalizedScope, this.nodeId, metadata, room.ttlMs, announcedAt);
+
+    await this.broadcastMessage(
+      'presence:announce',
+      {
+        scope: normalizedScope,
+        peerId: this.nodeId,
+        metadata,
+        ttlMs: room.ttlMs,
+        announcedAt
+      },
+      { broadcastScope: normalizedScope }
+    );
+  }
+
+  async leaveDiscovery(scope = 'main') {
+    const normalizedScope = scope || 'main';
+    const room = this.discoveryRooms.get(normalizedScope);
+    if (!room) {
+      return;
+    }
+
+    if (room.timer) {
+      clearInterval(room.timer);
+    }
+    this.discoveryRooms.delete(normalizedScope);
+
+    const map = this.presenceByScope.get(normalizedScope);
+    if (map) {
+      map.delete(this.nodeId);
+    }
+
+    await this.broadcastMessage(
+      'presence:leave',
+      {
+        scope: normalizedScope,
+        peerId: this.nodeId,
+        leftAt: this.now()
+      },
+      { broadcastScope: normalizedScope }
+    );
+  }
+
+  listPeers(scope = 'main', options = {}) {
+    const normalizedScope = scope || 'main';
+    const includeSelf = options.includeSelf !== false;
+    this.prunePresence(normalizedScope);
+
+    const map = this.presenceByScope.get(normalizedScope);
+    if (!map) {
+      return [];
+    }
+
+    return Array.from(map.values())
+      .filter((entry) => includeSelf || entry.peerId !== this.nodeId)
+      .map((entry) => ({
+        peerId: entry.peerId,
+        scope: entry.scope,
+        metadata: { ...entry.metadata },
+        lastSeenAt: entry.lastSeenAt,
+        expiresAt: entry.expiresAt
+      }));
+  }
+
   async handleIncomingMessage(message) {
     // Backward compatibility for raw operation payloads
     if (message && message.opId && message.kind) {
@@ -278,6 +439,47 @@ class DignityP2P extends EventEmitter {
 
     if (decrypted.messageType === 'operation') {
       this.applyOperation(decrypted.payload);
+      return;
+    }
+
+    if (decrypted.messageType === 'presence:announce') {
+      const payload = decrypted.payload || {};
+      const scope = payload.scope || 'main';
+      const peerId = payload.peerId || decrypted.senderId;
+      if (!peerId) {
+        return;
+      }
+
+      const presenceMap = this.getPresenceMap(scope);
+      const isNewPeerInScope = !presenceMap.has(peerId);
+
+      this.upsertPresence(
+        scope,
+        peerId,
+        payload.metadata || {},
+        payload.ttlMs || this.defaultPresenceTtlMs,
+        payload.announcedAt || this.now()
+      );
+
+      // Discovery handshake: when a new peer appears in a joined scope,
+      // send our current presence so late joiners quickly converge.
+      if (isNewPeerInScope && peerId !== this.nodeId && this.discoveryRooms.has(scope)) {
+        this.announcePresence(scope).catch((error) => {
+          this.emit('warning', { type: 'presence-handshake-failed', scope, error });
+        });
+      }
+      return;
+    }
+
+    if (decrypted.messageType === 'presence:leave') {
+      const payload = decrypted.payload || {};
+      const scope = payload.scope || 'main';
+      const peerId = payload.peerId || decrypted.senderId;
+      const map = this.presenceByScope.get(scope);
+      if (map && peerId && map.has(peerId)) {
+        map.delete(peerId);
+        this.emit('peerleft', { scope, peerId, reason: 'leave' });
+      }
       return;
     }
 

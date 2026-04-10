@@ -32,6 +32,21 @@ async function runDemo() {
 
   await host.start();
   await observer.start();
+  await host.joinDiscovery('room:chess-lite', {
+    metadata: { nickname: 'host', role: 'owner' },
+    heartbeatIntervalMs: 100000,
+    ttlMs: 30000
+  });
+  await observer.joinDiscovery('room:chess-lite', {
+    metadata: { nickname: 'observer', role: 'viewer' },
+    heartbeatIntervalMs: 100000,
+    ttlMs: 30000
+  });
+
+  console.log(
+    '\nPeers visible from host in room:chess-lite:',
+    host.listPeers('room:chess-lite', { includeSelf: false }).map((peer) => peer.peerId)
+  );
 
   await host.create(
     'matches',
@@ -40,7 +55,7 @@ async function runDemo() {
       board: initialBoard(),
       moveHistory: []
     },
-    { id: 'match-1' }
+    { id: 'match-1', broadcastScope: 'room:chess-lite' }
   );
 
   const scriptedMoves = [
@@ -54,11 +69,16 @@ async function runDemo() {
     const board = { ...match.data.board, [move.piece]: move.to };
     const moveHistory = [...match.data.moveHistory, move];
 
-    await host.update('matches', 'match-1', {
-      board,
-      moveHistory,
-      lastMove: move
-    });
+    await host.update(
+      'matches',
+      'match-1',
+      {
+        board,
+        moveHistory,
+        lastMove: move
+      },
+      { broadcastScope: 'room:chess-lite' }
+    );
   }
 
   const hostState = host.read('matches', 'match-1');
@@ -70,6 +90,8 @@ async function runDemo() {
   console.log('\nObserver replicated state:');
   console.log(JSON.stringify(observerState.data, null, 2));
 
+  await host.leaveDiscovery('room:chess-lite');
+  await observer.leaveDiscovery('room:chess-lite');
   await host.stop();
   await observer.stop();
 }
