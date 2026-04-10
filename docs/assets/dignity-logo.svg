@@ -1,10 +1,10 @@
-<svg width="980" height="320" viewBox="0 0 980 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="860" height="320" viewBox="0 0 860 320" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="980" y2="320" gradientUnits="userSpaceOnUse">
+    <linearGradient id="bg" x1="0" y1="0" x2="860" y2="320" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="#0B1020"/>
       <stop offset="100%" stop-color="#1A0F36"/>
     </linearGradient>
-    <linearGradient id="ink" x1="260" y1="60" x2="860" y2="270" gradientUnits="userSpaceOnUse">
+    <linearGradient id="ink" x1="200" y1="60" x2="760" y2="270" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="#FFFFFF"/>
       <stop offset="45%" stop-color="#A7D3FF"/>
       <stop offset="100%" stop-color="#C89DFF"/>
@@ -29,8 +29,8 @@
     </filter>
   </defs>
 
-  <rect x="8" y="8" width="964" height="304" rx="34" fill="url(#bg)"/>
-  <rect x="8" y="8" width="964" height="304" rx="34" stroke="#2B3B70" stroke-width="2"/>
+  <rect x="8" y="8" width="844" height="304" rx="34" fill="url(#bg)"/>
+  <rect x="8" y="8" width="844" height="304" rx="34" stroke="#2B3B70" stroke-width="2"/>
 
   <text
     x="84"
