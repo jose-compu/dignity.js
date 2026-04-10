@@ -1,0 +1,53 @@
+{
+  "name": "dignity.js",
+  "version": "0.1.0",
+  "description": "P2P object API for decentralized JavaScript applications",
+  "main": "dist/dignity.cjs.js",
+  "module": "dist/dignity.esm.js",
+  "browser": "dist/dignity.esm.js",
+  "unpkg": "dist/dignity.min.js",
+  "jsdelivr": "dist/dignity.min.js",
+  "exports": {
+    ".": {
+      "require": "./dist/dignity.cjs.js",
+      "import": "./dist/dignity.esm.js",
+      "default": "./dist/dignity.esm.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "docs",
+    "examples"
+  ],
+  "scripts": {
+    "test": "jest --coverage",
+    "test:unit": "jest tests/unit --runInBand",
+    "test:pow-calibrate": "jest tests/unit/sloth-vdf-timing.test.js --runInBand",
+    "build": "node scripts/build.js",
+    "docs:serve": "npx http-server docs -p 4173 -o",
+    "docs:check": "node -e \"require('fs').accessSync('docs/index.html')\"",
+    "example:tictactoe": "node examples/decentralized-tictactoe.js",
+    "example:chess": "node examples/decentralized-chess-lite.js",
+    "prepublishOnly": "npm test && npm run build"
+  },
+  "keywords": [
+    "p2p",
+    "webrtc",
+    "decentralized",
+    "rest",
+    "objects"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "jest": "^29.7.0"
+  },
+  "dependencies": {
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>dignity.js v0.1.0 docs</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>dignity.js documentation</h1>
+      <p class="subtitle">Version 0.1.0 - P2P object API for decentralized JavaScript applications</p>
+
+      <section>
+        <h2>Professional docs layout (recommended)</h2>
+        <ul>
+          <li><strong>Monorepo style:</strong> <code>apps/docs</code> (Next.js/Nextra or Docusaurus) + versioned routes.</li>
+          <li><strong>Library style:</strong> top-level <code>docs/</code> for public docs and examples.</li>
+          <li><strong>API reference:</strong> generated from source comments and published online.</li>
+          <li><strong>Examples:</strong> runnable samples under <code>examples/</code> or linked demos.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Quick start</h2>
+        <pre><code>const {
+  DignityP2P,
+  InMemoryNetworkHub,
+  InMemoryNetworkAdapter
+} = require('dignity.js');
+
+const hub = new InMemoryNetworkHub();
+
+const alice = new DignityP2P({
+  nodeId: 'alice',
+  networkAdapter: new InMemoryNetworkAdapter(hub)
+});
+
+await alice.start();
+await alice.create('notes', { title: 'hello world' }, { id: 'note-1' });
+const note = alice.read('notes', 'note-1');</code></pre>
+      </section>
+
+      <section>
+        <h2>REST-like object API</h2>
+        <ul>
+          <li><code>create(collection, data, options)</code> -> owner is the creator.</li>
+          <li><code>read(collection, id)</code> -> returns object or <code>null</code>.</li>
+          <li><code>list(collection, options)</code> -> list active objects (or include deleted markers).</li>
+          <li><code>update(collection, id, patch)</code> -> only object owner can update.</li>
+          <li><code>remove(collection, id)</code> -> only object owner can delete.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Security defaults (enabled)</h2>
+        <ul>
+          <li><strong>Signing:</strong> every message is signed by sender keypair.</li>
+          <li><strong>Broadcast encryption:</strong> encrypted using shared <code>appPassword</code>.</li>
+          <li><strong>Direct encryption:</strong> encrypted with recipient public key.</li>
+          <li><strong>PoW:</strong> Sloth VDF proof per message, default <code>powSteps: 22</code> (~1000ms on this machine).</li>
+          <li><strong>Peer bans:</strong> invalid signature or invalid PoW bans sender for 48h by default.</li>
+        </ul>
+        <pre><code>const node = new DignityP2P({\n  nodeId: 'alice',\n  networkAdapter,\n  security: {\n    appPassword: 'shared-out-of-band-password',\n    powTargetMs: 1000,\n    signingEnabled: true,\n    encryptionEnabled: true,\n    powEnabled: true\n  }\n});</code></pre>
+        <pre><code>const coopNode = new DignityP2P({\n  nodeId: 'alice',\n  networkAdapter,\n  security: {\n    appPassword: 'global-fallback-password',\n    broadcastPasswords: {\n      'coop:red': 'red-team-password',\n      'coop:blue': 'blue-team-password'\n    }\n  }\n});\n\nawait coopNode.create('matches', { mode: 'coop' }, {\n  id: 'match-1',\n  broadcastScope: 'coop:red'\n});</code></pre>
+      </section>
+
+      <section>
+        <h2>Signaling defaults and customization</h2>
+        <pre><code>const {
+  createDefaultSignalingPool,
+  WebSocketSignalingProvider
+} = require('dignity.js');
+
+const pool = createDefaultSignalingPool({
+  cloudflareUrls: ['wss://your-cloudflare-endpoint.example'],
+  fallbackUrls: ['wss://relay-a.example', 'wss://relay-b.example'],
+  customProviders: [
+    new WebSocketSignalingProvider({
+      id: 'local-dev',
+      url: 'ws://localhost:3001',
+      priority: 99
+    })
+  ]
+});</code></pre>
+        <p>
+          Machine-readable API metadata is available in
+          <a href="./openapi-like.json">openapi-like.json</a>.
+        </p>
+      </section>
+
+      <section>
+        <h2>Minimal examples</h2>
+        <ul>
+          <li><code>examples/decentralized-tictactoe.js</code> - replicated board state and owner authorization.</li>
+          <li><code>examples/decentralized-chess-lite.js</code> - replicated move history with a compact board model.</li>
+        </ul>
+        <pre><code>npm run example:tictactoe\nnpm run example:chess</code></pre>
+      </section>
+
+      <section>
+        <h2>Publish-ready browser bundles</h2>
+        <ul>
+          <li><code>dist/dignity.min.js</code> - minified browser IIFE bundle (global <code>DignityJS</code>).</li>
+          <li><code>dist/dignity.esm.js</code> - browser ESM bundle.</li>
+          <li><code>dist/dignity.cjs.js</code> - Node/CommonJS bundle.</li>
+        </ul>
+        <pre><code>npm test\nnpm run build\nnpm publish --access public</code></pre>
+      </section>
+    </main>
+  </body>
+</html>

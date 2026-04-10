@@ -1,0 +1,54 @@
+<svg width="980" height="320" viewBox="0 0 980 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="980" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0B1020"/>
+      <stop offset="100%" stop-color="#1A0F36"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="260" y1="60" x2="860" y2="270" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="45%" stop-color="#A7D3FF"/>
+      <stop offset="100%" stop-color="#C89DFF"/>
+    </linearGradient>
+    <linearGradient id="nodeStroke" x1="56" y1="44" x2="236" y2="236" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#5FE3FF"/>
+      <stop offset="100%" stop-color="#9C7CFF"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="textSoftGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2.2" result="blurText"/>
+      <feMerge>
+        <feMergeNode in="blurText"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="8" y="8" width="964" height="304" rx="34" fill="url(#bg)"/>
+  <rect x="8" y="8" width="964" height="304" rx="34" stroke="#2B3B70" stroke-width="2"/>
+
+  <text
+    x="84"
+    y="178"
+    fill="url(#ink)"
+    font-size="124"
+    font-family="'Bree Serif', 'Bodoni Moda', 'Didot', 'Playfair Display', 'Cormorant Garamond', Georgia, serif"
+    font-weight="600"
+    letter-spacing="0.35"
+    filter="url(#textSoftGlow)"
+  >dignity.js</text>
+
+  <text
+    x="84"
+    y="254"
+    fill="#A8B7E8"
+    font-size="24"
+    font-family="'Avenir Next', 'Montserrat', 'Inter', Arial, sans-serif"
+    letter-spacing="4.2"
+  >DECENTRALIZED OBJECT API</text>
+</svg>
