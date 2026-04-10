@@ -1,7 +1,7 @@
 # dignity.js
 
 <p align="center">
-  <img src="./docs/assets/dignity-logo.png" alt="dignity.js logo" width="860" />
+  <img src="https://raw.githubusercontent.com/jose-compu/dignity.js/refs/heads/main/docs/assets/dignity-logo.svg" alt="dignity.js logo" width="860" />
 </p>
 
 <p align="center">
