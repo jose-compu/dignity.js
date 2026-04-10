@@ -1,0 +1,64 @@
+{
+  "name": "dignity.js",
+  "version": "0.1.0",
+  "description": "REST-like object API over peer-to-peer replication",
+  "resources": {
+    "collections/{collection}/{id}": {
+      "create": {
+        "method": "create(collection, data, options)",
+        "owner": "actor that creates the object"
+      },
+      "read": {
+        "method": "read(collection, id)"
+      },
+      "update": {
+        "method": "update(collection, id, patch)",
+        "authorization": "owner-only"
+      },
+      "delete": {
+        "method": "remove(collection, id)",
+        "authorization": "owner-only"
+      }
+    },
+    "collections/{collection}": {
+      "list": {
+        "method": "list(collection, options)"
+      }
+    }
+  },
+  "signaling": {
+    "defaults": {
+      "cloudflare": "enabled by default",
+      "fallback": "enabled"
+    },
+    "customization": {
+      "factory": "createDefaultSignalingPool(options)",
+      "override": [
+        "cloudflareUrls",
+        "fallbackUrls",
+        "customProviders"
+      ]
+    }
+  },
+  "messageSecurity": {
+    "defaults": {
+      "signingEnabled": true,
+      "encryptionEnabled": true,
+      "powEnabled": true,
+      "powTargetMs": 1000
+    },
+    "broadcast": {
+      "encryption": "aes-256-gcm with appPassword-derived key"
+    },
+    "direct": {
+      "encryption": "aes-256-gcm payload + rsa-oaep wrapped session key"
+    },
+    "pow": {
+      "algorithm": "Sloth VDF",
+      "config": [
+        "powTargetMs",
+        "powSteps"
+      ]
+    }
+  }
+}

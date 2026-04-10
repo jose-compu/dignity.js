@@ -1,0 +1,31 @@
+const SlothPermutation = require('../../src/security/sloth-vdf');
+
+describe('SlothPermutation core', () => {
+  test('fastPow handles modulus equal to one', () => {
+    const sloth = new SlothPermutation();
+    const result = sloth.fastPow(5n, 7n, 1n);
+    expect(result).toBe(0n);
+  });
+
+  test('generateProofVDF and verifyProofVDF round-trip', () => {
+    const sloth = new SlothPermutation();
+    const challenge = 12345678901234567890n;
+    const steps = 6n;
+
+    const proof = sloth.generateProofVDF(steps, challenge);
+    const verified = sloth.verifyProofVDF(steps, challenge, proof);
+
+    expect(verified).toBe(true);
+  });
+
+  test('verifyProofVDF rejects tampered proof', () => {
+    const sloth = new SlothPermutation();
+    const challenge = 42n;
+    const steps = 4n;
+
+    const proof = sloth.generateProofVDF(steps, challenge);
+    const tampered = (proof + 1n) % SlothPermutation.p;
+
+    expect(sloth.verifyProofVDF(steps, challenge, tampered)).toBe(false);
+  });
+});
