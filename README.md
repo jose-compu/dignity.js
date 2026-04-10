@@ -194,4 +194,4 @@ npm publish --access public
 
 ## License
 
-MIT
+Apache 2.0
