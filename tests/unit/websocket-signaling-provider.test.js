@@ -106,4 +106,18 @@ describe('WebSocketSignalingProvider', () => {
     expect(socket.closed).toBe(true);
     expect(provider.socket).toBeNull();
   });
+
+  test('builds peerjs connection urls with id and token', async () => {
+    const provider = new WebSocketSignalingProvider({
+      url: 'wss://peerjs.92k.de/peerjs?key=peerjs',
+      WebSocketImpl: MockWebSocket
+    });
+
+    await provider.connect();
+    const socket = MockWebSocket.instances[0];
+
+    expect(socket.url).toContain('wss://peerjs.92k.de/peerjs?key=peerjs');
+    expect(socket.url).toMatch(/[?&]id=dignityjs_[a-z0-9]{10}/);
+    expect(socket.url).toMatch(/[?&]token=[a-z0-9]{10}/);
+  });
 });

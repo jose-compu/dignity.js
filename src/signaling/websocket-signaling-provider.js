@@ -18,7 +18,7 @@ class WebSocketSignalingProvider {
     }
 
     await new Promise((resolve, reject) => {
-      const socket = new this.WebSocketImpl(this.url);
+      const socket = new this.WebSocketImpl(this.buildConnectionUrl());
 
       socket.onopen = () => {
         this.socket = socket;
@@ -42,6 +42,29 @@ class WebSocketSignalingProvider {
         }
       };
     });
+  }
+
+  buildConnectionUrl() {
+    const peerJsHostPattern = /^wss:\/\/(peerjs\.92k\.de|0\.peerjs\.com)(\/|$)/;
+    if (!peerJsHostPattern.test(this.url)) {
+      return this.url;
+    }
+
+    const connectionId = `dignityjs_${Math.random().toString(36).slice(2, 12)}`;
+    const token = Math.random().toString(36).slice(2, 12);
+    const hasQuery = this.url.includes('?');
+    const hasId = /[?&]id=/.test(this.url);
+    const hasToken = /[?&]token=/.test(this.url);
+
+    let url = this.url;
+    if (!hasId) {
+      url += `${hasQuery ? '&' : '?'}id=${connectionId}`;
+    }
+    if (!hasToken) {
+      url += `${url.includes('?') ? '&' : '?'}token=${token}`;
+    }
+
+    return url;
   }
 
   onMessage(handler) {

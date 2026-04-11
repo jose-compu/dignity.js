@@ -5,6 +5,7 @@ describe('public API exports', () => {
     expect(api.DignityP2P).toBeDefined();
     expect(api.SignalingPool).toBeDefined();
     expect(api.WebSocketSignalingProvider).toBeDefined();
+    expect(api.PeerJSSignalingProvider).toBeDefined();
     expect(api.MessageSecurityService).toBeDefined();
     expect(api.VDF).toBeDefined();
     expect(api.SlothPermutation).toBeDefined();

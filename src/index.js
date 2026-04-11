@@ -10,6 +10,7 @@ const DignityP2P = require('./core/dignity-p2p');
 const createDefaultSignalingPool = require('./signaling/create-default-signaling-pool');
 const SignalingPool = require('./signaling/signaling-pool');
 const WebSocketSignalingProvider = require('./signaling/websocket-signaling-provider');
+const PeerJSSignalingProvider = require('./signaling/peerjs-signaling-provider');
 const {
   InMemoryNetworkHub,
   InMemoryNetworkAdapter
@@ -30,6 +31,7 @@ module.exports = {
   createDefaultSignalingPool,
   SignalingPool,
   WebSocketSignalingProvider,
+  PeerJSSignalingProvider,
   InMemoryNetworkHub,
   InMemoryNetworkAdapter,
   DEFAULT_CLOUDFLARE_SIGNALING_URLS,

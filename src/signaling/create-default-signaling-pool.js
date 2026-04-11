@@ -1,5 +1,6 @@
 const SignalingPool = require('./signaling-pool');
 const WebSocketSignalingProvider = require('./websocket-signaling-provider');
+const PeerJSSignalingProvider = require('./peerjs-signaling-provider');
 const {
   DEFAULT_CLOUDFLARE_SIGNALING_URLS,
   DEFAULT_SIGNALING_FALLBACK_URLS
@@ -13,8 +14,11 @@ function createDefaultSignalingPool(options = {}) {
   const providers = [];
 
   cloudflareUrls.forEach((url, index) => {
+    const usePeerJsProvider = /^wss:\/\/(peerjs\.92k\.de|0\.peerjs\.com)(\/|$)/.test(url);
+    const ProviderClass = usePeerJsProvider ? PeerJSSignalingProvider : WebSocketSignalingProvider;
+
     providers.push(
-      new WebSocketSignalingProvider({
+      new ProviderClass({
         id: `cloudflare-${index + 1}`,
         url,
         WebSocketImpl,
