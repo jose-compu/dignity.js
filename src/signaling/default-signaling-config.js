@@ -1,7 +1,6 @@
 const DEFAULT_CLOUDFLARE_SIGNALING_URLS = [
-  'wss://signaling.cloudflare.com',
-  'wss://cloudflare-webrtc-signaling.example',
-  'wss://trycloudflare-signaling.example'
+  'wss://peerjs.92k.de/peerjs?key=peerjs',
+  'wss://0.peerjs.com/peerjs?key=peerjs'
 ];
 
 const DEFAULT_SIGNALING_FALLBACK_URLS = [

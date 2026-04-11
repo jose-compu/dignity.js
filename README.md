@@ -163,6 +163,19 @@ Example with CDN:
 </script>
 ```
 
+## Signaling Servers
+
+Default signaling URLs include PeerJS-compatible public endpoints:
+
+- `wss://peerjs.92k.de/peerjs?key=peerjs`
+- `wss://0.peerjs.com/peerjs?key=peerjs`
+
+You can also deploy your own server with [peerjs-server](https://github.com/peers/peerjs-server) and point `createDefaultSignalingPool` (or `WebSocketSignalingProvider`) to your own `wss://.../peerjs?key=...` URL.
+
+Compatibility note:
+- `dignity.js` now includes a dedicated `PeerJSSignalingProvider` backed by the official `peerjs` client for PeerJS protocol compatibility.
+- In non-WebRTC runtimes (for example Node test runners), it automatically falls back to WebSocket transport checks for connectivity testing.
+
 ## Development
 
 ```bash
