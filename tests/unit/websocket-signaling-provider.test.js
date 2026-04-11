@@ -120,4 +120,38 @@ describe('WebSocketSignalingProvider', () => {
     expect(socket.url).toMatch(/[?&]id=dignityjs_[a-z0-9]{10}/);
     expect(socket.url).toMatch(/[?&]token=[a-z0-9]{10}/);
   });
+
+  test('throws for missing url', () => {
+    expect(() => new WebSocketSignalingProvider({})).toThrow('WebSocket signaling provider requires a url');
+  });
+
+  test('throws when WebSocket implementation is unavailable', async () => {
+    const provider = new WebSocketSignalingProvider({
+      url: 'wss://ok.example',
+      WebSocketImpl: MockWebSocket
+    });
+    provider.WebSocketImpl = null;
+
+    await expect(provider.connect()).rejects.toThrow('WebSocket implementation is not available');
+  });
+
+  test('disconnect is no-op when socket is null', async () => {
+    const provider = new WebSocketSignalingProvider({
+      url: 'wss://ok.example',
+      WebSocketImpl: MockWebSocket
+    });
+
+    await provider.disconnect();
+    expect(provider.socket).toBeNull();
+  });
+
+  test('returns url unchanged for non-peerjs hosts', () => {
+    const provider = new WebSocketSignalingProvider({
+      url: 'wss://custom-server.example/signaling',
+      WebSocketImpl: MockWebSocket
+    });
+
+    const built = provider.buildConnectionUrl();
+    expect(built).toBe('wss://custom-server.example/signaling');
+  });
 });

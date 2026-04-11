@@ -30,4 +30,39 @@ describe('createDefaultSignalingPool', () => {
     expect(pool.providers.map((provider) => provider.url)).toEqual(DEFAULT_CLOUDFLARE_SIGNALING_URLS);
     expect(pool.providers.every((provider) => provider.constructor.name === 'PeerJSSignalingProvider')).toBe(true);
   });
+
+  test('appends customProviders when provided', () => {
+    const customProvider = {
+      id: 'custom-1',
+      url: 'wss://my.custom/signal',
+      priority: 99,
+      connect: jest.fn(),
+      send: jest.fn()
+    };
+
+    const pool = createDefaultSignalingPool({
+      cloudflareUrls: [],
+      fallbackUrls: [],
+      customProviders: [customProvider]
+    });
+
+    expect(pool.providers).toHaveLength(1);
+    expect(pool.providers[0].id).toBe('custom-1');
+  });
+
+  test('uses all defaults when called with no options', () => {
+    const pool = createDefaultSignalingPool();
+    expect(pool.providers.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('creates WebSocketSignalingProvider for non-peerjs cloudflare urls', () => {
+    const pool = createDefaultSignalingPool({
+      cloudflareUrls: ['wss://generic.example/signal'],
+      fallbackUrls: [],
+      WebSocketImpl: function MockWebSocket() {}
+    });
+
+    expect(pool.providers).toHaveLength(1);
+    expect(pool.providers[0].constructor.name).toBe('WebSocketSignalingProvider');
+  });
 });

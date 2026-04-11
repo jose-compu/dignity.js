@@ -53,4 +53,16 @@ describe('InMemoryNetworkAdapter', () => {
     await alice.broadcast({ step: 2 });
     expect(bobHandler).not.toHaveBeenCalled();
   });
+
+  test('throws when constructed without hub', () => {
+    expect(() => new InMemoryNetworkAdapter()).toThrow('InMemoryNetworkAdapter requires an InMemoryNetworkHub');
+  });
+
+  test('stop is safe when adapter was never started', async () => {
+    const hub = new InMemoryNetworkHub();
+    const adapter = new InMemoryNetworkAdapter(hub);
+
+    await adapter.stop();
+    expect(adapter.nodeId).toBeNull();
+  });
 });
