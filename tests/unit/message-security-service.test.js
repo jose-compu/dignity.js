@@ -176,4 +176,51 @@ describe('MessageSecurityService', () => {
 
     await expect(carol.decryptIncomingMessage(envelope)).rejects.toThrow('Unable to decrypt broadcast payload');
   });
+
+  test('binds PoW proof to canonical message hash', async () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+    const bob = new MessageSecurityService({
+      nodeId: 'bob',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+
+    bob.registerPeerPublicKey('alice', alice.getPublicKey());
+
+    const envelope = await alice.secureOutgoingMessage({
+      messageType: 'chat',
+      payload: { text: 'hello hash-bound pow' }
+    });
+
+    expect(envelope.security.pow.messageHash).toBeDefined();
+    expect(envelope.security.pow.challenge).toBe(envelope.security.pow.messageHash);
+
+    const received = await bob.decryptIncomingMessage(envelope);
+    expect(received.payload).toEqual({ text: 'hello hash-bound pow' });
+  });
+
+  test('rejects PoW when messageHash is tampered', async () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+    const bob = new MessageSecurityService({
+      nodeId: 'bob',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+
+    bob.registerPeerPublicKey('alice', alice.getPublicKey());
+
+    const envelope = await alice.secureOutgoingMessage({
+      messageType: 'chat',
+      payload: { text: 'pow tamper check' }
+    });
+
+    const originalHash = envelope.security.pow.messageHash;
+    envelope.security.pow.messageHash = `${originalHash.slice(0, -1)}${originalHash.endsWith('0') ? '1' : '0'}`;
+
+    await expect(bob.decryptIncomingMessage(envelope)).rejects.toThrow('PoW challenge mismatch');
+  });
 });

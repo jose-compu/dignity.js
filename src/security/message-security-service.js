@@ -153,6 +153,7 @@ class MessageSecurityService {
       const pow = await this.generatePow(envelope);
       envelope.security.pow = {
         enabled: true,
+        messageHash: pow.messageHash,
         challenge: pow.challenge,
         proof: pow.proof,
         steps: pow.steps,
@@ -206,6 +207,10 @@ class MessageSecurityService {
         encryption: envelope.security ? envelope.security.encryption : { enabled: false }
       }
     });
+  }
+
+  computePowMessageHash(envelope) {
+    return bytesToHex(hash32(utf8ToBytes(this.canonicalPowInput(envelope))));
   }
 
   async decryptIncomingMessage(envelope) {
@@ -420,13 +425,15 @@ class MessageSecurityService {
   }
 
   async generatePow(envelope) {
-    const challenge = bytesToHex(hash32(utf8ToBytes(this.canonicalPowInput(envelope))));
+    const messageHash = this.computePowMessageHash(envelope);
+    const challenge = messageHash;
     const steps = await this.determinePowSteps();
     const start = this.now();
     const proof = await VDF.compute(challenge, steps);
     const durationMs = this.now() - start;
 
     return {
+      messageHash,
       challenge,
       proof,
       steps: steps.toString(),
@@ -435,16 +442,21 @@ class MessageSecurityService {
   }
 
   async verifyPow(envelope) {
-    const expectedChallenge = bytesToHex(hash32(utf8ToBytes(this.canonicalPowInput(envelope))));
+    const expectedMessageHash = this.computePowMessageHash(envelope);
     const pow = envelope.security.pow;
 
-    if (!pow || pow.challenge !== expectedChallenge) {
+    if (
+      !pow ||
+      !pow.messageHash ||
+      pow.messageHash !== expectedMessageHash ||
+      pow.challenge !== pow.messageHash
+    ) {
       const error = new Error('PoW challenge mismatch');
       error.code = 'INVALID_POW';
       throw error;
     }
 
-    const verified = await VDF.verify(pow.challenge, BigInt(pow.steps), pow.proof);
+    const verified = await VDF.verify(pow.messageHash, BigInt(pow.steps), pow.proof);
     if (!verified) {
       const error = new Error('PoW verification failed');
       error.code = 'INVALID_POW';
