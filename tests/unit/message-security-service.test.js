@@ -1,4 +1,6 @@
-const { MessageSecurityService } = require('../../src/security/message-security-service');
+const { MessageSecurityService, deriveBroadcastKey, legacyBroadcastKey } = require('../../src/security/message-security-service');
+const naclUtil = require('tweetnacl-util');
+const nacl = require('tweetnacl');
 
 describe('MessageSecurityService', () => {
   test('encrypts and decrypts broadcast messages with shared password', async () => {
@@ -487,5 +489,102 @@ describe('MessageSecurityService', () => {
   test('stableStringify handles arrays', async () => {
     const { stableStringify } = require('../../src/security/message-security-service');
     expect(stableStringify([1, 'a', null])).toBe('[1,"a",null]');
+  });
+
+  test('broadcast encryption uses PBKDF2 KDF by default', async () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+
+    const envelope = await alice.secureOutgoingMessage({
+      messageType: 'chat',
+      payload: { text: 'pbkdf2 test' }
+    });
+
+    expect(envelope.security.encryption.kdf).toBe('pbkdf2');
+    expect(envelope.security.encryption.kdfIterations).toBe(100000);
+  });
+
+  test('custom kdfIterations is respected', async () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powTargetMs: 5, kdfIterations: 5000 }
+    });
+    const bob = new MessageSecurityService({
+      nodeId: 'bob',
+      options: { appPassword: 'shared', powTargetMs: 5, kdfIterations: 5000 }
+    });
+
+    bob.registerPeerPublicKey('alice', alice.getPublicKey());
+
+    const envelope = await alice.secureOutgoingMessage({
+      messageType: 'chat',
+      payload: { text: 'custom iterations' }
+    });
+
+    expect(envelope.security.encryption.kdfIterations).toBe(5000);
+
+    const received = await bob.decryptIncomingMessage(envelope);
+    expect(received.payload).toEqual({ text: 'custom iterations' });
+  });
+
+  test('decrypts legacy messages without kdf field using single-hash fallback', async () => {
+    const password = 'shared-legacy';
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: {
+        appPassword: password,
+        signingEnabled: false,
+        powEnabled: false
+      }
+    });
+
+    const payload = { text: 'from old version' };
+    const plainText = naclUtil.decodeUTF8(JSON.stringify(payload));
+    const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
+    const salt = nacl.randomBytes(16);
+    const key = legacyBroadcastKey(password, salt);
+    const encrypted = nacl.secretbox(plainText, nonce, key);
+
+    const legacyEnvelope = {
+      version: 1,
+      senderId: 'old-peer',
+      senderPublicKey: alice.getPublicKey(),
+      targetId: null,
+      messageType: 'chat',
+      timestamp: Date.now(),
+      payload: naclUtil.encodeBase64(encrypted),
+      security: {
+        encryption: {
+          enabled: true,
+          mode: 'broadcast',
+          scope: 'default',
+          nonce: naclUtil.encodeBase64(nonce),
+          salt: naclUtil.encodeBase64(salt)
+        },
+        signing: { enabled: false },
+        pow: { enabled: false }
+      }
+    };
+
+    const received = await alice.decryptIncomingMessage(legacyEnvelope);
+    expect(received.payload).toEqual({ text: 'from old version' });
+  });
+
+  test('deriveBroadcastKey produces 32-byte key', async () => {
+    const salt = nacl.randomBytes(16);
+    const key = await deriveBroadcastKey('test-password', salt, 1000);
+
+    expect(key).toBeInstanceOf(Uint8Array);
+    expect(key.length).toBe(32);
+  });
+
+  test('deriveBroadcastKey differs from legacy single-hash', async () => {
+    const salt = nacl.randomBytes(16);
+    const pbkdf2Key = await deriveBroadcastKey('same-password', salt, 1000);
+    const legacyKey = legacyBroadcastKey('same-password', salt);
+
+    expect(Buffer.from(pbkdf2Key).equals(Buffer.from(legacyKey))).toBe(false);
   });
 });

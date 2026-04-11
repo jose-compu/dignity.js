@@ -156,6 +156,19 @@ The published npm package includes pre-built bundles (IIFE, ESM, CJS) generated 
 </script>
 ```
 
+## Security Model
+
+`dignity.js` provides two encryption modes:
+
+- **Direct mode** (`targetId` set): true end-to-end encryption using X25519 key exchange between sender and recipient. Only the intended recipient can decrypt.
+- **Broadcast mode** (no `targetId`): symmetric encryption using a shared password. All peers that know the password can decrypt all broadcast traffic in that scope. This is a **group shared-secret cipher**, not end-to-end encryption.
+
+Broadcast encryption uses PBKDF2-SHA256 (default 100,000 iterations) with a random salt per message to derive the symmetric key. This protects against offline brute-force of weak passwords. The iteration count is configurable via `kdfIterations`.
+
+Messages from peers running older versions that used the legacy single-hash KDF are still accepted and decrypted automatically (backward compatible).
+
+**Important:** if the broadcast password leaks, all past captured traffic for that scope is retroactively decryptable. For sensitive data, use direct mode with per-peer public keys.
+
 ## Signaling Servers
 
 Default signaling URLs include PeerJS-compatible public endpoints:
