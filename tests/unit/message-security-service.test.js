@@ -201,6 +201,105 @@ describe('MessageSecurityService', () => {
     expect(received.payload).toEqual({ text: 'hello hash-bound pow' });
   });
 
+  test('constructor requires nodeId', () => {
+    expect(() => new MessageSecurityService({})).toThrow('requires nodeId');
+  });
+
+  test('resolvePeerPublicKey detects mismatch between trusted and fallback', () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+    const bob = new MessageSecurityService({
+      nodeId: 'bob',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+
+    alice.registerPeerPublicKey('bob', bob.getPublicKey());
+
+    const mismatchedKey = {
+      signingPublicKey: 'AAAA',
+      encryptionPublicKey: 'BBBB'
+    };
+
+    expect(() => alice.resolvePeerPublicKey('bob', mismatchedKey)).toThrow('Public key mismatch');
+  });
+
+  test('resolvePeerPublicKey returns fallback when no trusted key', () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+    const bob = new MessageSecurityService({
+      nodeId: 'bob',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+
+    const resolved = alice.resolvePeerPublicKey('bob', bob.getPublicKey());
+    expect(resolved).toEqual(bob.getPublicKey());
+  });
+
+  test('resolvePeerPublicKey returns null when no key at all', () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+
+    expect(alice.resolvePeerPublicKey('unknown', null)).toBeNull();
+  });
+
+  test('passes through payload when security is disabled', async () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { enabled: false, appPassword: 'shared' }
+    });
+
+    const envelope = await alice.secureOutgoingMessage({
+      messageType: 'event',
+      payload: { raw: true }
+    });
+
+    expect(envelope.payload).toEqual({ raw: true });
+    expect(envelope.security).toBeUndefined();
+
+    const result = await alice.decryptIncomingMessage(envelope);
+    expect(result.payload).toEqual({ raw: true });
+  });
+
+  test('decryptIncomingMessage rejects invalid envelope', async () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+
+    await expect(alice.decryptIncomingMessage(null)).rejects.toThrow('invalid');
+  });
+
+  test('resolveBroadcastPassword uses custom resolver when provided', () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: {
+        appPassword: 'fallback',
+        resolveBroadcastPassword: ({ scope }) => scope === 'vip' ? 'vip-secret' : null,
+        powTargetMs: 5
+      }
+    });
+
+    expect(alice.resolveBroadcastPassword('vip')).toBe('vip-secret');
+    expect(alice.resolveBroadcastPassword('other')).toBe('fallback');
+  });
+
+  test('determinePowSteps returns existing bigint calibration', async () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powSteps: 10 }
+    });
+
+    alice.calibratedPowSteps = 42n;
+    const steps = await alice.determinePowSteps();
+    expect(steps).toBe(42n);
+  });
+
   test('rejects PoW when messageHash is tampered', async () => {
     const alice = new MessageSecurityService({
       nodeId: 'alice',
@@ -222,5 +321,171 @@ describe('MessageSecurityService', () => {
     envelope.security.pow.messageHash = `${originalHash.slice(0, -1)}${originalHash.endsWith('0') ? '1' : '0'}`;
 
     await expect(bob.decryptIncomingMessage(envelope)).rejects.toThrow('PoW challenge mismatch');
+  });
+
+  test('normalizePeerPublicKey rejects non-object input', () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+
+    expect(() => alice.registerPeerPublicKey('bad', 'string-key')).toThrow('must be an object');
+  });
+
+  test('normalizePeerPublicKey rejects missing fields', () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+
+    expect(() => alice.registerPeerPublicKey('bad', { signingPublicKey: 'x' })).toThrow('missing');
+  });
+
+  test('encryptPayload throws for unknown target peer', async () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+
+    await expect(
+      alice.secureOutgoingMessage({
+        messageType: 'dm',
+        targetId: 'stranger',
+        payload: { text: 'hi' }
+      })
+    ).rejects.toThrow('Missing public key for target peer');
+  });
+
+  test('decryptPayload returns raw payload when encryption disabled', async () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: {
+        enabled: true,
+        encryptionEnabled: false,
+        signingEnabled: false,
+        powEnabled: false,
+        appPassword: 'shared'
+      }
+    });
+
+    const envelope = await alice.secureOutgoingMessage({
+      messageType: 'event',
+      payload: { raw: true }
+    });
+
+    const result = await alice.decryptIncomingMessage(envelope);
+    expect(result.payload).toEqual({ raw: true });
+  });
+
+  test('decryptPayload throws for unsupported encryption mode', async () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+
+    const fakeEnvelope = {
+      version: 1,
+      senderId: 'x',
+      senderPublicKey: alice.getPublicKey(),
+      messageType: 'event',
+      timestamp: Date.now(),
+      payload: 'AAAA',
+      security: {
+        encryption: { enabled: true, mode: 'unknown' },
+        signing: { enabled: false },
+        pow: { enabled: false }
+      }
+    };
+
+    await expect(alice.decryptIncomingMessage(fakeEnvelope)).rejects.toThrow('Unsupported encryption mode');
+  });
+
+  test('verifySignature throws when sender public key is missing', async () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: {
+        enabled: true,
+        signingEnabled: true,
+        encryptionEnabled: false,
+        powEnabled: false,
+        appPassword: 'shared'
+      }
+    });
+
+    const envelope = await alice.secureOutgoingMessage({
+      messageType: 'event',
+      payload: { x: 1 }
+    });
+
+    const bob = new MessageSecurityService({
+      nodeId: 'bob',
+      options: {
+        enabled: true,
+        signingEnabled: true,
+        encryptionEnabled: false,
+        powEnabled: false,
+        appPassword: 'shared'
+      }
+    });
+
+    envelope.senderPublicKey = null;
+    await expect(bob.decryptIncomingMessage(envelope)).rejects.toThrow('Missing public key for sender');
+  });
+
+  test('determinePowSteps calibrates via probe when powSteps is not a number', async () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powSteps: undefined, powTargetMs: 50 }
+    });
+    alice.calibratedPowSteps = undefined;
+
+    const steps = await alice.determinePowSteps();
+    expect(typeof steps).toBe('bigint');
+    expect(steps >= 1n).toBe(true);
+  });
+
+  test('constructor loads trustedPeerKeys from options', () => {
+    const bob = new MessageSecurityService({
+      nodeId: 'bob',
+      options: { appPassword: 'shared', powTargetMs: 5 }
+    });
+
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: {
+        appPassword: 'shared',
+        powTargetMs: 5,
+        trustedPeerKeys: { bob: bob.getPublicKey() }
+      }
+    });
+
+    expect(alice.resolvePeerPublicKey('bob', null)).toEqual(bob.getPublicKey());
+  });
+
+  test('verifyPow throws when VDF verification fails', async () => {
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: { appPassword: 'shared', powSteps: 2 }
+    });
+    const bob = new MessageSecurityService({
+      nodeId: 'bob',
+      options: { appPassword: 'shared', powSteps: 2 }
+    });
+
+    bob.registerPeerPublicKey('alice', alice.getPublicKey());
+
+    const envelope = await alice.secureOutgoingMessage({
+      messageType: 'chat',
+      payload: { text: 'vdf fail test' }
+    });
+
+    envelope.security.pow.proof = 'deadbeef';
+
+    await expect(bob.decryptIncomingMessage(envelope)).rejects.toThrow();
+  });
+
+  test('stableStringify handles arrays', async () => {
+    const { stableStringify } = require('../../src/security/message-security-service');
+    expect(stableStringify([1, 'a', null])).toBe('[1,"a",null]');
   });
 });

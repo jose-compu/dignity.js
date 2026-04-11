@@ -503,6 +503,216 @@ describe('DignityP2P', () => {
     await bob.stop();
   }, 15000);
 
+  test('requires nodeId in constructor', () => {
+    expect(() => new DignityP2P({ networkAdapter: new InMemoryNetworkAdapter(new InMemoryNetworkHub()) }))
+      .toThrow('DignityP2P requires nodeId');
+  });
+
+  test('requires networkAdapter in constructor', () => {
+    expect(() => new DignityP2P({ nodeId: 'x' }))
+      .toThrow('DignityP2P requires networkAdapter');
+  });
+
+  test('create rejects duplicate non-deleted object', async () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    await alice.start();
+
+    await alice.create('items', { v: 1 }, { id: 'dup' });
+    await expect(alice.create('items', { v: 2 }, { id: 'dup' })).rejects.toThrow('already exists');
+
+    await alice.stop();
+  });
+
+  test('update rejects when object does not exist', async () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    await alice.start();
+
+    await expect(alice.update('items', 'missing', { v: 1 })).rejects.toThrow('does not exist');
+
+    await alice.stop();
+  });
+
+  test('remove rejects when object does not exist', async () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    await alice.start();
+
+    await expect(alice.remove('items', 'missing')).rejects.toThrow('does not exist');
+
+    await alice.stop();
+  });
+
+  test('applyOperation ignores null or missing opId', () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+
+    expect(alice.applyOperation(null)).toBe(false);
+    expect(alice.applyOperation({})).toBe(false);
+  });
+
+  test('applyOperation ignores update from non-owner', () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+
+    alice.applyOperation({
+      opId: 'c1', kind: 'create', collectionName: 'x', id: 'x1',
+      actorId: 'alice', ownerId: 'alice', timestamp: 1, payload: { v: 1 }
+    });
+
+    const result = alice.applyOperation({
+      opId: 'u1', kind: 'update', collectionName: 'x', id: 'x1',
+      actorId: 'bob', timestamp: 2, payload: { v: 2 }
+    });
+
+    expect(result).toBe(false);
+  });
+
+  test('applyOperation ignores unknown operation kind', () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+
+    alice.applyOperation({
+      opId: 'c1', kind: 'create', collectionName: 'x', id: 'x1',
+      actorId: 'alice', ownerId: 'alice', timestamp: 1, payload: {}
+    });
+
+    const result = alice.applyOperation({
+      opId: 'weird', kind: 'merge', collectionName: 'x', id: 'x1',
+      actorId: 'alice', timestamp: 2, payload: {}
+    });
+
+    expect(result).toBe(false);
+  });
+
+  test('applyOperation ignores update/delete on deleted object', () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+
+    alice.applyOperation({
+      opId: 'c1', kind: 'create', collectionName: 'x', id: 'x1',
+      actorId: 'alice', ownerId: 'alice', timestamp: 1, payload: {}
+    });
+    alice.applyOperation({
+      opId: 'd1', kind: 'delete', collectionName: 'x', id: 'x1',
+      actorId: 'alice', timestamp: 2, baseVersion: 1
+    });
+
+    const result = alice.applyOperation({
+      opId: 'u1', kind: 'update', collectionName: 'x', id: 'x1',
+      actorId: 'alice', timestamp: 3, payload: { v: 2 }
+    });
+
+    expect(result).toBe(false);
+  });
+
+  test('unbanPeer removes ban and emits event', async () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    await alice.start();
+
+    alice.banPeer('bad-peer', 60000, 'test');
+    expect(alice.isPeerBanned('bad-peer')).toBe(true);
+
+    const handler = jest.fn();
+    alice.on('peerunbanned', handler);
+    alice.unbanPeer('bad-peer');
+
+    expect(alice.isPeerBanned('bad-peer')).toBe(false);
+    expect(handler).toHaveBeenCalledWith({ peerId: 'bad-peer' });
+
+    await alice.stop();
+  });
+
+  test('handleIncomingMessage processes raw operation payloads', async () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    await alice.start();
+
+    await alice.handleIncomingMessage({
+      opId: 'raw-1', kind: 'create', collectionName: 'raw', id: 'r1',
+      actorId: 'alice', ownerId: 'alice', timestamp: 1, payload: { v: 1 }
+    });
+
+    expect(alice.read('raw', 'r1')).toMatchObject({ data: { v: 1 } });
+    await alice.stop();
+  });
+
+  test('listPeers returns empty when scope has no presence map', () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+
+    expect(alice.listPeers('nonexistent')).toEqual([]);
+  });
+
+  test('announcePresence throws when scope not joined', async () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    await alice.start();
+
+    await expect(alice.announcePresence('not-joined')).rejects.toThrow('has not been joined');
+
+    await alice.stop();
+  });
+
+  test('leaveDiscovery is no-op for unjoined scope', async () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    await alice.start();
+
+    await expect(alice.leaveDiscovery('never-joined')).resolves.toBeUndefined();
+
+    await alice.stop();
+  });
+
+  test('banPeer is no-op for null peerId', () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+
+    alice.banPeer(null);
+    expect(alice.bannedPeers.size).toBe(0);
+  });
+
   test('presence entries expire by ttl', async () => {
     let fakeNow = 1000;
     const now = () => fakeNow;

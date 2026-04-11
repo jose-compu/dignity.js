@@ -13,10 +13,9 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/dignity.js"><img src="https://img.shields.io/npm/v/dignity.js?color=cb3837&label=npm" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/dignity.js"><img src="https://img.shields.io/npm/dm/dignity.js?color=blue" alt="npm downloads"></a>
-  <img src="https://img.shields.io/badge/tests-29%20passing-brightgreen" alt="tests passing">
-  <img src="https://img.shields.io/badge/coverage-88%25-brightgreen" alt="coverage">
-  <img src="https://img.shields.io/badge/license-MIT-black" alt="license">
-  <img src="https://img.shields.io/badge/minified-51KB-purple" alt="bundle size">
+  <img src="https://img.shields.io/badge/tests-122%20passing-brightgreen" alt="tests passing">
+  <img src="https://img.shields.io/badge/coverage-97%25-brightgreen" alt="coverage">
+  <img src="https://img.shields.io/badge/license-Apache%202.0-black" alt="license">
 </p>
 
 REST-like P2P object API for decentralized JavaScript applications.
@@ -35,7 +34,7 @@ REST-like P2P object API for decentralized JavaScript applications.
   - default `powSteps: 22` (calibrated on this machine to about 1000ms)
   - automatic peer ban on invalid signature/PoW (`48h` default)
 - Team/subapp scoped broadcast passwords (`broadcastScope` + `broadcastPasswords`)
-- Browser-first distribution with minified build (`dist/dignity.min.js`)
+- Browser-first: published npm package includes IIFE, ESM, and CJS builds
 
 ## Install
 
@@ -146,15 +145,9 @@ bob.registerPeerPublicKey('alice', alice.getPublicKey());
 await alice.sendDirectMessage('bob', 'dm', { text: 'private payload' });
 ```
 
-## Browser Builds
+## Browser Usage
 
-Generated artifacts:
-
-- `dist/dignity.min.js` (IIFE, global `DignityJS`)
-- `dist/dignity.esm.js` (ESM)
-- `dist/dignity.cjs.js` (CommonJS)
-
-Example with CDN:
+The published npm package includes pre-built bundles (IIFE, ESM, CJS) generated at publish time. The `dist/` folder is not checked into the repository.
 
 ```html
 <script src="https://unpkg.com/dignity.js/dist/dignity.min.js"></script>
@@ -198,11 +191,11 @@ npm run test:pow-calibrate
 ## Publish
 
 ```bash
-npm test
-npm run build
 npm publish --access public
 ```
 
+The `prepublishOnly` script runs tests and build automatically.
+
 ## License
 
-Apache 2.0
+Apache 2.0 — see [LICENSE](LICENSE).
