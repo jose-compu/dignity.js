@@ -12,7 +12,8 @@ const DEFAULT_SECURITY_OPTIONS = {
   broadcastPasswords: {},
   resolveBroadcastPassword: null,
   powSteps: 22,
-  trustedPeerKeys: {}
+  trustedPeerKeys: {},
+  kdfIterations: 100000
 };
 
 function stableStringify(value) {
@@ -45,6 +46,37 @@ function bytesToHex(bytes) {
 
 function utf8ToBytes(value) {
   return naclUtil.decodeUTF8(value);
+}
+
+async function deriveBroadcastKey(password, salt, iterations) {
+  const subtle = globalThis.crypto && globalThis.crypto.subtle;
+
+  if (subtle) {
+    const keyMaterial = await subtle.importKey(
+      'raw',
+      utf8ToBytes(password),
+      'PBKDF2',
+      false,
+      ['deriveBits']
+    );
+    const bits = await subtle.deriveBits(
+      { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+      keyMaterial,
+      256
+    );
+    return new Uint8Array(bits);
+  }
+
+  try {
+    const { pbkdf2Sync } = require('crypto');
+    return new Uint8Array(pbkdf2Sync(password, Buffer.from(salt), iterations, 32, 'sha256'));
+  } catch (_ignored) {
+    return hash32(concatBytes(utf8ToBytes(password), salt));
+  }
+}
+
+function legacyBroadcastKey(password, salt) {
+  return hash32(concatBytes(utf8ToBytes(password), salt));
 }
 
 function normalizePeerPublicKey(publicKey) {
@@ -240,7 +272,7 @@ class MessageSecurityService {
       this.verifySignature(envelope);
     }
 
-    const payload = this.decryptPayload(envelope);
+    const payload = await this.decryptPayload(envelope);
 
     return {
       ignored: false,
@@ -320,7 +352,8 @@ class MessageSecurityService {
     const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
     const salt = nacl.randomBytes(16);
     const password = this.resolveBroadcastPassword(scope);
-    const key = hash32(concatBytes(utf8ToBytes(password), salt));
+    const iterations = this.options.kdfIterations || DEFAULT_SECURITY_OPTIONS.kdfIterations;
+    const key = await deriveBroadcastKey(password, salt, iterations);
     const encrypted = nacl.secretbox(plainText, nonce, key);
 
     return {
@@ -330,12 +363,14 @@ class MessageSecurityService {
         mode: 'broadcast',
         scope,
         nonce: naclUtil.encodeBase64(nonce),
-        salt: naclUtil.encodeBase64(salt)
+        salt: naclUtil.encodeBase64(salt),
+        kdf: 'pbkdf2',
+        kdfIterations: iterations
       }
     };
   }
 
-  decryptPayload(envelope) {
+  async decryptPayload(envelope) {
     const encryption = envelope.security ? envelope.security.encryption : null;
 
     if (!encryption || !encryption.enabled || !this.options.encryptionEnabled) {
@@ -349,7 +384,15 @@ class MessageSecurityService {
       const password = this.resolveBroadcastPassword(scope);
       const salt = naclUtil.decodeBase64(encryption.salt);
       const nonce = naclUtil.decodeBase64(encryption.nonce);
-      const key = hash32(concatBytes(utf8ToBytes(password), salt));
+
+      let key;
+      if (encryption.kdf === 'pbkdf2') {
+        const iterations = encryption.kdfIterations || DEFAULT_SECURITY_OPTIONS.kdfIterations;
+        key = await deriveBroadcastKey(password, salt, iterations);
+      } else {
+        key = legacyBroadcastKey(password, salt);
+      }
+
       const decrypted = nacl.secretbox.open(encryptedBuffer, nonce, key);
 
       if (!decrypted) {
@@ -470,5 +513,7 @@ class MessageSecurityService {
 module.exports = {
   MessageSecurityService,
   stableStringify,
+  deriveBroadcastKey,
+  legacyBroadcastKey,
   DEFAULT_SECURITY_OPTIONS
 };
