@@ -498,7 +498,9 @@ describe('React hooks', () => {
       expect(result.current?.data.title).toBe('hello');
     });
 
-    await node.update('notes', 'note-1', { title: 'updated' });
+    await act(async () => {
+      await node.update('notes', 'note-1', { title: 'updated' });
+    });
 
     await waitFor(() => {
       expect(result.current?.data.title).toBe('updated');

@@ -2956,6 +2956,49 @@ var require_dignity_p2p = __commonJS({
         }
         return [...new Set(collaborators.filter(Boolean))];
       }
+      getRecordPeerIds(collectionName, id, options = {}) {
+        const record = options.fromRecord || this.getCollection(collectionName).get(id);
+        if (!record) {
+          return [];
+        }
+        const includeSelf = options.includeSelf === true;
+        const peerIds = [record.ownerId, ...record.collaboratorIds || []];
+        return [...new Set(peerIds.filter(Boolean).filter((peerId) => includeSelf || peerId !== this.nodeId))];
+      }
+      resolveReplicationPeers(collectionName, id, options = {}, hints = {}) {
+        if (options.connectToPeers === false) {
+          return void 0;
+        }
+        if (Array.isArray(options.connectToPeers)) {
+          return options.connectToPeers;
+        }
+        const peerIds = /* @__PURE__ */ new Set();
+        if (hints.fromRecord) {
+          for (const peerId of this.getRecordPeerIds(collectionName, id, {
+            fromRecord: hints.fromRecord,
+            includeSelf: true
+          })) {
+            peerIds.add(peerId);
+          }
+        } else if (id) {
+          for (const peerId of this.getRecordPeerIds(collectionName, id, { includeSelf: true })) {
+            peerIds.add(peerId);
+          }
+        }
+        if (Array.isArray(options.collaborators)) {
+          for (const peerId of this.normalizeCollaboratorIds(options.collaborators)) {
+            peerIds.add(peerId);
+          }
+        }
+        if (Array.isArray(hints.extraPeerIds)) {
+          for (const peerId of hints.extraPeerIds) {
+            if (peerId) {
+              peerIds.add(peerId);
+            }
+          }
+        }
+        return [...peerIds].filter((peerId) => peerId && peerId !== this.nodeId);
+      }
       async create(collectionName, data, options = {}) {
         const collection = this.getCollection(collectionName);
         const id = options.id || this.idGenerator();
@@ -2981,6 +3024,9 @@ var require_dignity_p2p = __commonJS({
             messageType: "operation",
             operation,
             collectionName
+          }),
+          connectToPeers: this.resolveReplicationPeers(collectionName, null, options, {
+            extraPeerIds: options.collaborators
           })
         });
         return this.read(collectionName, id);
@@ -3055,7 +3101,8 @@ var require_dignity_p2p = __commonJS({
             messageType: "operation",
             operation,
             collectionName
-          })
+          }),
+          connectToPeers: this.resolveReplicationPeers(collectionName, id, options, { fromRecord: existing })
         });
         return this.read(collectionName, id);
       }
@@ -3108,6 +3155,10 @@ var require_dignity_p2p = __commonJS({
             messageType: "operation",
             operation,
             collectionName
+          }),
+          connectToPeers: this.resolveReplicationPeers(collectionName, id, options, {
+            fromRecord: existing,
+            extraPeerIds: [newOwnerId]
           })
         });
         return this.read(collectionName, id);
@@ -3135,7 +3186,8 @@ var require_dignity_p2p = __commonJS({
             messageType: "operation",
             operation,
             collectionName
-          })
+          }),
+          connectToPeers: this.resolveReplicationPeers(collectionName, id, options, { fromRecord: existing })
         });
       }
       registerPeerPublicKey(peerId, publicKey) {
@@ -3389,6 +3441,21 @@ var require_dignity_p2p = __commonJS({
           this.applyOperation(decrypted.payload);
           return;
         }
+        if (decrypted.messageType === "record:snapshot") {
+          const payload = decrypted.payload || {};
+          const { collectionName, record } = payload;
+          if (collectionName && record) {
+            const applied = this.restoreRecord(collectionName, record);
+            if (applied) {
+              this.emit("change", {
+                kind: "snapshot",
+                collection: collectionName,
+                id: record.id
+              });
+            }
+          }
+          return;
+        }
         if (decrypted.messageType === "presence:announce") {
           const payload = decrypted.payload || {};
           const scope = payload.scope || "main";
@@ -3494,6 +3561,32 @@ var require_dignity_p2p = __commonJS({
         });
         return true;
       }
+      async pushRecordSnapshot(collectionName, id, options = {}) {
+        const collection = this.getCollection(collectionName);
+        const raw = collection.get(id);
+        if (!raw || raw.deletedAt) {
+          throw new Error(`Object ${id} does not exist in ${collectionName}`);
+        }
+        const record = {
+          id: raw.id,
+          ownerId: raw.ownerId,
+          collaboratorIds: Array.isArray(raw.collaboratorIds) ? [...raw.collaboratorIds] : [],
+          data: { ...raw.data },
+          createdAt: raw.createdAt,
+          updatedAt: raw.updatedAt,
+          deletedAt: raw.deletedAt || null,
+          version: raw.version
+        };
+        await this.broadcastMessage("record:snapshot", { collectionName, record }, {
+          broadcastScope: options.broadcastScope || this.resolveBroadcastScope({
+            messageType: "record:snapshot",
+            collectionName,
+            id
+          }),
+          connectToPeers: this.resolveReplicationPeers(collectionName, id, options, { fromRecord: raw })
+        });
+        return record;
+      }
       applyOperation(operation) {
         if (!operation || !operation.opId || this.appliedOperations.has(operation.opId)) {
           return false;
@@ -3519,6 +3612,16 @@ var require_dignity_p2p = __commonJS({
           return true;
         }
         if (!current || current.deletedAt) {
+          if (operation.kind !== "create") {
+            this.emit("warning", {
+              type: "orphan-operation",
+              kind: operation.kind,
+              collection: operation.collectionName,
+              id: operation.id,
+              actorId: operation.actorId,
+              hint: "Peer is missing the record; pushRecordSnapshot from the owner to catch up."
+            });
+          }
           return false;
         }
         if (operation.kind === "transfer-ownership") {
