@@ -118,6 +118,24 @@ describe('SignalingPool', () => {
     await expect(pool.connect()).rejects.toThrow('No signaling provider could connect');
   });
 
+  test('send failover retries without excluding provider when id is missing', async () => {
+    let brokenSendCalls = 0;
+    const broken = {
+      priority: 0,
+      async connect() {},
+      async send() {
+        brokenSendCalls += 1;
+        throw new Error('send broken');
+      }
+    };
+    const backup = createProvider({ id: 'backup', priority: 1 });
+    const pool = new SignalingPool([broken, backup]);
+
+    pool.activeProvider = broken;
+    await expect(pool.send({ type: 'x' })).rejects.toThrow('send broken');
+    expect(brokenSendCalls).toBeGreaterThanOrEqual(2);
+  });
+
   test('send failover disconnects provider that lacks disconnect', async () => {
     const broken = {
       id: 'broken',

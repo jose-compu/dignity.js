@@ -18,6 +18,31 @@ describe('SlothPermutation core', () => {
     expect(verified).toBe(true);
   });
 
+  test('modVerif handles non-quadratic-residue verification path', () => {
+    const sloth = new SlothPermutation();
+    const challenge = 42n;
+    const steps = 4n;
+    const proof = sloth.generateProofVDF(steps, challenge);
+
+    const originalQuadRes = sloth.quadRes.bind(sloth);
+    jest.spyOn(sloth, 'quadRes').mockImplementation((value) => {
+      if (value === proof || value === ((-proof + SlothPermutation.p) % SlothPermutation.p)) {
+        return originalQuadRes(value);
+      }
+      return false;
+    });
+
+    expect(sloth.verifyProofVDF(steps, challenge, proof)).toBe(true);
+  });
+
+  test('modSqrtOp uses negated value for non-quadratic residues', () => {
+    const sloth = new SlothPermutation();
+    jest.spyOn(sloth, 'quadRes').mockReturnValue(false);
+
+    const result = sloth.modSqrtOp(7n);
+    expect(typeof result).toBe('bigint');
+  });
+
   test('verifyProofVDF rejects tampered proof', () => {
     const sloth = new SlothPermutation();
     const challenge = 42n;

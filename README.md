@@ -13,8 +13,9 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/dignity.js"><img src="https://img.shields.io/npm/v/dignity.js?color=cb3837&label=npm" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/dignity.js"><img src="https://img.shields.io/npm/dm/dignity.js?color=blue" alt="npm downloads"></a>
-  <img src="https://img.shields.io/badge/tests-122%20passing-brightgreen" alt="tests passing">
-  <img src="https://img.shields.io/badge/coverage-97%25-brightgreen" alt="coverage">
+  <a href="https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml"><img src="https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/tests-150%2B%20passing-brightgreen" alt="tests passing">
+  <img src="https://img.shields.io/badge/coverage-99%25-brightgreen" alt="coverage">
   <img src="https://img.shields.io/badge/license-Apache%202.0-black" alt="license">
 </p>
 
@@ -34,6 +35,9 @@ REST-like P2P object API for decentralized JavaScript applications.
   - default `powSteps: 22` (calibrated on this machine to about 1000ms)
   - automatic peer ban on invalid signature/PoW (`48h` default)
 - Team/subapp scoped broadcast passwords (`broadcastScope` + `broadcastPasswords`)
+- Optimistic concurrency helpers (`expectedVersion`, `updateWithRetry`, `conflict` events)
+- Optional IndexedDB persistence for browser reload survival
+- Optional React hooks via `dignity.js/react`
 - Browser-first: published npm package includes IIFE, ESM, and CJS builds
 
 ## Install
@@ -145,6 +149,57 @@ bob.registerPeerPublicKey('alice', alice.getPublicKey());
 await alice.sendDirectMessage('bob', 'dm', { text: 'private payload' });
 ```
 
+## Optimistic Concurrency
+
+Updates carry a monotonic `version`. Remote peers reject stale operations when `baseVersion` does not match.
+
+```js
+node.on('conflict', (event) => {
+  console.log('conflict', event.phase, event.expectedVersion, event.currentVersion);
+});
+
+await node.update('games', 'g1', { score: 10 }, { expectedVersion: 3 });
+
+await node.updateWithRetry('games', 'g1', (current) => ({
+  score: current.data.score + 1
+}));
+```
+
+Use `expectedVersion` for fail-fast local writes. Use `updateWithRetry` for read-modify-write loops in fast multiplayer state.
+
+## IndexedDB Persistence
+
+Persist replicated collections across page reloads:
+
+```js
+const { DignityP2P, IndexedDBPersistence } = require('dignity.js');
+
+const node = new DignityP2P({ nodeId, networkAdapter, security });
+const persistence = new IndexedDBPersistence({
+  dbName: 'my-app',
+  collections: ['games', 'matches']
+});
+
+await node.start();
+await persistence.attach(node);
+```
+
+## React Hooks
+
+Optional React integration (`react >= 18` peer dependency):
+
+```js
+import { useDignity, useCollection, usePeers } from 'dignity.js/react';
+
+function Room() {
+  const { node, status } = useDignity(config);
+  const games = useCollection(node, 'games');
+  const peers = usePeers(node, 'room:chess', { includeSelf: false });
+
+  return <pre>{JSON.stringify({ status, games, peers }, null, 2)}</pre>;
+}
+```
+
 ## Browser Usage
 
 The published npm package includes pre-built bundles (IIFE, ESM, CJS) generated at publish time. The `dist/` folder is not checked into the repository.
@@ -195,7 +250,7 @@ npm run test:pow-calibrate
 
 ## Docs and Examples
 
-- Docs site source: `docs/index.html`
+- Docs site source: `docs/index.html` (serve locally with `npm run docs:serve`)
 - API metadata: `docs/openapi-like.json`
 - Minimal demos:
   - `examples/decentralized-tictactoe.js`

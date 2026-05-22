@@ -9,6 +9,7 @@ describe('public API exports', () => {
     expect(api.MessageSecurityService).toBeDefined();
     expect(api.VDF).toBeDefined();
     expect(api.SlothPermutation).toBeDefined();
+    expect(api.IndexedDBPersistence).toBeDefined();
   });
 
   test('exports sane default configs', () => {

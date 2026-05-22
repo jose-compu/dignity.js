@@ -713,6 +713,237 @@ describe('DignityP2P', () => {
     expect(alice.bannedPeers.size).toBe(0);
   });
 
+  test('getCollection requires collectionName', () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+
+    expect(() => alice.getCollection('')).toThrow('collectionName is required');
+    expect(() => alice.getCollection(null)).toThrow('collectionName is required');
+  });
+
+  test('list with includeDeleted returns active and deleted records', async () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    await alice.start();
+
+    await alice.create('notes', { title: 'active' }, { id: 'active-1' });
+    await alice.create('notes', { title: 'gone' }, { id: 'deleted-1' });
+    await alice.remove('notes', 'deleted-1');
+
+    const records = alice.list('notes', { includeDeleted: true });
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'active-1', data: { title: 'active' } }),
+        expect.objectContaining({ id: 'deleted-1', deletedAt: expect.any(Number) })
+      ])
+    );
+
+    await alice.stop();
+  });
+
+  test('stop emits warning when leaveDiscovery fails', async () => {
+    const adapter = new InMemoryNetworkAdapter(hub);
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: adapter,
+      security: defaultSecurity
+    });
+    await alice.start();
+    await alice.joinDiscovery('main');
+
+    const warningHandler = jest.fn();
+    alice.on('warning', warningHandler);
+    adapter.broadcast = jest.fn(async () => {
+      throw new Error('network down');
+    });
+
+    await alice.stop();
+
+    expect(warningHandler).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'presence-leave-failed', scope: 'main' })
+    );
+  });
+
+  test('joinDiscovery clears previous heartbeat timer when rejoining scope', async () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    await alice.start();
+
+    const clearSpy = jest.spyOn(global, 'clearInterval');
+    await alice.joinDiscovery('room', { heartbeatIntervalMs: 5000 });
+    await alice.joinDiscovery('room', { heartbeatIntervalMs: 8000 });
+
+    expect(clearSpy).toHaveBeenCalled();
+    clearSpy.mockRestore();
+
+    await alice.stop();
+  });
+
+  test('emits warning when presence heartbeat fails', async () => {
+    jest.useFakeTimers();
+
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    await alice.start();
+
+    const warningHandler = jest.fn();
+    alice.on('warning', warningHandler);
+
+    await alice.joinDiscovery('room', { heartbeatIntervalMs: 1000 });
+
+    alice.announcePresence = jest.fn(async () => {
+      throw new Error('heartbeat failed');
+    });
+
+    jest.advanceTimersByTime(1000);
+    await Promise.resolve();
+
+    expect(warningHandler).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'presence-heartbeat-failed', scope: 'room' })
+    );
+
+    jest.useRealTimers();
+    await alice.stop();
+  });
+
+  test('ignores presence announce without peerId', async () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    await alice.start();
+
+    alice.securityService.decryptIncomingMessage = jest.fn(async () => ({
+      messageType: 'presence:announce',
+      senderId: null,
+      payload: { scope: 'main', metadata: { nickname: 'ghost' } }
+    }));
+
+    await alice.handleIncomingMessage({ encrypted: true });
+
+    expect(alice.listPeers('main', { includeSelf: false })).toEqual([]);
+
+    await alice.stop();
+  });
+
+  test('emits warning when presence handshake fails', async () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    await alice.start();
+    await alice.joinDiscovery('main');
+
+    alice.announcePresence = jest.fn(async () => {
+      throw new Error('handshake failed');
+    });
+
+    const warningHandler = jest.fn();
+    alice.on('warning', warningHandler);
+
+    alice.securityService.decryptIncomingMessage = jest.fn(async () => ({
+      messageType: 'presence:announce',
+      senderId: 'bob',
+      payload: {
+        scope: 'main',
+        peerId: 'bob',
+        metadata: { nickname: 'bob' },
+        ttlMs: 45000,
+        announcedAt: Date.now()
+      }
+    }));
+
+    await alice.handleIncomingMessage({ encrypted: true });
+
+    expect(warningHandler).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'presence-handshake-failed', scope: 'main' })
+    );
+
+    await alice.stop();
+  });
+
+  test('applyOperation ignores create when active object already exists', () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+
+    const baseOp = {
+      kind: 'create',
+      collectionName: 'games',
+      id: 'g1',
+      actorId: 'alice',
+      ownerId: 'alice',
+      timestamp: 1,
+      payload: { score: 0 }
+    };
+
+    expect(alice.applyOperation({ ...baseOp, opId: 'op-1' })).toBe(true);
+    expect(alice.applyOperation({ ...baseOp, opId: 'op-2', payload: { score: 1 } })).toBe(false);
+  });
+
+  test('emits message event for custom decrypted payloads', async () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    await alice.start();
+
+    const handler = jest.fn();
+    alice.on('message', handler);
+
+    alice.securityService.decryptIncomingMessage = jest.fn(async () => ({
+      senderId: 'bob',
+      targetId: 'alice',
+      messageType: 'chat',
+      payload: { text: 'hello' }
+    }));
+
+    await alice.handleIncomingMessage({ encrypted: true });
+
+    expect(handler).toHaveBeenCalledWith({
+      senderId: 'bob',
+      targetId: 'alice',
+      type: 'chat',
+      payload: { text: 'hello' }
+    });
+
+    await alice.stop();
+  });
+
+  test('getBanInfo clears expired bans', () => {
+    let fakeNow = 1000;
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity,
+      now: () => fakeNow
+    });
+
+    alice.banPeer('bad-peer', 500, 'test');
+    expect(alice.getBanInfo('bad-peer')).not.toBeNull();
+
+    fakeNow += 600;
+    expect(alice.getBanInfo('bad-peer')).toBeNull();
+    expect(alice.isPeerBanned('bad-peer')).toBe(false);
+  });
+
   test('presence entries expire by ttl', async () => {
     let fakeNow = 1000;
     const now = () => fakeNow;

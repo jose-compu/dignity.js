@@ -145,6 +145,29 @@ describe('WebSocketSignalingProvider', () => {
     expect(provider.socket).toBeNull();
   });
 
+  test('buildConnectionUrl preserves existing id and appends token', () => {
+    const provider = new WebSocketSignalingProvider({
+      url: 'wss://peerjs.92k.de/peerjs?id=existing-id&key=peerjs',
+      WebSocketImpl: MockWebSocket
+    });
+
+    const built = provider.buildConnectionUrl();
+    expect(built).toContain('id=existing-id');
+    expect(built).toMatch(/[?&]token=[a-z0-9]{10}/);
+    expect(built.match(/id=/g)).toHaveLength(1);
+  });
+
+  test('buildConnectionUrl appends id when only token is present', () => {
+    const provider = new WebSocketSignalingProvider({
+      url: 'wss://peerjs.92k.de/peerjs?token=existing-token&key=peerjs',
+      WebSocketImpl: MockWebSocket
+    });
+
+    const built = provider.buildConnectionUrl();
+    expect(built).toContain('token=existing-token');
+    expect(built).toMatch(/[?&]id=dignityjs_[a-z0-9]{10}/);
+  });
+
   test('returns url unchanged for non-peerjs hosts', () => {
     const provider = new WebSocketSignalingProvider({
       url: 'wss://custom-server.example/signaling',

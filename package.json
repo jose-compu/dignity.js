@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "P2P object API for decentralized JavaScript applications",
   "main": "dist/dignity.cjs.js",
   "module": "dist/dignity.esm.js",
@@ -12,6 +12,11 @@
       "require": "./dist/dignity.cjs.js",
       "import": "./dist/dignity.esm.js",
       "default": "./dist/dignity.esm.js"
+    },
+    "./react": {
+      "require": "./src/react/index.js",
+      "import": "./src/react/index.js",
+      "default": "./src/react/index.js"
     }
   },
   "files": [
@@ -40,9 +45,22 @@
     "objects"
   ],
   "license": "Apache 2.0",
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@testing-library/react": "^16.3.0",
     "esbuild": "^0.28.0",
-    "jest": "^29.7.0"
+    "fake-indexeddb": "^6.0.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
   },
   "dependencies": {
     "peerjs": "^1.5.5",
