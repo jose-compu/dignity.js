@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "P2P object API for decentralized JavaScript applications",
   "main": "dist/dignity.cjs.js",
   "module": "dist/dignity.esm.js",

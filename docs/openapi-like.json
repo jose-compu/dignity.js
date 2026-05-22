@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "REST-like object API over peer-to-peer replication",
   "resources": {
     "collections/{collection}/{id}": {
