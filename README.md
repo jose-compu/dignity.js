@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="https://jose-compu.github.io/dignity.js/"><img src="https://img.shields.io/badge/docs-online-5B7FFF" alt="documentation"></a>
   <a href="https://www.npmjs.com/package/dignity.js"><img src="https://img.shields.io/npm/v/dignity.js?color=cb3837&label=npm" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/dignity.js"><img src="https://img.shields.io/npm/dm/dignity.js?color=blue" alt="npm downloads"></a>
   <a href="https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml"><img src="https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -250,6 +251,7 @@ npm run test:pow-calibrate
 
 ## Docs and Examples
 
+- **Documentation:** [jose-compu.github.io/dignity.js](https://jose-compu.github.io/dignity.js/)
 - Docs site source: `docs/index.html` (serve locally with `npm run docs:serve`)
 - API metadata: `docs/openapi-like.json`
 - Minimal demos:

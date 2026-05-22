@@ -3,17 +3,107 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>dignity.js v0.4.0 docs</title>
+    <meta name="description" content="dignity.js v0.4.0 — REST-like P2P object API for decentralized JavaScript applications." />
+    <title>dignity.js · Documentation</title>
+    <link rel="stylesheet" href="./assets/highlight/github.min.css" media="(prefers-color-scheme: light)" />
+    <link rel="stylesheet" href="./assets/highlight/github-dark.min.css" media="(prefers-color-scheme: dark)" />
     <link rel="stylesheet" href="./assets/styles.css" />
   </head>
   <body>
-    <main>
-      <h1>dignity.js documentation</h1>
-      <p class="subtitle">Version 0.4.0 - P2P object API for decentralized JavaScript applications</p>
+    <header class="site-header">
+      <a class="site-header__brand" href="#overview">
+        <img src="./assets/dignity-logo.svg" alt="" width="120" height="28" />
+        <span>dignity.js</span>
+        <span class="site-header__version">v0.4.0</span>
+      </a>
+      <div class="site-header__links">
+        <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
+        <a href="https://github.com/jose-compu/dignity.js" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="./openapi-like.json">API JSON</a>
+      </div>
+      <button class="menu-toggle" type="button" aria-label="Toggle navigation">Menu</button>
+    </header>
 
-      <section>
-        <h2>Quick start</h2>
-        <pre><code>const {
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="sidebar__group">
+          <div class="sidebar__label">Getting started</div>
+          <nav>
+            <a href="#overview">Overview</a>
+            <a href="#installation">Installation</a>
+            <a href="#quick-start">Quick start</a>
+            <a href="#browser">Browser usage</a>
+          </nav>
+        </div>
+        <div class="sidebar__group">
+          <div class="sidebar__label">Guide</div>
+          <nav>
+            <a href="#object-api">Object API</a>
+            <a href="#discovery">Room discovery</a>
+            <a href="#messaging">Direct messaging</a>
+            <a href="#concurrency">Concurrency</a>
+            <a href="#security">Security model</a>
+            <a href="#persistence">IndexedDB persistence</a>
+            <a href="#react">React hooks</a>
+            <a href="#signaling">Signaling</a>
+          </nav>
+        </div>
+        <div class="sidebar__group">
+          <div class="sidebar__label">Reference</div>
+          <nav>
+            <a href="#api-reference">API reference</a>
+            <a href="#events">Events</a>
+            <a href="#exports">Package exports</a>
+            <a href="#examples">Examples</a>
+            <a href="#development">Development</a>
+          </nav>
+        </div>
+      </aside>
+
+      <main class="content">
+        <div class="content__inner">
+          <section id="overview" class="section">
+            <h1 class="page-title">Documentation</h1>
+            <p class="lead">
+              <strong>dignity.js</strong> is a REST-like P2P object API for decentralized JavaScript
+              applications. Synchronize shared objects across browsers with owner authorization,
+              scoped broadcast encryption, and built-in anti-abuse controls.
+            </p>
+
+            <div class="card-grid">
+              <article class="card">
+                <h3>Object CRUD</h3>
+                <p><code>create</code>, <code>read</code>, <code>list</code>, <code>update</code>, <code>remove</code> over P2P replication.</p>
+              </article>
+              <article class="card">
+                <h3>Security default-on</h3>
+                <p>Signing, encryption, Sloth VDF proof-of-work, and automatic peer bans.</p>
+              </article>
+              <article class="card">
+                <h3>Browser-first</h3>
+                <p>IIFE, ESM, and CJS bundles. Optional IndexedDB persistence and React hooks.</p>
+              </article>
+            </div>
+          </section>
+
+          <section id="installation" class="section">
+            <h2>Installation</h2>
+            <div class="code-block">
+              <span class="code-block__label">npm</span>
+              <pre><code class="language-bash">npm install dignity.js</code></pre>
+            </div>
+            <p>For React hooks, install React 18+ as a peer dependency:</p>
+            <div class="code-block">
+              <pre><code class="language-bash">npm install dignity.js react react-dom</code></pre>
+            </div>
+          </section>
+
+          <section id="quick-start" class="section">
+            <h2>Quick start</h2>
+            <p>Create a node, join a room, and replicate an object between two peers:</p>
+            <div class="code-block">
+              <span class="code-block__label">Node.js / ESM</span>
+              <pre><code class="language-javascript">const {
   DignityP2P,
   InMemoryNetworkHub,
   InMemoryNetworkAdapter
@@ -30,77 +120,335 @@ const alice = new DignityP2P({
   }
 });
 
-await alice.start();
-await alice.create('notes', { title: 'hello world' }, { id: 'note-1' });
-const note = alice.read('notes', 'note-1');</code></pre>
-      </section>
-
-      <section>
-        <h2>REST-like object API</h2>
-        <ul>
-          <li><code>create(collection, data, options)</code> -> owner is the creator.</li>
-          <li><code>read(collection, id)</code> -> returns object or <code>null</code>.</li>
-          <li><code>list(collection, options)</code> -> list active objects (or include deleted markers).</li>
-          <li><code>update(collection, id, patch, options)</code> -> only object owner can update.</li>
-          <li><code>updateWithRetry(collection, id, patchFn, options)</code> -> optimistic read-modify-write retries.</li>
-          <li><code>remove(collection, id)</code> -> only object owner can delete.</li>
-        </ul>
-      </section>
-
-      <section>
-        <h2>Optimistic concurrency</h2>
-        <pre><code>node.on('conflict', (event) => {
-  console.log(event.phase, event.expectedVersion, event.currentVersion);
+const bob = new DignityP2P({
+  nodeId: 'bob',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security: {
+    appPassword: 'shared-out-of-band-password',
+    powSteps: 22
+  }
 });
 
-await node.update('games', 'g1', { score: 10 }, { expectedVersion: 3 });</code></pre>
-      </section>
+await alice.start();
+await bob.start();
 
-      <section>
-        <h2>Room / team discovery</h2>
-        <pre><code>await node.joinDiscovery('team:red', {\n  metadata: { nickname: 'alice' },\n  heartbeatIntervalMs: 15000,\n  ttlMs: 45000\n});\n\nconst peers = node.listPeers('team:red', { includeSelf: false });\nawait node.leaveDiscovery('team:red');</code></pre>
-      </section>
+await alice.joinDiscovery('main', { metadata: { nickname: 'alice' } });
+await bob.joinDiscovery('main', { metadata: { nickname: 'bob' } });
 
-      <section>
-        <h2>Security defaults (enabled)</h2>
-        <ul>
-          <li><strong>Signing:</strong> every message is signed by sender keypair (Ed25519).</li>
-          <li><strong>Broadcast encryption:</strong> AES secretbox with PBKDF2-SHA256 derived key from <code>appPassword</code> or scoped <code>broadcastPasswords</code>.</li>
-          <li><strong>Direct encryption:</strong> NaCl box to recipient X25519 public key (true E2E for direct messages).</li>
-          <li><strong>PoW:</strong> Sloth VDF proof per message, default <code>powSteps: 22</code>.</li>
-          <li><strong>Peer bans:</strong> invalid signature or invalid PoW bans sender for 48h by default.</li>
-          <li><strong>Legacy KDF:</strong> older single-hash broadcast messages remain decryptable.</li>
-        </ul>
-      </section>
+await alice.create('notes', { title: 'hello decentralized world' }, {
+  id: 'note-1',
+  broadcastScope: 'main'
+});
 
-      <section>
-        <h2>IndexedDB persistence</h2>
-        <pre><code>const { IndexedDBPersistence } = require('dignity.js');
+console.log(bob.read('notes', 'note-1'));
 
+await alice.leaveDiscovery('main');
+await bob.leaveDiscovery('main');
+await alice.stop();
+await bob.stop();</code></pre>
+            </div>
+            <div class="callout">
+              <strong>In-memory adapter</strong>
+              <code>InMemoryNetworkAdapter</code> is for tests and local demos. Production browser apps use a WebRTC network adapter (see project issues for the browser transport roadmap).
+            </div>
+          </section>
+
+          <section id="browser" class="section">
+            <h2>Browser usage</h2>
+            <p>Pre-built bundles are published to npm and available via CDN:</p>
+            <div class="code-block">
+              <span class="code-block__label">IIFE (global <code>DignityJS</code>)</span>
+              <pre><code class="language-xml">&lt;script src="https://unpkg.com/dignity.js/dist/dignity.min.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  const { DignityP2P } = DignityJS;
+&lt;/script&gt;</code></pre>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Bundle</th>
+                    <th>Path</th>
+                    <th>Format</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Minified browser</td>
+                    <td><code>dist/dignity.min.js</code></td>
+                    <td>IIFE</td>
+                  </tr>
+                  <tr>
+                    <td>ES modules</td>
+                    <td><code>dist/dignity.esm.js</code></td>
+                    <td>ESM</td>
+                  </tr>
+                  <tr>
+                    <td>Node / CommonJS</td>
+                    <td><code>dist/dignity.cjs.js</code></td>
+                    <td>CJS</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="object-api" class="section">
+            <h2>Object API</h2>
+            <p>
+              The core API mirrors REST semantics. Each object belongs to a <strong>collection</strong>.
+              The peer that creates an object becomes its <strong>owner</strong> — only the owner may update or delete it.
+            </p>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Description</th>
+                    <th>Authorization</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>create(collection, data, options?)</code></td>
+                    <td>Create a new object. Returns the normalized record.</td>
+                    <td>Creator becomes owner</td>
+                  </tr>
+                  <tr>
+                    <td><code>read(collection, id)</code></td>
+                    <td>Read one object, or <code>null</code> if missing/deleted.</td>
+                    <td>—</td>
+                  </tr>
+                  <tr>
+                    <td><code>list(collection, options?)</code></td>
+                    <td>List objects. Set <code>includeDeleted: true</code> for tombstones.</td>
+                    <td>—</td>
+                  </tr>
+                  <tr>
+                    <td><code>update(collection, id, patch, options?)</code></td>
+                    <td>Merge <code>patch</code> into object data and increment version.</td>
+                    <td>Owner only</td>
+                  </tr>
+                  <tr>
+                    <td><code>updateWithRetry(collection, id, patchFn, options?)</code></td>
+                    <td>Read-modify-write with automatic retry on version conflicts.</td>
+                    <td>Owner only</td>
+                  </tr>
+                  <tr>
+                    <td><code>remove(collection, id, options?)</code></td>
+                    <td>Soft-delete the object (tombstone).</td>
+                    <td>Owner only</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3>Scoped broadcast</h3>
+            <p>Pass <code>broadcastScope</code> on create/update to select a team or room password namespace:</p>
+            <div class="code-block">
+              <pre><code class="language-javascript">await node.create('matches', { mode: 'coop' }, {
+  id: 'm-1',
+  broadcastScope: 'coop:red'
+});</code></pre>
+            </div>
+            <p>Configure per-scope passwords via <code>security.broadcastPasswords</code>.</p>
+          </section>
+
+          <section id="discovery" class="section">
+            <h2>Room / team discovery</h2>
+            <p>Discover active peers in a named scope (room, team, raid, etc.):</p>
+            <div class="code-block">
+              <pre><code class="language-javascript">await node.joinDiscovery('team:red', {
+  metadata: { nickname: 'alice' },
+  heartbeatIntervalMs: 15000,
+  ttlMs: 45000
+});
+
+const peers = node.listPeers('team:red', { includeSelf: false });
+
+await node.leaveDiscovery('team:red');</code></pre>
+            </div>
+          </section>
+
+          <section id="messaging" class="section">
+            <h2>Direct secure messaging</h2>
+            <p>Send end-to-end encrypted messages to a specific peer:</p>
+            <div class="code-block">
+              <pre><code class="language-javascript">alice.registerPeerPublicKey('bob', bob.getPublicKey());
+bob.registerPeerPublicKey('alice', alice.getPublicKey());
+
+await alice.sendDirectMessage('bob', 'dm', { text: 'private payload' });</code></pre>
+            </div>
+          </section>
+
+          <section id="concurrency" class="section">
+            <h2>Optimistic concurrency</h2>
+            <p>
+              Every update carries a monotonic <code>version</code>. Stale operations are rejected when
+              <code>baseVersion</code> does not match. Listen for <code>conflict</code> events or use
+              built-in helpers:
+            </p>
+            <div class="code-block">
+              <pre><code class="language-javascript">node.on('conflict', (event) => {
+  // event.phase: 'local' | 'remote'
+  console.log(event.expectedVersion, event.currentVersion);
+});
+
+// Fail fast on stale local writes
+await node.update('games', 'g1', { score: 10 }, { expectedVersion: 3 });
+
+// Automatic retry for read-modify-write loops
+await node.updateWithRetry('games', 'g1', (current) => ({
+  score: current.data.score + 1
+}));</code></pre>
+            </div>
+          </section>
+
+          <section id="security" class="section">
+            <h2>Security model</h2>
+            <p>All security features are enabled by default. Configure via the <code>security</code> constructor option.</p>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Feature</th>
+                    <th>Default</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Signing</td>
+                    <td>On</td>
+                    <td>Ed25519 signature on every message</td>
+                  </tr>
+                  <tr>
+                    <td>Broadcast encryption</td>
+                    <td>On</td>
+                    <td>AES secretbox; PBKDF2-SHA256 key from <code>appPassword</code> (100k iterations)</td>
+                  </tr>
+                  <tr>
+                    <td>Direct encryption</td>
+                    <td>On</td>
+                    <td>NaCl box (X25519) — true E2E to recipient public key</td>
+                  </tr>
+                  <tr>
+                    <td>Proof-of-work</td>
+                    <td>On</td>
+                    <td>Sloth VDF; default <code>powSteps: 22</code> (~1s on reference hardware)</td>
+                  </tr>
+                  <tr>
+                    <td>Peer bans</td>
+                    <td>On</td>
+                    <td>Invalid signature or PoW → 48h ban (configurable)</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="callout callout--warn">
+              <strong>Broadcast mode is not E2E</strong>
+              All peers that know the scope password can decrypt broadcast traffic. Use direct mode for sensitive per-peer data.
+            </div>
+
+            <h3>Security configuration</h3>
+            <div class="code-block">
+              <pre><code class="language-javascript">const node = new DignityP2P({
+  nodeId: 'alice',
+  networkAdapter,
+  security: {
+    appPassword: 'shared-out-of-band-password',
+    broadcastPasswords: {
+      'coop:red': 'red-team-secret',
+      'coop:blue': 'blue-team-secret'
+    },
+    powSteps: 22,
+    kdfIterations: 100000,
+    banDurationMs: 48 * 60 * 60 * 1000
+  }
+});</code></pre>
+            </div>
+          </section>
+
+          <section id="persistence" class="section">
+            <h2>IndexedDB persistence</h2>
+            <p>Survive page reloads by persisting replicated object state to IndexedDB:</p>
+            <div class="code-block">
+              <pre><code class="language-javascript">const { DignityP2P, IndexedDBPersistence } = require('dignity.js');
+
+const node = new DignityP2P({ nodeId, networkAdapter, security });
 const persistence = new IndexedDBPersistence({
   dbName: 'my-app',
-  collections: ['games']
+  collections: ['games', 'matches']  // omit to persist all collections
 });
 
 await node.start();
-await persistence.attach(node);</code></pre>
-      </section>
+await persistence.attach(node);
 
-      <section>
-        <h2>React hooks</h2>
-        <pre><code>import { useDignity, useCollection, usePeers } from 'dignity.js/react';</code></pre>
-        <p>Requires <code>react &gt;= 18</code> as a peer dependency.</p>
-      </section>
+// Later
+await persistence.detach();</code></pre>
+            </div>
+          </section>
 
-      <section>
-        <h2>Signaling defaults and customization</h2>
-        <pre><code>const {
+          <section id="react" class="section">
+            <h2>React hooks</h2>
+            <p>Optional integration via <code>dignity.js/react</code> (requires React ≥ 18):</p>
+            <div class="code-block">
+              <pre><code class="language-javascript">import { useDignity, useCollection, usePeers } from 'dignity.js/react';
+
+function Room() {
+  const { node, status, error } = useDignity(config);
+  const games = useCollection(node, 'games');
+  const peers = usePeers(node, 'room:chess', { includeSelf: false });
+
+  if (status === 'starting') return &lt;p&gt;Connecting…&lt;/p&gt;;
+  if (error) return &lt;p&gt;Error: {error.message}&lt;/p&gt;;
+
+  return (
+    &lt;pre&gt;{JSON.stringify({ status, games, peers }, null, 2)}&lt;/pre&gt;
+  );
+}</code></pre>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Hook</th>
+                    <th>Returns</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>useDignity(config)</code></td>
+                    <td><code>{ node, status, error }</code> — starts/stops node on mount/unmount</td>
+                  </tr>
+                  <tr>
+                    <td><code>useCollection(node, name)</code></td>
+                    <td>Reactive array from <code>node.list(name)</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>usePeers(node, scope, options?)</code></td>
+                    <td>Reactive peer list from discovery</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="signaling" class="section">
+            <h2>Signaling</h2>
+            <p>Default PeerJS-compatible signaling endpoints are included. Customize with <code>createDefaultSignalingPool</code>:</p>
+            <div class="code-block">
+              <pre><code class="language-javascript">const {
   createDefaultSignalingPool,
   WebSocketSignalingProvider
 } = require('dignity.js');
 
 const pool = createDefaultSignalingPool({
-  cloudflareUrls: ['wss://your-cloudflare-endpoint.example'],
+  cloudflareUrls: ['wss://your-endpoint.example/peerjs?key=peerjs'],
   fallbackUrls: ['wss://relay-a.example', 'wss://relay-b.example'],
   customProviders: [
     new WebSocketSignalingProvider({
@@ -110,30 +458,180 @@ const pool = createDefaultSignalingPool({
     })
   ]
 });</code></pre>
-        <p>
-          Machine-readable API metadata is available in
-          <a href="./openapi-like.json">openapi-like.json</a>.
-        </p>
-      </section>
+            </div>
+            <p>Default public endpoints:</p>
+            <ul>
+              <li><code>wss://peerjs.92k.de/peerjs?key=peerjs</code></li>
+              <li><code>wss://0.peerjs.com/peerjs?key=peerjs</code></li>
+            </ul>
+          </section>
 
-      <section>
-        <h2>Minimal examples</h2>
-        <ul>
-          <li><code>examples/decentralized-tictactoe.js</code> - replicated board state and owner authorization.</li>
-          <li><code>examples/decentralized-chess-lite.js</code> - replicated move history with a compact board model.</li>
-        </ul>
-        <pre><code>npm run example:tictactoe\nnpm run example:chess</code></pre>
-      </section>
+          <section id="api-reference" class="section">
+            <h2>API reference</h2>
+            <p>Primary class: <code>DignityP2P</code></p>
 
-      <section>
-        <h2>Publish-ready browser bundles</h2>
-        <ul>
-          <li><code>dist/dignity.min.js</code> - minified browser IIFE bundle (global <code>DignityJS</code>).</li>
-          <li><code>dist/dignity.esm.js</code> - browser ESM bundle.</li>
-          <li><code>dist/dignity.cjs.js</code> - Node/CommonJS bundle.</li>
-        </ul>
-        <pre><code>npm test\nnpm run build\nnpm publish --access public</code></pre>
-      </section>
-    </main>
+            <h3>Constructor</h3>
+            <div class="code-block">
+              <pre><code class="language-javascript">new DignityP2P({
+  nodeId,           // required — unique peer identifier
+  networkAdapter,   // required — transport implementation
+  security,         // optional — MessageSecurityService options
+  now,              // optional — clock injection (tests)
+  idGenerator       // optional — custom operation id factory
+})</code></pre>
+            </div>
+
+            <h3>Lifecycle</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td><code>start()</code></td><td>Connect adapter and begin receiving messages</td></tr>
+                  <tr><td><code>stop()</code></td><td>Leave discovery scopes and disconnect</td></tr>
+                  <tr><td><code>getPublicKey()</code></td><td>Return this node's public key bundle</td></tr>
+                  <tr><td><code>registerPeerPublicKey(id, key)</code></td><td>Trust a remote peer's keys</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p>
+              Machine-readable metadata:
+              <a href="./openapi-like.json">openapi-like.json</a>
+            </p>
+          </section>
+
+          <section id="events" class="section">
+            <h2>Events</h2>
+            <p><code>DignityP2P</code> extends <code>EventEmitter</code>. Common events:</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Payload</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="tag tag--event">change</span></td>
+                    <td><code>{ kind, collection, id }</code> — object created, updated, or deleted</td>
+                  </tr>
+                  <tr>
+                    <td><span class="tag tag--event">conflict</span></td>
+                    <td><code>{ kind, collection, id, expectedVersion, currentVersion, phase }</code></td>
+                  </tr>
+                  <tr>
+                    <td><span class="tag tag--event">peerdiscovered</span></td>
+                    <td><code>{ scope, peerId, metadata }</code></td>
+                  </tr>
+                  <tr>
+                    <td><span class="tag tag--event">peerleft</span></td>
+                    <td><code>{ scope, peerId, reason }</code></td>
+                  </tr>
+                  <tr>
+                    <td><span class="tag tag--event">message</span></td>
+                    <td><code>{ senderId, targetId, type, payload }</code> — custom decrypted messages</td>
+                  </tr>
+                  <tr>
+                    <td><span class="tag tag--event">securityerror</span></td>
+                    <td><code>{ senderId, error }</code></td>
+                  </tr>
+                  <tr>
+                    <td><span class="tag tag--event">warning</span></td>
+                    <td><code>{ type, ... }</code> — non-fatal issues (heartbeat, persistence, etc.)</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="exports" class="section">
+            <h2>Package exports</h2>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Import path</th>
+                    <th>Exports</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>dignity.js</code></td>
+                    <td><code>DignityP2P</code>, <code>IndexedDBPersistence</code>, signaling providers, in-memory adapters, security utilities</td>
+                  </tr>
+                  <tr>
+                    <td><code>dignity.js/react</code></td>
+                    <td><code>useDignity</code>, <code>useCollection</code>, <code>usePeers</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="examples" class="section">
+            <h2>Examples</h2>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Script</th>
+                    <th>Description</th>
+                    <th>Run</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>examples/decentralized-tictactoe.js</code></td>
+                    <td>Replicated board state and owner authorization</td>
+                    <td><code>npm run example:tictactoe</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>examples/decentralized-chess-lite.js</code></td>
+                    <td>Replicated move history with compact board model</td>
+                    <td><code>npm run example:chess</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="development" class="section">
+            <h2>Development</h2>
+            <div class="code-block">
+              <pre><code class="language-bash"># Run tests (177+ passing, ~99.5% line coverage)
+npm test
+
+# Build browser + Node bundles
+npm run build
+
+# Serve docs locally
+npm run docs:serve
+
+# Run examples
+npm run example:tictactoe
+npm run example:chess</code></pre>
+            </div>
+          </section>
+
+          <footer class="site-footer">
+            <p>
+              dignity.js v0.4.0 ·
+              <a href="https://github.com/jose-compu/dignity.js/blob/main/LICENSE">Apache 2.0</a> ·
+              <a href="https://github.com/jose-compu/dignity.js">GitHub</a> ·
+              <a href="https://www.npmjs.com/package/dignity.js">npm</a>
+            </p>
+          </footer>
+        </div>
+      </main>
+    </div>
+
+    <script src="./assets/highlight/highlight.min.js"></script>
+    <script src="./assets/docs.js"></script>
   </body>
 </html>

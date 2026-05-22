@@ -32,7 +32,7 @@
     "test:pow-calibrate": "jest tests/unit/sloth-vdf-timing.test.js --runInBand",
     "build": "node scripts/build.js",
     "docs:serve": "npx http-server docs -p 4173 -o",
-    "docs:check": "node -e \"require('fs').accessSync('docs/index.html')\"",
+    "docs:check": "node -e \"const fs=require('fs');['docs/index.html','docs/assets/highlight/highlight.min.js','docs/assets/highlight/github.min.css','docs/assets/highlight/github-dark.min.css'].forEach(p=>fs.accessSync(p));\"",
     "example:tictactoe": "node examples/decentralized-tictactoe.js",
     "example:chess": "node examples/decentralized-chess-lite.js",
     "prepublishOnly": "npm test && npm run build"
