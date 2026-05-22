@@ -11,9 +11,16 @@ const { MessageSecurityService } = require('../security/message-security-service
  * - update(collection, id, patch)
  * - remove(collection, id)
  *
+ * PeerJS / mesh replication helpers (see README "PeerJS mesh bootstrap"):
+ * - connectToPeer(peerId), getConnectionStats(), ensureConnectedToPeers(peerIds)
+ * - joinDiscovery(scope, { bootstrapPeerIds })
+ * - broadcastMessage(type, payload, { connectToPeers, broadcastScope })
+ * - pushRecordSnapshot(collection, id, options) — full record sync for late joiners
+ * - getRecordPeerIds(collection, id) — owner + collaborators for connectToPeers
+ *
  * Authorization model:
  * - object creator is the owner
- * - only owner can update or delete
+ * - only owner can update or delete (collaborators may update when listed)
  */
 class DignityP2P extends EventEmitter {
   constructor({ nodeId, networkAdapter, idGenerator, now, security } = {}) {
@@ -97,11 +104,85 @@ class DignityP2P extends EventEmitter {
     return {
       id: record.id,
       ownerId: record.ownerId,
+      collaboratorIds: Array.isArray(record.collaboratorIds) ? [...record.collaboratorIds] : [],
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       version: record.version,
       data: { ...record.data }
     };
+  }
+
+  canUpdateRecord(record, actorId) {
+    if (!record || !actorId) {
+      return false;
+    }
+
+    if (record.ownerId === actorId) {
+      return true;
+    }
+
+    return Array.isArray(record.collaboratorIds) && record.collaboratorIds.includes(actorId);
+  }
+
+  normalizeCollaboratorIds(collaborators) {
+    if (!Array.isArray(collaborators)) {
+      return [];
+    }
+
+    return [...new Set(collaborators.filter(Boolean))];
+  }
+
+  getRecordPeerIds(collectionName, id, options = {}) {
+    const record = options.fromRecord || this.getCollection(collectionName).get(id);
+    if (!record) {
+      return [];
+    }
+
+    const includeSelf = options.includeSelf === true;
+    const peerIds = [record.ownerId, ...(record.collaboratorIds || [])];
+
+    return [...new Set(peerIds.filter(Boolean).filter((peerId) => includeSelf || peerId !== this.nodeId))];
+  }
+
+  resolveReplicationPeers(collectionName, id, options = {}, hints = {}) {
+    if (options.connectToPeers === false) {
+      return undefined;
+    }
+
+    if (Array.isArray(options.connectToPeers)) {
+      return options.connectToPeers;
+    }
+
+    const peerIds = new Set();
+
+    if (hints.fromRecord) {
+      for (const peerId of this.getRecordPeerIds(collectionName, id, {
+        fromRecord: hints.fromRecord,
+        includeSelf: true
+      })) {
+        peerIds.add(peerId);
+      }
+    } else if (id) {
+      for (const peerId of this.getRecordPeerIds(collectionName, id, { includeSelf: true })) {
+        peerIds.add(peerId);
+      }
+    }
+
+    if (Array.isArray(options.collaborators)) {
+      for (const peerId of this.normalizeCollaboratorIds(options.collaborators)) {
+        peerIds.add(peerId);
+      }
+    }
+
+    if (Array.isArray(hints.extraPeerIds)) {
+      for (const peerId of hints.extraPeerIds) {
+        if (peerId) {
+          peerIds.add(peerId);
+        }
+      }
+    }
+
+    return [...peerIds].filter((peerId) => peerId && peerId !== this.nodeId);
   }
 
   async create(collectionName, data, options = {}) {
@@ -113,6 +194,7 @@ class DignityP2P extends EventEmitter {
     }
 
     const timestamp = this.now();
+    const collaboratorIds = this.normalizeCollaboratorIds(options.collaborators);
     const operation = {
       opId: this.idGenerator(),
       kind: 'create',
@@ -120,6 +202,7 @@ class DignityP2P extends EventEmitter {
       id,
       actorId: this.nodeId,
       ownerId: this.nodeId,
+      collaboratorIds,
       timestamp,
       payload: { ...data }
     };
@@ -130,6 +213,9 @@ class DignityP2P extends EventEmitter {
         messageType: 'operation',
         operation,
         collectionName
+      }),
+      connectToPeers: this.resolveReplicationPeers(collectionName, null, options, {
+        extraPeerIds: options.collaborators
       })
     });
 
@@ -174,8 +260,12 @@ class DignityP2P extends EventEmitter {
       throw new Error(`Object ${id} does not exist in ${collectionName}`);
     }
 
-    if (existing.ownerId !== this.nodeId) {
-      throw new Error(`Only owner ${existing.ownerId} can update object ${id}`);
+    if (!this.canUpdateRecord(existing, this.nodeId)) {
+      throw new Error(`Only owner ${existing.ownerId} or collaborators can update object ${id}`);
+    }
+
+    if (options.collaborators !== undefined && existing.ownerId !== this.nodeId) {
+      throw new Error(`Only owner ${existing.ownerId} can change collaborators on object ${id}`);
     }
 
     if (typeof options.expectedVersion === 'number' && existing.version !== options.expectedVersion) {
@@ -206,13 +296,18 @@ class DignityP2P extends EventEmitter {
       payload: { ...partialData }
     };
 
+    if (options.collaborators !== undefined) {
+      operation.collaboratorIds = this.normalizeCollaboratorIds(options.collaborators);
+    }
+
     this.applyOperation(operation);
     await this.broadcastMessage('operation', operation, {
       broadcastScope: options.broadcastScope || this.resolveBroadcastScope({
         messageType: 'operation',
         operation,
         collectionName
-      })
+      }),
+      connectToPeers: this.resolveReplicationPeers(collectionName, id, options, { fromRecord: existing })
     });
 
     return this.read(collectionName, id);
@@ -243,6 +338,49 @@ class DignityP2P extends EventEmitter {
     throw new Error(`Unable to update ${collectionName}/${id} after ${maxAttempts} attempts`);
   }
 
+  async transferOwnership(collectionName, id, newOwnerId, options = {}) {
+    if (!newOwnerId) {
+      throw new Error('newOwnerId is required');
+    }
+
+    const existing = this.getCollection(collectionName).get(id);
+
+    if (!existing || existing.deletedAt) {
+      throw new Error(`Object ${id} does not exist in ${collectionName}`);
+    }
+
+    if (existing.ownerId !== this.nodeId) {
+      throw new Error(`Only owner ${existing.ownerId} can transfer object ${id}`);
+    }
+
+    const operation = {
+      opId: this.idGenerator(),
+      kind: 'transfer-ownership',
+      collectionName,
+      id,
+      actorId: this.nodeId,
+      timestamp: this.now(),
+      baseVersion: existing.version,
+      newOwnerId,
+      keepPreviousOwnerAsCollaborator: options.keepAsCollaborator !== false
+    };
+
+    this.applyOperation(operation);
+    await this.broadcastMessage('operation', operation, {
+      broadcastScope: options.broadcastScope || this.resolveBroadcastScope({
+        messageType: 'operation',
+        operation,
+        collectionName
+      }),
+      connectToPeers: this.resolveReplicationPeers(collectionName, id, options, {
+        fromRecord: existing,
+        extraPeerIds: [newOwnerId]
+      })
+    });
+
+    return this.read(collectionName, id);
+  }
+
   async remove(collectionName, id, options = {}) {
     const existing = this.getCollection(collectionName).get(id);
 
@@ -270,7 +408,8 @@ class DignityP2P extends EventEmitter {
         messageType: 'operation',
         operation,
         collectionName
-      })
+      }),
+      connectToPeers: this.resolveReplicationPeers(collectionName, id, options, { fromRecord: existing })
     });
   }
 
@@ -278,11 +417,88 @@ class DignityP2P extends EventEmitter {
     this.securityService.registerPeerPublicKey(peerId, publicKey);
   }
 
+  trustPeerPublicKey(peerId, publicKey) {
+    if (!peerId || !publicKey) {
+      return false;
+    }
+
+    try {
+      this.registerPeerPublicKey(peerId, publicKey);
+      return true;
+    } catch (error) {
+      this.emit('warning', { type: 'peer-key-trust-failed', peerId, error });
+      return false;
+    }
+  }
+
+  trustPeerFromMetadata(peerId, metadata) {
+    if (!metadata || !metadata.publicKey) {
+      return false;
+    }
+
+    return this.trustPeerPublicKey(peerId, metadata.publicKey);
+  }
+
   getPublicKey() {
     return this.securityService.getPublicKey();
   }
 
+  async connectToPeer(peerId) {
+    if (!peerId || peerId === this.nodeId) {
+      return null;
+    }
+
+    if (typeof this.networkAdapter.connectToPeer !== 'function') {
+      throw new Error('Network adapter does not support connectToPeer');
+    }
+
+    return this.networkAdapter.connectToPeer(peerId);
+  }
+
+  getConnectionStats() {
+    const adapter = this.networkAdapter;
+    if (!adapter) {
+      return { openCount: 0, peerIds: [] };
+    }
+
+    const peerIds = typeof adapter.listOpenPeerIds === 'function'
+      ? adapter.listOpenPeerIds()
+      : [];
+
+    const openCount = typeof adapter.getOpenConnectionCount === 'function'
+      ? adapter.getOpenConnectionCount()
+      : peerIds.length;
+
+    return { openCount, peerIds };
+  }
+
+  async ensureConnectedToPeers(peerIds = []) {
+    const normalized = [...new Set((peerIds || []).filter(Boolean))];
+    const results = [];
+
+    for (const peerId of normalized) {
+      if (peerId === this.nodeId) {
+        continue;
+      }
+
+      try {
+        await this.connectToPeer(peerId);
+        results.push({ peerId, ok: true });
+      } catch (error) {
+        this.emit('warning', { type: 'peer-connect-failed', peerId, error });
+        results.push({ peerId, ok: false, error });
+      }
+    }
+
+    return results;
+  }
+
   async broadcastMessage(messageType, payload, securityContext = {}) {
+    const connectToPeers = securityContext.connectToPeers;
+    if (Array.isArray(connectToPeers) && connectToPeers.length > 0) {
+      await this.ensureConnectedToPeers(connectToPeers);
+    }
+
     const envelope = await this.securityService.secureOutgoingMessage({
       messageType,
       payload,
@@ -293,6 +509,14 @@ class DignityP2P extends EventEmitter {
   }
 
   async sendDirectMessage(targetId, messageType, payload) {
+    if (targetId) {
+      try {
+        await this.connectToPeer(targetId);
+      } catch (error) {
+        this.emit('warning', { type: 'direct-message-connect-failed', targetId, error });
+      }
+    }
+
     const envelope = await this.securityService.secureOutgoingMessage({
       messageType,
       payload,
@@ -321,6 +545,8 @@ class DignityP2P extends EventEmitter {
     };
     map.set(peerId, next);
 
+    this.trustPeerFromMetadata(peerId, next.metadata);
+
     if (!existing) {
       this.emit('peerdiscovered', { scope, peerId, metadata: next.metadata });
     }
@@ -347,11 +573,21 @@ class DignityP2P extends EventEmitter {
     const normalizedScope = scope || 'main';
     const heartbeatIntervalMs = options.heartbeatIntervalMs || this.defaultDiscoveryHeartbeatMs;
     const ttlMs = options.ttlMs || this.defaultPresenceTtlMs;
-    const metadata = options.metadata || {};
+    const metadata = {
+      publicKey: this.getPublicKey(),
+      ...(options.metadata || {})
+    };
+    const bootstrapPeerIds = Array.isArray(options.bootstrapPeerIds)
+      ? [...new Set(options.bootstrapPeerIds.filter(Boolean))]
+      : [];
 
     const existing = this.discoveryRooms.get(normalizedScope);
     if (existing && existing.timer) {
       clearInterval(existing.timer);
+    }
+
+    if (bootstrapPeerIds.length > 0) {
+      await this.ensureConnectedToPeers(bootstrapPeerIds);
     }
 
     const timer = setInterval(() => {
@@ -362,6 +598,7 @@ class DignityP2P extends EventEmitter {
 
     this.discoveryRooms.set(normalizedScope, {
       metadata,
+      bootstrapPeerIds,
       heartbeatIntervalMs,
       ttlMs,
       timer
@@ -459,6 +696,10 @@ class DignityP2P extends EventEmitter {
       return;
     }
 
+    if (message && message.senderId && message.senderPublicKey) {
+      this.trustPeerPublicKey(message.senderId, message.senderPublicKey);
+    }
+
     let decrypted;
     try {
       decrypted = await this.securityService.decryptIncomingMessage(message);
@@ -484,6 +725,23 @@ class DignityP2P extends EventEmitter {
       return;
     }
 
+    if (decrypted.messageType === 'record:snapshot') {
+      const payload = decrypted.payload || {};
+      const { collectionName, record } = payload;
+
+      if (collectionName && record) {
+        const applied = this.restoreRecord(collectionName, record);
+        if (applied) {
+          this.emit('change', {
+            kind: 'snapshot',
+            collection: collectionName,
+            id: record.id
+          });
+        }
+      }
+      return;
+    }
+
     if (decrypted.messageType === 'presence:announce') {
       const payload = decrypted.payload || {};
       const scope = payload.scope || 'main';
@@ -506,6 +764,12 @@ class DignityP2P extends EventEmitter {
       // Discovery handshake: when a new peer appears in a joined scope,
       // send our current presence so late joiners quickly converge.
       if (isNewPeerInScope && peerId !== this.nodeId && this.discoveryRooms.has(scope)) {
+        if (typeof this.networkAdapter.connectToPeer === 'function') {
+          Promise.resolve(this.connectToPeer(peerId)).catch((error) => {
+            this.emit('warning', { type: 'peer-connect-failed', scope, peerId, error });
+          });
+        }
+
         this.announcePresence(scope).catch((error) => {
           this.emit('warning', { type: 'presence-handshake-failed', scope, error });
         });
@@ -594,6 +858,7 @@ class DignityP2P extends EventEmitter {
     collection.set(record.id, {
       id: record.id,
       ownerId: record.ownerId,
+      collaboratorIds: this.normalizeCollaboratorIds(record.collaboratorIds),
       data: { ...(record.data || {}) },
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
@@ -602,6 +867,37 @@ class DignityP2P extends EventEmitter {
     });
 
     return true;
+  }
+
+  async pushRecordSnapshot(collectionName, id, options = {}) {
+    const collection = this.getCollection(collectionName);
+    const raw = collection.get(id);
+
+    if (!raw || raw.deletedAt) {
+      throw new Error(`Object ${id} does not exist in ${collectionName}`);
+    }
+
+    const record = {
+      id: raw.id,
+      ownerId: raw.ownerId,
+      collaboratorIds: Array.isArray(raw.collaboratorIds) ? [...raw.collaboratorIds] : [],
+      data: { ...raw.data },
+      createdAt: raw.createdAt,
+      updatedAt: raw.updatedAt,
+      deletedAt: raw.deletedAt || null,
+      version: raw.version
+    };
+
+    await this.broadcastMessage('record:snapshot', { collectionName, record }, {
+      broadcastScope: options.broadcastScope || this.resolveBroadcastScope({
+        messageType: 'record:snapshot',
+        collectionName,
+        id
+      }),
+      connectToPeers: this.resolveReplicationPeers(collectionName, id, options, { fromRecord: raw })
+    });
+
+    return record;
   }
 
   applyOperation(operation) {
@@ -620,6 +916,7 @@ class DignityP2P extends EventEmitter {
       collection.set(operation.id, {
         id: operation.id,
         ownerId: operation.ownerId,
+        collaboratorIds: this.normalizeCollaboratorIds(operation.collaboratorIds),
         data: { ...operation.payload },
         createdAt: operation.timestamp,
         updatedAt: operation.timestamp,
@@ -633,10 +930,90 @@ class DignityP2P extends EventEmitter {
     }
 
     if (!current || current.deletedAt) {
+      if (operation.kind !== 'create') {
+        this.emit('warning', {
+          type: 'orphan-operation',
+          kind: operation.kind,
+          collection: operation.collectionName,
+          id: operation.id,
+          actorId: operation.actorId,
+          hint: 'Peer is missing the record; pushRecordSnapshot from the owner to catch up.'
+        });
+      }
       return false;
     }
 
-    if (operation.actorId !== current.ownerId) {
+    if (operation.kind === 'transfer-ownership') {
+      if (operation.actorId !== current.ownerId) {
+        return false;
+      }
+
+      if (typeof operation.baseVersion === 'number' && operation.baseVersion !== current.version) {
+        this.emitConflict({
+          kind: operation.kind,
+          collection: operation.collectionName,
+          id: operation.id,
+          expectedVersion: operation.baseVersion,
+          currentVersion: current.version,
+          phase: 'remote',
+          operation
+        });
+        return false;
+      }
+
+      const previousOwnerId = current.ownerId;
+      current.ownerId = operation.newOwnerId;
+
+      if (operation.keepPreviousOwnerAsCollaborator !== false) {
+        const collaborators = this.normalizeCollaboratorIds(current.collaboratorIds);
+        if (!collaborators.includes(previousOwnerId)) {
+          collaborators.push(previousOwnerId);
+        }
+        current.collaboratorIds = collaborators.filter((peerId) => peerId !== operation.newOwnerId);
+      }
+
+      current.updatedAt = operation.timestamp;
+      current.version += 1;
+
+      this.appliedOperations.add(operation.opId);
+      this.emit('change', {
+        kind: 'transfer-ownership',
+        collection: operation.collectionName,
+        id: operation.id,
+        previousOwnerId,
+        newOwnerId: operation.newOwnerId
+      });
+      return true;
+    }
+
+    if (operation.kind === 'delete') {
+      if (operation.actorId !== current.ownerId) {
+        return false;
+      }
+
+      if (typeof operation.baseVersion === 'number' && operation.baseVersion !== current.version) {
+        this.emitConflict({
+          kind: operation.kind,
+          collection: operation.collectionName,
+          id: operation.id,
+          expectedVersion: operation.baseVersion,
+          currentVersion: current.version,
+          phase: 'remote',
+          operation
+        });
+        return false;
+      }
+
+      current.deletedAt = operation.timestamp;
+      current.updatedAt = operation.timestamp;
+      current.version += 1;
+
+      this.appliedOperations.add(operation.opId);
+      this.emit('change', { kind: 'delete', collection: operation.collectionName, id: operation.id });
+      return true;
+    }
+
+    if (!this.canUpdateRecord(current, operation.actorId)) {
       return false;
     }
 
@@ -658,21 +1035,16 @@ class DignityP2P extends EventEmitter {
         ...current.data,
         ...operation.payload
       };
+
+      if (Array.isArray(operation.collaboratorIds) && operation.actorId === current.ownerId) {
+        current.collaboratorIds = this.normalizeCollaboratorIds(operation.collaboratorIds);
+      }
+
       current.updatedAt = operation.timestamp;
       current.version += 1;
 
       this.appliedOperations.add(operation.opId);
       this.emit('change', { kind: 'update', collection: operation.collectionName, id: operation.id });
-      return true;
-    }
-
-    if (operation.kind === 'delete') {
-      current.deletedAt = operation.timestamp;
-      current.updatedAt = operation.timestamp;
-      current.version += 1;
-
-      this.appliedOperations.add(operation.opId);
-      this.emit('change', { kind: 'delete', collection: operation.collectionName, id: operation.id });
       return true;
     }
 

@@ -185,7 +185,7 @@ describe('PeerJSSignalingProvider', () => {
       secure: true,
       host: 'peerjs.92k.de',
       port: 443,
-      path: '/peerjs',
+      path: '/',
       key: 'peerjs'
     });
   });
@@ -409,7 +409,7 @@ describe('PeerJSSignalingProvider', () => {
       secure: false,
       host: 'localhost',
       port: 9000,
-      path: '/mypath',
+      path: '/mypath/',
       key: 'mykey'
     });
   });

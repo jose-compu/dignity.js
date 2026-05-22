@@ -1,4 +1,5 @@
 const WebSocketSignalingProvider = require('./websocket-signaling-provider');
+const parsePeerJsServerUrl = require('./parse-peerjs-url');
 
 class PeerJSSignalingProvider {
   constructor({ id, url, PeerImpl, WebSocketImpl, priority = 0, connectTimeoutMs = 10000 }) {
@@ -30,14 +31,7 @@ class PeerJSSignalingProvider {
   }
 
   parsePeerJsServerUrl() {
-    const parsed = new URL(this.url);
-    const secure = parsed.protocol === 'wss:';
-    const host = parsed.hostname;
-    const port = parsed.port ? Number(parsed.port) : secure ? 443 : 80;
-    const path = parsed.pathname || '/';
-    const key = parsed.searchParams.get('key') || 'peerjs';
-
-    return { secure, host, port, path, key };
+    return parsePeerJsServerUrl(this.url);
   }
 
   shouldUseWebSocketFallback() {

@@ -16,7 +16,7 @@ const {
   InMemoryNetworkAdapter,
   IndexedDBPersistence
 } = require('../../src');
-const { useDignity, useCollection, usePeers } = require('../../src/react');
+const { useDignity, useCollection, usePeers, useObject, useDiscovery, useMessages } = require('../../src/react');
 
 describe('IndexedDBPersistence', () => {
   let hub;
@@ -485,5 +485,58 @@ describe('React hooks', () => {
     });
 
     await alice.stop();
+  });
+
+  test('useObject tracks a single record by id', async () => {
+    const node = new DignityP2P(nodeConfig);
+    await node.start();
+    await node.create('notes', { title: 'hello' }, { id: 'note-1' });
+
+    const { result } = renderHook(() => useObject(node, 'notes', 'note-1'));
+
+    await waitFor(() => {
+      expect(result.current?.data.title).toBe('hello');
+    });
+
+    await node.update('notes', 'note-1', { title: 'updated' });
+
+    await waitFor(() => {
+      expect(result.current?.data.title).toBe('updated');
+    });
+
+    await node.stop();
+  });
+
+  test('useDiscovery joins and leaves a scope', async () => {
+    const node = new DignityP2P(nodeConfig);
+    await node.start();
+
+    const options = { metadata: { nickname: 'alice' }, heartbeatIntervalMs: 100000, ttlMs: 30000 };
+    const { result, unmount } = renderHook(() => useDiscovery(node, 'room', options));
+
+    await waitFor(() => {
+      expect(result.current.joined).toBe(true);
+    });
+
+    unmount();
+    await node.stop();
+  });
+
+  test('useMessages collects node message events', async () => {
+    const node = new DignityP2P(nodeConfig);
+    await node.start();
+
+    const { result } = renderHook(() => useMessages(node));
+
+    act(() => {
+      node.emit('message', { type: 'chat', payload: { text: 'hi' } });
+    });
+
+    await waitFor(() => {
+      expect(result.current).toHaveLength(1);
+      expect(result.current[0].type).toBe('chat');
+    });
+
+    await node.stop();
   });
 });

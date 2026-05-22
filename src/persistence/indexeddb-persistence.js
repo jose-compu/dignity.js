@@ -71,6 +71,7 @@ class IndexedDBPersistence {
       collection,
       id,
       ownerId: record.ownerId,
+      collaboratorIds: Array.isArray(record.collaboratorIds) ? [...record.collaboratorIds] : [],
       data: { ...record.data },
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
@@ -140,6 +141,7 @@ class IndexedDBPersistence {
       this.node.restoreRecord(stored.collection, {
         id: stored.id,
         ownerId: stored.ownerId,
+        collaboratorIds: stored.collaboratorIds,
         data: stored.data,
         createdAt: stored.createdAt,
         updatedAt: stored.updatedAt,

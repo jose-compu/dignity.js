@@ -15,6 +15,10 @@ const {
   InMemoryNetworkHub,
   InMemoryNetworkAdapter
 } = require('./network/in-memory-network');
+const {
+  PeerJSNetworkAdapter,
+  createPeerJSNetworkAdapter
+} = require('./network/peerjs-network');
 const IndexedDBPersistence = require('./persistence/indexeddb-persistence');
 const {
   DEFAULT_CLOUDFLARE_SIGNALING_URLS,
@@ -35,6 +39,8 @@ module.exports = {
   PeerJSSignalingProvider,
   InMemoryNetworkHub,
   InMemoryNetworkAdapter,
+  PeerJSNetworkAdapter,
+  createPeerJSNetworkAdapter,
   IndexedDBPersistence,
   DEFAULT_CLOUDFLARE_SIGNALING_URLS,
   DEFAULT_SIGNALING_FALLBACK_URLS,

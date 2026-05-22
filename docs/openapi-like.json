@@ -1,27 +1,43 @@
 {
   "name": "dignity.js",
-  "version": "0.4.0",
+  "version": "0.5.1",
   "description": "REST-like object API over peer-to-peer replication",
   "resources": {
     "collections/{collection}/{id}": {
       "create": {
         "method": "create(collection, data, options)",
-        "owner": "actor that creates the object"
+        "owner": "actor that creates the object",
+        "options": {
+          "id": "optional stable id",
+          "collaborators": "optional peer id list",
+          "broadcastScope": "scoped broadcast password namespace",
+          "connectToPeers": "optional; defaults to collaborators on PeerJS mesh"
+        }
       },
       "read": {
         "method": "read(collection, id)"
       },
       "update": {
         "method": "update(collection, id, patch, options)",
-        "authorization": "owner-only",
+        "authorization": "owner or collaborator",
         "options": {
           "expectedVersion": "optional number; throws VERSION_CONFLICT when mismatched",
-          "broadcastScope": "optional scoped broadcast password namespace"
+          "broadcastScope": "optional scoped broadcast password namespace",
+          "collaborators": "owner may replace collaborator list",
+          "connectToPeers": "optional; defaults to owner + collaborators"
         }
       },
       "updateWithRetry": {
         "method": "updateWithRetry(collection, id, patchFn, options)",
         "description": "read-modify-write helper with automatic retry on version conflicts"
+      },
+      "pushRecordSnapshot": {
+        "method": "pushRecordSnapshot(collection, id, options)",
+        "description": "broadcast full record for late joiners who missed the initial create"
+      },
+      "getRecordPeerIds": {
+        "method": "getRecordPeerIds(collection, id, options)",
+        "description": "returns owner + collaborator peer ids for connectToPeers"
       },
       "delete": {
         "method": "remove(collection, id)",
@@ -32,11 +48,19 @@
       "list": {
         "method": "list(collection, options)"
       }
+    },
+    "peers": {
+      "connectToPeer": "open PeerJS data channel to peer id",
+      "getConnectionStats": "{ openCount, peerIds }",
+      "ensureConnectedToPeers": "connect to many peers before broadcast",
+      "joinDiscovery": "scoped presence; options.bootstrapPeerIds connects before announce",
+      "broadcastMessage": "custom app messages; options.connectToPeers"
     }
   },
   "events": {
-    "change": "object create/update/delete applied",
+    "change": "object create/update/delete/snapshot applied",
     "conflict": "local or remote version mismatch",
+    "warning": "orphan-operation, peer-connect-failed, presence failures",
     "peerdiscovered": "peer joined discovery scope",
     "peerleft": "peer left or timed out",
     "message": "custom decrypted message received"
@@ -56,7 +80,12 @@
     "hooks": [
       "useDignity",
       "useCollection",
-      "usePeers"
+      "useObject",
+      "usePeers",
+      "useDiscovery",
+      "useConnectionStats",
+      "useRoom",
+      "useMessages"
     ]
   },
   "signaling": {

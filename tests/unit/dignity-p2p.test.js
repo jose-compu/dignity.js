@@ -79,7 +79,7 @@ describe('DignityP2P', () => {
     await alice.create('documents', { text: 'original' }, { id: 'doc-1' });
 
     await expect(bob.update('documents', 'doc-1', { text: 'tampered' })).rejects.toThrow(
-      'Only owner alice can update object doc-1'
+      'Only owner alice or collaborators can update object doc-1'
     );
 
     await alice.stop();

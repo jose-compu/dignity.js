@@ -37,6 +37,9 @@ REST-like P2P object API for decentralized JavaScript applications.
   - automatic peer ban on invalid signature/PoW (`48h` default)
 - Team/subapp scoped broadcast passwords (`broadcastScope` + `broadcastPasswords`)
 - Optimistic concurrency helpers (`expectedVersion`, `updateWithRetry`, `conflict` events)
+- PeerJS mesh bootstrap: connect before announce/broadcast, auto `publicKey` in presence
+- Late-joiner sync via `pushRecordSnapshot` (full record catch-up when create was missed)
+- Auto `connectToPeers` on create/update/delete replication (owner + collaborators)
 - Optional IndexedDB persistence for browser reload survival
 - Optional React hooks via `dignity.js/react`
 - Browser-first: published npm package includes IIFE, ESM, and CJS builds
@@ -238,21 +241,99 @@ Compatibility note:
 - `dignity.js` now includes a dedicated `PeerJSSignalingProvider` backed by the official `peerjs` client for PeerJS protocol compatibility.
 - In non-WebRTC runtimes (for example Node test runners), it automatically falls back to WebSocket transport checks for connectivity testing.
 
+### PeerJS mesh bootstrap
+
+Unlike the in-memory test adapter (which fan-outs to every registered node), **PeerJS only delivers messages over open data channels**. Discovery broadcasts do not reach anyone until at least one side has connected.
+
+For browser apps (see the bundled 3D chess demo), pass a known peer id from your invite link:
+
+```js
+await node.joinDiscovery('room:my-game', {
+  metadata: { nickname: 'alice', role: 'host' },
+  bootstrapPeerIds: ['host-peer-id-from-link']
+});
+
+await node.broadcastMessage('claim-seat', payload, {
+  broadcastScope: 'room:my-game',
+  connectToPeers: ['host-peer-id-from-link']
+});
+```
+
+Library helpers:
+
+- `node.connectToPeer(peerId)` — open a PeerJS data channel
+- `node.getConnectionStats()` — `{ openCount, peerIds }`
+- `node.getRecordPeerIds(collection, id)` — owner + collaborators (for custom broadcasts)
+- `node.joinDiscovery(scope, { bootstrapPeerIds })` — connect before the first presence announce
+- `broadcastMessage(..., { connectToPeers })` — connect, then broadcast
+- `node.pushRecordSnapshot(collection, id, options)` — send full record state to late joiners
+- `create` / `update` / `remove` auto-connect to record peers when `connectToPeers` is omitted
+- Presence metadata automatically includes `publicKey`; remote keys are trusted from presence and message envelopes (direct messages work without manual `registerPeerPublicKey`)
+
+React: `useRoom(node, scope, options)` combines discovery, peers, and connection stats.
+
+### Late joiners (missed create)
+
+On PeerJS, a peer that comes online **after** the host creates an object never receives the initial `create` operation. Later `update` operations are ignored until that peer has a local copy of the record.
+
+After accepting a joiner (or on `orphan-operation` warnings), push a full snapshot:
+
+```js
+node.on('warning', (event) => {
+  if (event.type === 'orphan-operation') {
+    // optional: request resync from owner
+  }
+});
+
+await host.update('chess-matches', gameId, { blackPlayerId: joinerId, status: 'playing' }, {
+  collaborators: [hostId, joinerId],
+  broadcastScope: scope
+});
+
+await host.pushRecordSnapshot('chess-matches', gameId, {
+  broadcastScope: scope,
+  connectToPeers: [joinerId]
+});
+```
+
+The joiner applies the snapshot via `restoreRecord`, then subsequent move updates replicate normally.
+
 ## Development
 
 ```bash
 npm test
 npm run build
-npm run docs:serve
+npm run docs:dev          # docs + 3D chess at http://127.0.0.1:4173/
+npm run docs:build        # rebuild chess bundle only
 npm run example:tictactoe
 npm run example:chess
 npm run test:pow-calibrate
 ```
 
+Local docs (auto-builds chess if `docs/chess/assets/chess-app.js` is missing):
+
+```bash
+npm run docs:dev
+# Docs:  http://127.0.0.1:4173/
+# Chess: http://127.0.0.1:4173/chess/
+```
+
+Use `DOCS_NO_OPEN=1 npm run docs:dev` to skip opening the browser, or `DOCS_PORT=8080` for another port.
+
+If port 4173 is stuck from an old session:
+
+```bash
+npm run docs:stop
+npm run docs:dev
+```
+
+If 4173 is busy, `docs:dev` auto-picks the next free port (4174, 4175, …) and prints the URLs.
+
 ## Docs and Examples
 
 - **Documentation:** [jose-compu.github.io/dignity.js](https://jose-compu.github.io/dignity.js/)
-- Docs site source: `docs/index.html` (serve locally with `npm run docs:serve`)
+- Docs site source: `docs/index.html` (local: `npm run docs:dev`)
+- **3D Chess demo:** `docs/chess/` → [local chess demo](http://127.0.0.1:4173/chess/) when `docs:dev` is running
 - API metadata: `docs/openapi-like.json`
 - Minimal demos:
   - `examples/decentralized-tictactoe.js`

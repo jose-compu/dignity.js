@@ -10,6 +10,8 @@ describe('public API exports', () => {
     expect(api.VDF).toBeDefined();
     expect(api.SlothPermutation).toBeDefined();
     expect(api.IndexedDBPersistence).toBeDefined();
+    expect(api.PeerJSNetworkAdapter).toBeDefined();
+    expect(api.createPeerJSNetworkAdapter).toBeDefined();
   });
 
   test('exports sane default configs', () => {
