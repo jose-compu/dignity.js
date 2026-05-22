@@ -580,6 +580,67 @@ describe('MessageSecurityService', () => {
     expect(key.length).toBe(32);
   });
 
+  test('deriveBroadcastKey uses Node crypto when subtle is unavailable', async () => {
+    const originalCrypto = globalThis.crypto;
+    globalThis.crypto = { subtle: undefined };
+
+    try {
+      const salt = new Uint8Array(16).fill(7);
+      const key = await deriveBroadcastKey('node-password', salt, 1000);
+      expect(key).toHaveLength(32);
+      expect(Buffer.from(key).equals(Buffer.from(legacyBroadcastKey('node-password', salt)))).toBe(false);
+    } finally {
+      globalThis.crypto = originalCrypto;
+    }
+  });
+
+  test('deriveBroadcastKey falls back to legacy hash when pbkdf2 is unavailable', async () => {
+    const crypto = require('crypto');
+    const originalCrypto = globalThis.crypto;
+    const pbkdf2Spy = jest.spyOn(crypto, 'pbkdf2Sync').mockImplementation(() => {
+      throw new Error('pbkdf2 unavailable');
+    });
+    globalThis.crypto = { subtle: undefined };
+
+    try {
+      const salt = new Uint8Array(16).fill(3);
+      const key = await deriveBroadcastKey('fallback-password', salt, 1000);
+      expect(Buffer.from(key).equals(Buffer.from(legacyBroadcastKey('fallback-password', salt)))).toBe(true);
+    } finally {
+      pbkdf2Spy.mockRestore();
+      globalThis.crypto = originalCrypto;
+    }
+  });
+
+  test('decryptPayload throws when direct ciphertext cannot be opened', async () => {
+    const disabledPow = {
+      appPassword: 'shared',
+      powEnabled: false,
+      signingEnabled: false
+    };
+    const alice = new MessageSecurityService({
+      nodeId: 'alice',
+      options: disabledPow
+    });
+    const bob = new MessageSecurityService({
+      nodeId: 'bob',
+      options: disabledPow
+    });
+
+    alice.registerPeerPublicKey('bob', bob.getPublicKey());
+    bob.registerPeerPublicKey('alice', alice.getPublicKey());
+
+    const envelope = await alice.secureOutgoingMessage({
+      messageType: 'dm',
+      targetId: 'bob',
+      payload: { text: 'secret' }
+    });
+
+    envelope.payload = envelope.payload.slice(0, -4).concat('XXXX');
+
+    await expect(bob.decryptIncomingMessage(envelope)).rejects.toThrow('Unable to decrypt direct payload');
+  });
+
   test('deriveBroadcastKey differs from legacy single-hash', async () => {
     const salt = nacl.randomBytes(16);
     const pbkdf2Key = await deriveBroadcastKey('same-password', salt, 1000);

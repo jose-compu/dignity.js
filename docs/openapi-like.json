@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "REST-like object API over peer-to-peer replication",
   "resources": {
     "collections/{collection}/{id}": {
@@ -12,8 +12,16 @@
         "method": "read(collection, id)"
       },
       "update": {
-        "method": "update(collection, id, patch)",
-        "authorization": "owner-only"
+        "method": "update(collection, id, patch, options)",
+        "authorization": "owner-only",
+        "options": {
+          "expectedVersion": "optional number; throws VERSION_CONFLICT when mismatched",
+          "broadcastScope": "optional scoped broadcast password namespace"
+        }
+      },
+      "updateWithRetry": {
+        "method": "updateWithRetry(collection, id, patchFn, options)",
+        "description": "read-modify-write helper with automatic retry on version conflicts"
       },
       "delete": {
         "method": "remove(collection, id)",
@@ -25,6 +33,31 @@
         "method": "list(collection, options)"
       }
     }
+  },
+  "events": {
+    "change": "object create/update/delete applied",
+    "conflict": "local or remote version mismatch",
+    "peerdiscovered": "peer joined discovery scope",
+    "peerleft": "peer left or timed out",
+    "message": "custom decrypted message received"
+  },
+  "persistence": {
+    "IndexedDBPersistence": {
+      "method": "attach(node)",
+      "options": [
+        "dbName",
+        "storeName",
+        "collections"
+      ]
+    }
+  },
+  "react": {
+    "entrypoint": "dignity.js/react",
+    "hooks": [
+      "useDignity",
+      "useCollection",
+      "usePeers"
+    ]
   },
   "signaling": {
     "defaults": {
@@ -45,13 +78,18 @@
       "signingEnabled": true,
       "encryptionEnabled": true,
       "powEnabled": true,
-      "powTargetMs": 1000
+      "powSteps": 22,
+      "powTargetMs": 1000,
+      "kdfIterations": 100000,
+      "banDurationMs": 172800000
     },
     "broadcast": {
-      "encryption": "aes-256-gcm with appPassword-derived key"
+      "encryption": "AES secretbox with PBKDF2-SHA256 derived key",
+      "scopePasswords": "broadcastPasswords map keyed by broadcastScope",
+      "legacyKdf": "single-hash fallback accepted for older peers"
     },
     "direct": {
-      "encryption": "aes-256-gcm payload + rsa-oaep wrapped session key"
+      "encryption": "NaCl box (X25519 + XSalsa20-Poly1305) to recipient public key"
     },
     "pow": {
       "algorithm": "Sloth VDF",

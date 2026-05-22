@@ -3,23 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>dignity.js v0.1.0 docs</title>
+    <title>dignity.js v0.4.0 docs</title>
     <link rel="stylesheet" href="./assets/styles.css" />
   </head>
   <body>
     <main>
       <h1>dignity.js documentation</h1>
-      <p class="subtitle">Version 0.1.0 - P2P object API for decentralized JavaScript applications</p>
-
-      <section>
-        <h2>Professional docs layout (recommended)</h2>
-        <ul>
-          <li><strong>Monorepo style:</strong> <code>apps/docs</code> (Next.js/Nextra or Docusaurus) + versioned routes.</li>
-          <li><strong>Library style:</strong> top-level <code>docs/</code> for public docs and examples.</li>
-          <li><strong>API reference:</strong> generated from source comments and published online.</li>
-          <li><strong>Examples:</strong> runnable samples under <code>examples/</code> or linked demos.</li>
-        </ul>
-      </section>
+      <p class="subtitle">Version 0.4.0 - P2P object API for decentralized JavaScript applications</p>
 
       <section>
         <h2>Quick start</h2>
@@ -33,7 +23,11 @@ const hub = new InMemoryNetworkHub();
 
 const alice = new DignityP2P({
   nodeId: 'alice',
-  networkAdapter: new InMemoryNetworkAdapter(hub)
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security: {
+    appPassword: 'shared-out-of-band-password',
+    powSteps: 22
+  }
 });
 
 await alice.start();
@@ -47,9 +41,19 @@ const note = alice.read('notes', 'note-1');</code></pre>
           <li><code>create(collection, data, options)</code> -> owner is the creator.</li>
           <li><code>read(collection, id)</code> -> returns object or <code>null</code>.</li>
           <li><code>list(collection, options)</code> -> list active objects (or include deleted markers).</li>
-          <li><code>update(collection, id, patch)</code> -> only object owner can update.</li>
+          <li><code>update(collection, id, patch, options)</code> -> only object owner can update.</li>
+          <li><code>updateWithRetry(collection, id, patchFn, options)</code> -> optimistic read-modify-write retries.</li>
           <li><code>remove(collection, id)</code> -> only object owner can delete.</li>
         </ul>
+      </section>
+
+      <section>
+        <h2>Optimistic concurrency</h2>
+        <pre><code>node.on('conflict', (event) => {
+  console.log(event.phase, event.expectedVersion, event.currentVersion);
+});
+
+await node.update('games', 'g1', { score: 10 }, { expectedVersion: 3 });</code></pre>
       </section>
 
       <section>
@@ -60,14 +64,32 @@ const note = alice.read('notes', 'note-1');</code></pre>
       <section>
         <h2>Security defaults (enabled)</h2>
         <ul>
-          <li><strong>Signing:</strong> every message is signed by sender keypair.</li>
-          <li><strong>Broadcast encryption:</strong> encrypted using shared <code>appPassword</code>.</li>
-          <li><strong>Direct encryption:</strong> encrypted with recipient public key.</li>
-          <li><strong>PoW:</strong> Sloth VDF proof per message, default <code>powSteps: 22</code> (~1000ms on this machine).</li>
+          <li><strong>Signing:</strong> every message is signed by sender keypair (Ed25519).</li>
+          <li><strong>Broadcast encryption:</strong> AES secretbox with PBKDF2-SHA256 derived key from <code>appPassword</code> or scoped <code>broadcastPasswords</code>.</li>
+          <li><strong>Direct encryption:</strong> NaCl box to recipient X25519 public key (true E2E for direct messages).</li>
+          <li><strong>PoW:</strong> Sloth VDF proof per message, default <code>powSteps: 22</code>.</li>
           <li><strong>Peer bans:</strong> invalid signature or invalid PoW bans sender for 48h by default.</li>
+          <li><strong>Legacy KDF:</strong> older single-hash broadcast messages remain decryptable.</li>
         </ul>
-        <pre><code>const node = new DignityP2P({\n  nodeId: 'alice',\n  networkAdapter,\n  security: {\n    appPassword: 'shared-out-of-band-password',\n    powTargetMs: 1000,\n    signingEnabled: true,\n    encryptionEnabled: true,\n    powEnabled: true\n  }\n});</code></pre>
-        <pre><code>const coopNode = new DignityP2P({\n  nodeId: 'alice',\n  networkAdapter,\n  security: {\n    appPassword: 'global-fallback-password',\n    broadcastPasswords: {\n      'coop:red': 'red-team-password',\n      'coop:blue': 'blue-team-password'\n    }\n  }\n});\n\nawait coopNode.create('matches', { mode: 'coop' }, {\n  id: 'match-1',\n  broadcastScope: 'coop:red'\n});</code></pre>
+      </section>
+
+      <section>
+        <h2>IndexedDB persistence</h2>
+        <pre><code>const { IndexedDBPersistence } = require('dignity.js');
+
+const persistence = new IndexedDBPersistence({
+  dbName: 'my-app',
+  collections: ['games']
+});
+
+await node.start();
+await persistence.attach(node);</code></pre>
+      </section>
+
+      <section>
+        <h2>React hooks</h2>
+        <pre><code>import { useDignity, useCollection, usePeers } from 'dignity.js/react';</code></pre>
+        <p>Requires <code>react &gt;= 18</code> as a peer dependency.</p>
       </section>
 
       <section>

@@ -425,6 +425,91 @@ describe('PeerJSSignalingProvider', () => {
     expect(parsed.key).toBe('peerjs');
   });
 
+  class NeverOpenPeer {
+    constructor() {
+      this.handlers = {};
+    }
+
+    on(event, handler) {
+      this.handlers[event] = handler;
+    }
+  }
+
+  class NeverOpenConnectionPeer {
+    constructor(id) {
+      this.id = id;
+      this.handlers = {};
+      setTimeout(() => {
+        if (this.handlers.open) {
+          this.handlers.open(id);
+        }
+      }, 0);
+    }
+
+    on(event, handler) {
+      this.handlers[event] = handler;
+    }
+
+    connect() {
+      return { on() {}, open: false };
+    }
+
+    destroy() {}
+  }
+
+  test('connect rejects when peer open times out', async () => {
+    const provider = new PeerJSSignalingProvider({
+      url: 'wss://peerjs.92k.de/peerjs?key=peerjs',
+      PeerImpl: NeverOpenPeer,
+      connectTimeoutMs: 20
+    });
+
+    await expect(provider.connect()).rejects.toThrow('Unable to connect to signaling url');
+  });
+
+  test('openConnection rejects when remote peer never opens', async () => {
+    const provider = new PeerJSSignalingProvider({
+      url: 'wss://peerjs.92k.de/peerjs?key=peerjs',
+      PeerImpl: NeverOpenConnectionPeer,
+      connectTimeoutMs: 20
+    });
+
+    await provider.connect();
+    await expect(provider.openConnection('remote-peer')).rejects.toThrow(
+      'Unable to connect peer remote-peer via wss://peerjs.92k.de/peerjs?key=peerjs'
+    );
+  });
+
+  test('connect uses real websocket fallback for browser-incompatible peer', async () => {
+    class MockWs {
+      static OPEN = 1;
+
+      constructor() {
+        setTimeout(() => {
+          this.readyState = MockWs.OPEN;
+          if (this.onopen) {
+            this.onopen();
+          }
+        }, 0);
+      }
+
+      send() {}
+      close() {}
+    }
+
+    const provider = new PeerJSSignalingProvider({
+      url: 'wss://peerjs.92k.de/peerjs?key=peerjs',
+      PeerImpl: BrowserIncompatiblePeer,
+      WebSocketImpl: MockWs,
+      connectTimeoutMs: 1000
+    });
+    provider.isCustomPeerImpl = false;
+
+    await provider.connect();
+    expect(provider.fallbackProvider).not.toBeNull();
+    expect(provider.fallbackProvider.socket).not.toBeNull();
+  });
+
   test('disconnect is no-op when peer and fallback are null', async () => {
     const provider = new PeerJSSignalingProvider({
       url: 'wss://peerjs.92k.de/peerjs?key=peerjs',

@@ -178,6 +178,23 @@ class DignityP2P extends EventEmitter {
       throw new Error(`Only owner ${existing.ownerId} can update object ${id}`);
     }
 
+    if (typeof options.expectedVersion === 'number' && existing.version !== options.expectedVersion) {
+      this.emitConflict({
+        kind: 'update',
+        collection: collectionName,
+        id,
+        expectedVersion: options.expectedVersion,
+        currentVersion: existing.version,
+        phase: 'local'
+      });
+
+      const error = new Error(
+        `Version conflict on ${collectionName}/${id}: expected ${options.expectedVersion}, current ${existing.version}`
+      );
+      error.code = 'VERSION_CONFLICT';
+      throw error;
+    }
+
     const operation = {
       opId: this.idGenerator(),
       kind: 'update',
@@ -199,6 +216,31 @@ class DignityP2P extends EventEmitter {
     });
 
     return this.read(collectionName, id);
+  }
+
+  async updateWithRetry(collectionName, id, patchFn, options = {}) {
+    const maxAttempts = typeof options.maxAttempts === 'number' ? options.maxAttempts : 5;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const current = this.read(collectionName, id);
+      if (!current) {
+        throw new Error(`Object ${id} does not exist in ${collectionName}`);
+      }
+
+      const patch = await patchFn(current);
+      try {
+        return await this.update(collectionName, id, patch, {
+          ...options,
+          expectedVersion: current.version
+        });
+      } catch (error) {
+        if (error.code !== 'VERSION_CONFLICT' || attempt === maxAttempts - 1) {
+          throw error;
+        }
+      }
+    }
+
+    throw new Error(`Unable to update ${collectionName}/${id} after ${maxAttempts} attempts`);
   }
 
   async remove(collectionName, id, options = {}) {
@@ -534,6 +576,34 @@ class DignityP2P extends EventEmitter {
     return this.getBanInfo(peerId) !== null;
   }
 
+  emitConflict(details) {
+    this.emit('conflict', details);
+  }
+
+  restoreRecord(collectionName, record) {
+    if (!record || !record.id) {
+      return false;
+    }
+
+    const collection = this.getCollection(collectionName);
+    const current = collection.get(record.id);
+    if (current && current.version >= record.version) {
+      return false;
+    }
+
+    collection.set(record.id, {
+      id: record.id,
+      ownerId: record.ownerId,
+      data: { ...(record.data || {}) },
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      deletedAt: record.deletedAt || null,
+      version: record.version
+    });
+
+    return true;
+  }
+
   applyOperation(operation) {
     if (!operation || !operation.opId || this.appliedOperations.has(operation.opId)) {
       return false;
@@ -571,6 +641,15 @@ class DignityP2P extends EventEmitter {
     }
 
     if (typeof operation.baseVersion === 'number' && operation.baseVersion !== current.version) {
+      this.emitConflict({
+        kind: operation.kind,
+        collection: operation.collectionName,
+        id: operation.id,
+        expectedVersion: operation.baseVersion,
+        currentVersion: current.version,
+        phase: 'remote',
+        operation
+      });
       return false;
     }
 
