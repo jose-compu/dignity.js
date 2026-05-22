@@ -1,8 +1,15 @@
 const VDF = require('../../src/security/vdf');
 
-jest.setTimeout(180000);
+/**
+ * Hardware calibration probe — not a correctness test (see sloth-vdf-core.test.js).
+ * Skipped on CI by default; run locally with: npm run test:pow-calibrate
+ */
+const shouldRun = process.env.RUN_POW_CALIBRATE === '1'
+  || (process.env.CI !== 'true' && process.env.GITHUB_ACTIONS !== 'true');
 
-describe('Sloth VDF timing calibration', () => {
+(shouldRun ? describe : describe.skip)('Sloth VDF timing calibration', () => {
+  jest.setTimeout(180000);
+
   test('measures local runtime and recommends powSteps for ~1000ms target', async () => {
     const targetMs = 1000;
     const challenge = 'ab'.repeat(32);
@@ -11,7 +18,7 @@ describe('Sloth VDF timing calibration', () => {
     await VDF.compute(challenge, warmupSteps);
 
     const candidates = [2, 4, 8, 12, 16, 24, 32, 48, 64];
-    const samplesPerCandidate = 2;
+    const samplesPerCandidate = 1;
     const measurements = [];
 
     for (const stepCount of candidates) {
@@ -58,7 +65,11 @@ describe('Sloth VDF timing calibration', () => {
       `[Sloth calibration] closestMeasured=${closest.steps} steps (${closest.avgMs.toFixed(2)}ms), estimatedPowSteps=${estimatedSteps}`
     );
 
+    expect(measurements.length).toBe(candidates.length);
+    expect(measurements.every((m) => Number.isFinite(m.avgMs) && m.avgMs >= 0)).toBe(true);
+    expect(Number.isFinite(avgMsPerStep) && avgMsPerStep > 0).toBe(true);
     expect(estimatedSteps).toBeGreaterThan(0);
+    expect(estimatedSteps).toBeLessThan(10000);
     expect(closest).not.toBeNull();
   });
 });

@@ -29,7 +29,7 @@
     "test": "jest --coverage",
     "test:unit": "jest tests/unit --runInBand",
     "test:cloudflare-live": "RUN_CLOUDFLARE_LIVE_TESTS=1 jest tests/integration/cloudflare-signaling-live.test.js --runInBand",
-    "test:pow-calibrate": "jest tests/unit/sloth-vdf-timing.test.js --runInBand",
+    "test:pow-calibrate": "RUN_POW_CALIBRATE=1 jest tests/unit/sloth-vdf-timing.test.js --runInBand --coverage=false",
     "build": "node scripts/build.js",
     "build:chess": "node scripts/build-chess-demo.js",
     "docs:favicon": "node scripts/generate-favicon.js",
