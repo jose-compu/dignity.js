@@ -1,24 +1,14 @@
 # dignity.js
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/jose-compu/dignity.js/refs/heads/main/docs/assets/dignity-logo.svg" alt="dignity.js logo" width="860" />
-</p>
+![dignity.js logo](https://raw.githubusercontent.com/jose-compu/dignity.js/refs/heads/main/docs/assets/dignity-logo.png)
 
-<p align="center">
-  <img src="https://img.shields.io/badge/dignity.js-decentralized%20object%20api-5B7FFF?style=for-the-badge" alt="dignity.js" />
-  <img src="https://img.shields.io/badge/browser-first-00C2A8?style=for-the-badge" alt="browser-first" />
-  <img src="https://img.shields.io/badge/security-default%20on-111827?style=for-the-badge" alt="security default on" />
-</p>
-
-<p align="center">
-  <a href="https://jose-compu.github.io/dignity.js/"><img src="https://img.shields.io/badge/docs-online-5B7FFF" alt="documentation"></a>
-  <a href="https://www.npmjs.com/package/dignity.js"><img src="https://img.shields.io/npm/v/dignity.js?color=cb3837&label=npm" alt="npm version"></a>
-  <a href="https://www.npmjs.com/package/dignity.js"><img src="https://img.shields.io/npm/dm/dignity.js?color=blue" alt="npm downloads"></a>
-  <a href="https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml"><img src="https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-150%2B%20passing-brightgreen" alt="tests passing">
-  <img src="https://img.shields.io/badge/coverage-99%25-brightgreen" alt="coverage">
-  <img src="https://img.shields.io/badge/license-Apache%202.0-black" alt="license">
-</p>
+[![docs](https://img.shields.io/badge/docs-online-5B7FFF)](https://jose-compu.github.io/dignity.js/)
+[![npm version](https://img.shields.io/npm/v/dignity.js?color=cb3837&label=npm)](https://www.npmjs.com/package/dignity.js)
+[![npm downloads](https://img.shields.io/npm/dm/dignity.js?color=blue)](https://www.npmjs.com/package/dignity.js)
+[![CI](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml/badge.svg)](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml)
+![tests](https://img.shields.io/badge/tests-150%2B%20passing-brightgreen)
+![coverage](https://img.shields.io/badge/coverage-99%25-brightgreen)
+![license](https://img.shields.io/badge/license-Apache%202.0-black)
 
 REST-like P2P object API for decentralized JavaScript applications.
 
@@ -193,6 +183,7 @@ await persistence.attach(node);
 Optional React integration (`react >= 18` peer dependency):
 
 ```js
+import { createElement } from 'react';
 import { useDignity, useCollection, usePeers } from 'dignity.js/react';
 
 function Room() {
@@ -200,7 +191,7 @@ function Room() {
   const games = useCollection(node, 'games');
   const peers = usePeers(node, 'room:chess', { includeSelf: false });
 
-  return <pre>{JSON.stringify({ status, games, peers }, null, 2)}</pre>;
+  return createElement('pre', null, JSON.stringify({ status, games, peers }, null, 2));
 }
 ```
 
@@ -208,7 +199,7 @@ function Room() {
 
 The published npm package includes pre-built bundles (IIFE, ESM, CJS) generated at publish time. The `dist/` folder is not checked into the repository.
 
-```html
+```text
 <script src="https://unpkg.com/dignity.js/dist/dignity.min.js"></script>
 <script>
   const { DignityP2P } = DignityJS;

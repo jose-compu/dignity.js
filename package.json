@@ -1,7 +1,15 @@
 {
   "name": "dignity.js",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "P2P object API for decentralized JavaScript applications",
+  "homepage": "https://jose-compu.github.io/dignity.js/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jose-compu/dignity.js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jose-compu/dignity.js/issues"
+  },
   "main": "dist/dignity.cjs.js",
   "module": "dist/dignity.esm.js",
   "browser": "dist/dignity.esm.js",
@@ -20,9 +28,14 @@
     }
   },
   "files": [
+    "README.md",
+    "LICENSE",
     "dist",
     "src",
-    "docs",
+    "docs/index.html",
+    "docs/openapi-like.json",
+    "docs/favicon.ico",
+    "docs/assets",
     "examples"
   ],
   "scripts": {
