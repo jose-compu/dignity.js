@@ -19,7 +19,7 @@ const ROLE_COPY = {
   resume: {
     title: 'Resume game',
     action: 'Reconnect',
-    hint: 'Use the same name you played with before, if possible.'
+    hint: 'This link carries a dual-signed checkpoint. Use the same device when possible so your seat keys match.'
   }
 };
 

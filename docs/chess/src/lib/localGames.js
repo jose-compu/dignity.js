@@ -37,6 +37,10 @@ export function saveLocalGameSession(session) {
     .slice(0, 40);
 
   localStorage.setItem(SESSIONS_KEY, JSON.stringify(trimmed));
+
+  if (session.resumeLink) {
+    localStorage.setItem(`dignity-chess-resume-link:${session.gameId}`, session.resumeLink);
+  }
 }
 
 function loadChessRecordsFromIndexedDB() {
@@ -106,6 +110,12 @@ export async function listLocalGames() {
 }
 
 export function sessionResumeHash(session) {
+  const savedLink = localStorage.getItem(`dignity-chess-resume-link:${session.gameId}`);
+  if (savedLink) {
+    const hashIndex = savedLink.indexOf('#');
+    return hashIndex >= 0 ? savedLink.slice(hashIndex + 1) : savedLink;
+  }
+
   const role = session.role === 'host' ? 'host' : 'resume';
   const params = new URLSearchParams({
     game: session.gameId,
@@ -116,6 +126,9 @@ export function sessionResumeHash(session) {
 
   if (session.hostPeer) {
     params.set('host', session.hostPeer);
+  }
+  if (session.checkpointRef) {
+    params.set('checkpointRef', session.checkpointRef);
   }
   if (session.role === 'host' && session.joinToken) {
     params.set('join', session.joinToken);

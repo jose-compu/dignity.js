@@ -582,3 +582,44 @@ button.ghost {
     min-height: 280px;
   }
 }
+
+.resume-panel {
+  margin: 0 16px 12px;
+}
+
+.resume-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.resume-panel__phase {
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.resume-panel__hint,
+.resume-panel__ready,
+.resume-panel__actions,
+.resume-panel__buttons {
+  margin-top: 12px;
+}
+
+.resume-panel__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.resume-panel__ready input,
+.resume-panel__backup textarea {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.error-inline {
+  color: var(--danger);
+}

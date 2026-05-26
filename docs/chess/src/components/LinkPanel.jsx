@@ -9,6 +9,7 @@ export default function LinkPanel({
   joinToken: joinTokenProp,
   watchToken: watchTokenProp,
   resumeToken: resumeTokenProp,
+  resumeLink: resumeLinkProp,
   onRegenerateResume,
   prominent = false,
   audience = 'host'
@@ -16,6 +17,7 @@ export default function LinkPanel({
   const joinToken = game?.data?.joinToken || joinTokenProp;
   const watchToken = game?.data?.watchToken || watchTokenProp;
   const resumeToken = game?.data?.resumeToken || resumeTokenProp;
+  const resumeLinkOverride = resumeLinkProp || null;
   const [copied, setCopied] = useState('');
   const [collapsed, setCollapsed] = useState(false);
   const isPlayer = audience === 'player';
@@ -26,13 +28,17 @@ export default function LinkPanel({
     hostPeer,
     joinToken,
     watchToken,
-    resumeToken
+    resumeToken,
+    resumeLink: resumeLinkOverride
   });
 
-  const joinExpired = Boolean(game?.data?.joinTokenUsed);
   const ready = isPlayer
-    ? Boolean(hostPeer && watchToken && resumeToken)
-    : Boolean(hostPeer && joinToken && watchToken && resumeToken);
+    ? Boolean(hostPeer && (watchToken || resumeLinkOverride) && (resumeToken || resumeLinkOverride))
+    : Boolean(hostPeer && joinToken && watchToken && (resumeToken || resumeLinkOverride));
+  const joinExpired = Boolean(game?.data?.joinTokenUsed);
+  const resumeHint = resumeLinkOverride
+    ? 'Resume link includes a dual-signed checkpoint when both players co-sign in the panel below.'
+    : 'Use “Propose pause & co-sign checkpoint” to generate a signed resume link.';
 
   useEffect(() => {
     if (prominent && (joinExpired || isPlayer)) {
@@ -121,9 +127,10 @@ export default function LinkPanel({
                 {copied === 'resume' ? 'Copied' : 'Copy'}
               </button>
               {!isPlayer && onRegenerateResume ? (
-                <button type="button" className="secondary" onClick={onRegenerateResume}>New resume link</button>
+                <button type="button" className="secondary" onClick={onRegenerateResume}>Legacy token</button>
               ) : null}
             </div>
+            <p className="link-panel__hint">{resumeHint}</p>
           </>
         )}
       </div>
