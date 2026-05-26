@@ -100,7 +100,7 @@ export default function Lobby({
 
         <div className="lobby__join">
           <h2>Join from link</h2>
-          <p>Paste a host, opponent, spectator, or resume link. You will choose or confirm your name on the next screen.</p>
+          <p>Paste a host, opponent, spectator, or dual-signed resume link. Resume links restore signed game state from the URL when possible.</p>
           <textarea
             rows={4}
             value={pasteValue}

@@ -786,7 +786,7 @@ var require_scheduler = __commonJS({
 var require_react_dom_production = __commonJS({
   "node_modules/react-dom/cjs/react-dom.production.js"(exports) {
     "use strict";
-    var React9 = require_react();
+    var React10 = require_react();
     function formatProdErrorMessage(code) {
       var url = "https://react.dev/errors/" + code;
       if (1 < arguments.length) {
@@ -826,7 +826,7 @@ var require_react_dom_production = __commonJS({
         implementation
       };
     }
-    var ReactSharedInternals = React9.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+    var ReactSharedInternals = React10.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
     function getCrossOriginStringAs(as, input) {
       if ("font" === as) return "";
       if ("string" === typeof input)
@@ -962,7 +962,7 @@ var require_react_dom_client_production = __commonJS({
   "node_modules/react-dom/cjs/react-dom-client.production.js"(exports) {
     "use strict";
     var Scheduler = require_scheduler();
-    var React9 = require_react();
+    var React10 = require_react();
     var ReactDOM = require_react_dom();
     function formatProdErrorMessage(code) {
       var url = "https://react.dev/errors/" + code;
@@ -1153,7 +1153,7 @@ var require_react_dom_client_production = __commonJS({
       return null;
     }
     var isArrayImpl = Array.isArray;
-    var ReactSharedInternals = React9.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+    var ReactSharedInternals = React10.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
     var ReactDOMSharedInternals = ReactDOM.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
     var sharedNotPendingObject = {
       pending: false,
@@ -12599,7 +12599,7 @@ var require_react_dom_client_production = __commonJS({
         0 === i && attemptExplicitHydrationTarget(target);
       }
     };
-    var isomorphicReactPackageVersion$jscomp$inline_1840 = React9.version;
+    var isomorphicReactPackageVersion$jscomp$inline_1840 = React10.version;
     if ("19.2.6" !== isomorphicReactPackageVersion$jscomp$inline_1840)
       throw Error(
         formatProdErrorMessage(
@@ -12770,7 +12770,7 @@ var require_crypto = __commonJS({
 // node_modules/tweetnacl/nacl-fast.js
 var require_nacl_fast = __commonJS({
   "node_modules/tweetnacl/nacl-fast.js"(exports, module) {
-    (function(nacl) {
+    (function(nacl3) {
       "use strict";
       var gf = function(init) {
         var i, r = new Float64Array(16);
@@ -14729,7 +14729,7 @@ var require_nacl_fast = __commonJS({
         return n;
       }
       var crypto_secretbox_KEYBYTES = 32, crypto_secretbox_NONCEBYTES = 24, crypto_secretbox_ZEROBYTES = 32, crypto_secretbox_BOXZEROBYTES = 16, crypto_scalarmult_BYTES = 32, crypto_scalarmult_SCALARBYTES = 32, crypto_box_PUBLICKEYBYTES = 32, crypto_box_SECRETKEYBYTES = 32, crypto_box_BEFORENMBYTES = 32, crypto_box_NONCEBYTES = crypto_secretbox_NONCEBYTES, crypto_box_ZEROBYTES = crypto_secretbox_ZEROBYTES, crypto_box_BOXZEROBYTES = crypto_secretbox_BOXZEROBYTES, crypto_sign_BYTES = 64, crypto_sign_PUBLICKEYBYTES = 32, crypto_sign_SECRETKEYBYTES = 64, crypto_sign_SEEDBYTES = 32, crypto_hash_BYTES = 64;
-      nacl.lowlevel = {
+      nacl3.lowlevel = {
         crypto_core_hsalsa20,
         crypto_stream_xor,
         crypto_stream,
@@ -14802,12 +14802,12 @@ var require_nacl_fast = __commonJS({
       function cleanup(arr) {
         for (var i = 0; i < arr.length; i++) arr[i] = 0;
       }
-      nacl.randomBytes = function(n) {
+      nacl3.randomBytes = function(n) {
         var b = new Uint8Array(n);
         randombytes(b, n);
         return b;
       };
-      nacl.secretbox = function(msg, nonce, key) {
+      nacl3.secretbox = function(msg, nonce, key) {
         checkArrayTypes(msg, nonce, key);
         checkLengths(key, nonce);
         var m = new Uint8Array(crypto_secretbox_ZEROBYTES + msg.length);
@@ -14816,7 +14816,7 @@ var require_nacl_fast = __commonJS({
         crypto_secretbox(c, m, m.length, nonce, key);
         return c.subarray(crypto_secretbox_BOXZEROBYTES);
       };
-      nacl.secretbox.open = function(box, nonce, key) {
+      nacl3.secretbox.open = function(box, nonce, key) {
         checkArrayTypes(box, nonce, key);
         checkLengths(key, nonce);
         var c = new Uint8Array(crypto_secretbox_BOXZEROBYTES + box.length);
@@ -14826,10 +14826,10 @@ var require_nacl_fast = __commonJS({
         if (crypto_secretbox_open(m, c, c.length, nonce, key) !== 0) return null;
         return m.subarray(crypto_secretbox_ZEROBYTES);
       };
-      nacl.secretbox.keyLength = crypto_secretbox_KEYBYTES;
-      nacl.secretbox.nonceLength = crypto_secretbox_NONCEBYTES;
-      nacl.secretbox.overheadLength = crypto_secretbox_BOXZEROBYTES;
-      nacl.scalarMult = function(n, p) {
+      nacl3.secretbox.keyLength = crypto_secretbox_KEYBYTES;
+      nacl3.secretbox.nonceLength = crypto_secretbox_NONCEBYTES;
+      nacl3.secretbox.overheadLength = crypto_secretbox_BOXZEROBYTES;
+      nacl3.scalarMult = function(n, p) {
         checkArrayTypes(n, p);
         if (n.length !== crypto_scalarmult_SCALARBYTES) throw new Error("bad n size");
         if (p.length !== crypto_scalarmult_BYTES) throw new Error("bad p size");
@@ -14837,39 +14837,39 @@ var require_nacl_fast = __commonJS({
         crypto_scalarmult(q, n, p);
         return q;
       };
-      nacl.scalarMult.base = function(n) {
+      nacl3.scalarMult.base = function(n) {
         checkArrayTypes(n);
         if (n.length !== crypto_scalarmult_SCALARBYTES) throw new Error("bad n size");
         var q = new Uint8Array(crypto_scalarmult_BYTES);
         crypto_scalarmult_base(q, n);
         return q;
       };
-      nacl.scalarMult.scalarLength = crypto_scalarmult_SCALARBYTES;
-      nacl.scalarMult.groupElementLength = crypto_scalarmult_BYTES;
-      nacl.box = function(msg, nonce, publicKey, secretKey) {
-        var k = nacl.box.before(publicKey, secretKey);
-        return nacl.secretbox(msg, nonce, k);
+      nacl3.scalarMult.scalarLength = crypto_scalarmult_SCALARBYTES;
+      nacl3.scalarMult.groupElementLength = crypto_scalarmult_BYTES;
+      nacl3.box = function(msg, nonce, publicKey, secretKey) {
+        var k = nacl3.box.before(publicKey, secretKey);
+        return nacl3.secretbox(msg, nonce, k);
       };
-      nacl.box.before = function(publicKey, secretKey) {
+      nacl3.box.before = function(publicKey, secretKey) {
         checkArrayTypes(publicKey, secretKey);
         checkBoxLengths(publicKey, secretKey);
         var k = new Uint8Array(crypto_box_BEFORENMBYTES);
         crypto_box_beforenm(k, publicKey, secretKey);
         return k;
       };
-      nacl.box.after = nacl.secretbox;
-      nacl.box.open = function(msg, nonce, publicKey, secretKey) {
-        var k = nacl.box.before(publicKey, secretKey);
-        return nacl.secretbox.open(msg, nonce, k);
+      nacl3.box.after = nacl3.secretbox;
+      nacl3.box.open = function(msg, nonce, publicKey, secretKey) {
+        var k = nacl3.box.before(publicKey, secretKey);
+        return nacl3.secretbox.open(msg, nonce, k);
       };
-      nacl.box.open.after = nacl.secretbox.open;
-      nacl.box.keyPair = function() {
+      nacl3.box.open.after = nacl3.secretbox.open;
+      nacl3.box.keyPair = function() {
         var pk = new Uint8Array(crypto_box_PUBLICKEYBYTES);
         var sk = new Uint8Array(crypto_box_SECRETKEYBYTES);
         crypto_box_keypair(pk, sk);
         return { publicKey: pk, secretKey: sk };
       };
-      nacl.box.keyPair.fromSecretKey = function(secretKey) {
+      nacl3.box.keyPair.fromSecretKey = function(secretKey) {
         checkArrayTypes(secretKey);
         if (secretKey.length !== crypto_box_SECRETKEYBYTES)
           throw new Error("bad secret key size");
@@ -14877,12 +14877,12 @@ var require_nacl_fast = __commonJS({
         crypto_scalarmult_base(pk, secretKey);
         return { publicKey: pk, secretKey: new Uint8Array(secretKey) };
       };
-      nacl.box.publicKeyLength = crypto_box_PUBLICKEYBYTES;
-      nacl.box.secretKeyLength = crypto_box_SECRETKEYBYTES;
-      nacl.box.sharedKeyLength = crypto_box_BEFORENMBYTES;
-      nacl.box.nonceLength = crypto_box_NONCEBYTES;
-      nacl.box.overheadLength = nacl.secretbox.overheadLength;
-      nacl.sign = function(msg, secretKey) {
+      nacl3.box.publicKeyLength = crypto_box_PUBLICKEYBYTES;
+      nacl3.box.secretKeyLength = crypto_box_SECRETKEYBYTES;
+      nacl3.box.sharedKeyLength = crypto_box_BEFORENMBYTES;
+      nacl3.box.nonceLength = crypto_box_NONCEBYTES;
+      nacl3.box.overheadLength = nacl3.secretbox.overheadLength;
+      nacl3.sign = function(msg, secretKey) {
         checkArrayTypes(msg, secretKey);
         if (secretKey.length !== crypto_sign_SECRETKEYBYTES)
           throw new Error("bad secret key size");
@@ -14890,7 +14890,7 @@ var require_nacl_fast = __commonJS({
         crypto_sign(signedMsg, msg, msg.length, secretKey);
         return signedMsg;
       };
-      nacl.sign.open = function(signedMsg, publicKey) {
+      nacl3.sign.open = function(signedMsg, publicKey) {
         checkArrayTypes(signedMsg, publicKey);
         if (publicKey.length !== crypto_sign_PUBLICKEYBYTES)
           throw new Error("bad public key size");
@@ -14901,13 +14901,13 @@ var require_nacl_fast = __commonJS({
         for (var i = 0; i < m.length; i++) m[i] = tmp[i];
         return m;
       };
-      nacl.sign.detached = function(msg, secretKey) {
-        var signedMsg = nacl.sign(msg, secretKey);
+      nacl3.sign.detached = function(msg, secretKey) {
+        var signedMsg = nacl3.sign(msg, secretKey);
         var sig = new Uint8Array(crypto_sign_BYTES);
         for (var i = 0; i < sig.length; i++) sig[i] = signedMsg[i];
         return sig;
       };
-      nacl.sign.detached.verify = function(msg, sig, publicKey) {
+      nacl3.sign.detached.verify = function(msg, sig, publicKey) {
         checkArrayTypes(msg, sig, publicKey);
         if (sig.length !== crypto_sign_BYTES)
           throw new Error("bad signature size");
@@ -14920,13 +14920,13 @@ var require_nacl_fast = __commonJS({
         for (i = 0; i < msg.length; i++) sm[i + crypto_sign_BYTES] = msg[i];
         return crypto_sign_open(m, sm, sm.length, publicKey) >= 0;
       };
-      nacl.sign.keyPair = function() {
+      nacl3.sign.keyPair = function() {
         var pk = new Uint8Array(crypto_sign_PUBLICKEYBYTES);
         var sk = new Uint8Array(crypto_sign_SECRETKEYBYTES);
         crypto_sign_keypair(pk, sk);
         return { publicKey: pk, secretKey: sk };
       };
-      nacl.sign.keyPair.fromSecretKey = function(secretKey) {
+      nacl3.sign.keyPair.fromSecretKey = function(secretKey) {
         checkArrayTypes(secretKey);
         if (secretKey.length !== crypto_sign_SECRETKEYBYTES)
           throw new Error("bad secret key size");
@@ -14934,7 +14934,7 @@ var require_nacl_fast = __commonJS({
         for (var i = 0; i < pk.length; i++) pk[i] = secretKey[32 + i];
         return { publicKey: pk, secretKey: new Uint8Array(secretKey) };
       };
-      nacl.sign.keyPair.fromSeed = function(seed) {
+      nacl3.sign.keyPair.fromSeed = function(seed) {
         checkArrayTypes(seed);
         if (seed.length !== crypto_sign_SEEDBYTES)
           throw new Error("bad seed size");
@@ -14944,31 +14944,31 @@ var require_nacl_fast = __commonJS({
         crypto_sign_keypair(pk, sk, true);
         return { publicKey: pk, secretKey: sk };
       };
-      nacl.sign.publicKeyLength = crypto_sign_PUBLICKEYBYTES;
-      nacl.sign.secretKeyLength = crypto_sign_SECRETKEYBYTES;
-      nacl.sign.seedLength = crypto_sign_SEEDBYTES;
-      nacl.sign.signatureLength = crypto_sign_BYTES;
-      nacl.hash = function(msg) {
+      nacl3.sign.publicKeyLength = crypto_sign_PUBLICKEYBYTES;
+      nacl3.sign.secretKeyLength = crypto_sign_SECRETKEYBYTES;
+      nacl3.sign.seedLength = crypto_sign_SEEDBYTES;
+      nacl3.sign.signatureLength = crypto_sign_BYTES;
+      nacl3.hash = function(msg) {
         checkArrayTypes(msg);
         var h = new Uint8Array(crypto_hash_BYTES);
         crypto_hash(h, msg, msg.length);
         return h;
       };
-      nacl.hash.hashLength = crypto_hash_BYTES;
-      nacl.verify = function(x, y) {
+      nacl3.hash.hashLength = crypto_hash_BYTES;
+      nacl3.verify = function(x, y) {
         checkArrayTypes(x, y);
         if (x.length === 0 || y.length === 0) return false;
         if (x.length !== y.length) return false;
         return vn(x, 0, y, 0, x.length) === 0 ? true : false;
       };
-      nacl.setPRNG = function(fn) {
+      nacl3.setPRNG = function(fn) {
         randombytes = fn;
       };
       (function() {
         var crypto2 = typeof self !== "undefined" ? self.crypto || self.msCrypto : null;
         if (crypto2 && crypto2.getRandomValues) {
           var QUOTA = 65536;
-          nacl.setPRNG(function(x, n) {
+          nacl3.setPRNG(function(x, n) {
             var i, v = new Uint8Array(n);
             for (i = 0; i < n; i += QUOTA) {
               crypto2.getRandomValues(v.subarray(i, i + Math.min(n - i, QUOTA)));
@@ -14979,7 +14979,7 @@ var require_nacl_fast = __commonJS({
         } else if (typeof __require !== "undefined") {
           crypto2 = require_crypto();
           if (crypto2 && crypto2.randomBytes) {
-            nacl.setPRNG(function(x, n) {
+            nacl3.setPRNG(function(x, n) {
               var i, v = crypto2.randomBytes(n);
               for (i = 0; i < n; i++) x[i] = v[i];
               cleanup(v);
@@ -15149,8 +15149,8 @@ var require_vdf = __commonJS({
 // src/security/message-security-service.js
 var require_message_security_service = __commonJS({
   "src/security/message-security-service.js"(exports, module) {
-    var nacl = require_nacl_fast();
-    var naclUtil = require_nacl_util();
+    var nacl3 = require_nacl_fast();
+    var naclUtil3 = require_nacl_util();
     var VDF = require_vdf();
     var DEFAULT_SECURITY_OPTIONS = {
       enabled: true,
@@ -15165,15 +15165,15 @@ var require_message_security_service = __commonJS({
       trustedPeerKeys: {},
       kdfIterations: 1e5
     };
-    function stableStringify(value) {
+    function stableStringify2(value) {
       if (value === null || typeof value !== "object") {
         return JSON.stringify(value);
       }
       if (Array.isArray(value)) {
-        return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+        return `[${value.map((entry) => stableStringify2(entry)).join(",")}]`;
       }
       const keys = Object.keys(value).sort();
-      return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+      return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify2(value[key])}`).join(",")}}`;
     }
     function concatBytes(a, b) {
       const result = new Uint8Array(a.length + b.length);
@@ -15182,13 +15182,13 @@ var require_message_security_service = __commonJS({
       return result;
     }
     function hash32(bytes) {
-      return nacl.hash(bytes).slice(0, 32);
+      return nacl3.hash(bytes).slice(0, 32);
     }
     function bytesToHex(bytes) {
       return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
     }
     function utf8ToBytes(value) {
-      return naclUtil.decodeUTF8(value);
+      return naclUtil3.decodeUTF8(value);
     }
     async function deriveBroadcastKey(password, salt, iterations) {
       const subtle = globalThis.crypto && globalThis.crypto.subtle;
@@ -15241,16 +15241,16 @@ var require_message_security_service = __commonJS({
         };
         this.now = now || (() => Date.now());
         const keyPair = options.keyPair || {
-          signing: nacl.sign.keyPair(),
-          encryption: nacl.box.keyPair()
+          signing: nacl3.sign.keyPair(),
+          encryption: nacl3.box.keyPair()
         };
         this.signingSecretKey = keyPair.signing.secretKey;
         this.signingPublicKey = keyPair.signing.publicKey;
         this.encryptionSecretKey = keyPair.encryption.secretKey;
         this.encryptionPublicKey = keyPair.encryption.publicKey;
         this.publicKeyBundle = {
-          signingPublicKey: naclUtil.encodeBase64(this.signingPublicKey),
-          encryptionPublicKey: naclUtil.encodeBase64(this.encryptionPublicKey)
+          signingPublicKey: naclUtil3.encodeBase64(this.signingPublicKey),
+          encryptionPublicKey: naclUtil3.encodeBase64(this.encryptionPublicKey)
         };
         this.peerPublicKeys = /* @__PURE__ */ new Map();
         for (const [peerId, peerKey] of Object.entries(this.options.trustedPeerKeys || {})) {
@@ -15311,20 +15311,20 @@ var require_message_security_service = __commonJS({
         }
         if (this.options.signingEnabled) {
           const signatureBase = this.canonicalSigningInput(envelope);
-          const signature = nacl.sign.detached(
-            naclUtil.decodeUTF8(signatureBase),
+          const signature = nacl3.sign.detached(
+            naclUtil3.decodeUTF8(signatureBase),
             this.signingSecretKey
           );
           envelope.security.signing = {
             enabled: true,
             algorithm: "ed25519",
-            signature: naclUtil.encodeBase64(signature)
+            signature: naclUtil3.encodeBase64(signature)
           };
         }
         return envelope;
       }
       canonicalSigningInput(envelope) {
-        return stableStringify({
+        return stableStringify2({
           version: envelope.version,
           senderId: envelope.senderId,
           senderPublicKey: envelope.senderPublicKey,
@@ -15339,7 +15339,7 @@ var require_message_security_service = __commonJS({
         });
       }
       canonicalPowInput(envelope) {
-        return stableStringify({
+        return stableStringify2({
           version: envelope.version,
           senderId: envelope.senderId,
           senderPublicKey: envelope.senderPublicKey,
@@ -15415,44 +15415,44 @@ var require_message_security_service = __commonJS({
             }
           };
         }
-        const plainText = naclUtil.decodeUTF8(JSON.stringify(payload));
+        const plainText = naclUtil3.decodeUTF8(JSON.stringify(payload));
         if (targetId) {
           const recipientPublicKey = this.resolvePeerPublicKey(targetId, null);
           if (!recipientPublicKey) {
             throw new Error(`Missing public key for target peer ${targetId}`);
           }
-          const nonce2 = nacl.randomBytes(nacl.box.nonceLength);
-          const encrypted2 = nacl.box(
+          const nonce2 = nacl3.randomBytes(nacl3.box.nonceLength);
+          const encrypted2 = nacl3.box(
             plainText,
             nonce2,
-            naclUtil.decodeBase64(recipientPublicKey.encryptionPublicKey),
+            naclUtil3.decodeBase64(recipientPublicKey.encryptionPublicKey),
             this.encryptionSecretKey
           );
           return {
-            payload: naclUtil.encodeBase64(encrypted2),
+            payload: naclUtil3.encodeBase64(encrypted2),
             security: {
               enabled: true,
               mode: "direct",
-              nonce: naclUtil.encodeBase64(nonce2),
+              nonce: naclUtil3.encodeBase64(nonce2),
               senderEncryptionPublicKey: this.publicKeyBundle.encryptionPublicKey
             }
           };
         }
         const scope = securityContext.broadcastScope || "default";
-        const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
-        const salt = nacl.randomBytes(16);
+        const nonce = nacl3.randomBytes(nacl3.secretbox.nonceLength);
+        const salt = nacl3.randomBytes(16);
         const password = this.resolveBroadcastPassword(scope);
         const iterations = this.options.kdfIterations || DEFAULT_SECURITY_OPTIONS.kdfIterations;
         const key = await deriveBroadcastKey(password, salt, iterations);
-        const encrypted = nacl.secretbox(plainText, nonce, key);
+        const encrypted = nacl3.secretbox(plainText, nonce, key);
         return {
-          payload: naclUtil.encodeBase64(encrypted),
+          payload: naclUtil3.encodeBase64(encrypted),
           security: {
             enabled: true,
             mode: "broadcast",
             scope,
-            nonce: naclUtil.encodeBase64(nonce),
-            salt: naclUtil.encodeBase64(salt),
+            nonce: naclUtil3.encodeBase64(nonce),
+            salt: naclUtil3.encodeBase64(salt),
             kdf: "pbkdf2",
             kdfIterations: iterations
           }
@@ -15463,12 +15463,12 @@ var require_message_security_service = __commonJS({
         if (!encryption || !encryption.enabled || !this.options.encryptionEnabled) {
           return envelope.payload;
         }
-        const encryptedBuffer = naclUtil.decodeBase64(envelope.payload);
+        const encryptedBuffer = naclUtil3.decodeBase64(envelope.payload);
         if (encryption.mode === "broadcast") {
           const scope = encryption.scope || "default";
           const password = this.resolveBroadcastPassword(scope);
-          const salt = naclUtil.decodeBase64(encryption.salt);
-          const nonce = naclUtil.decodeBase64(encryption.nonce);
+          const salt = naclUtil3.decodeBase64(encryption.salt);
+          const nonce = naclUtil3.decodeBase64(encryption.nonce);
           let key;
           if (encryption.kdf === "pbkdf2") {
             const iterations = encryption.kdfIterations || DEFAULT_SECURITY_OPTIONS.kdfIterations;
@@ -15476,16 +15476,16 @@ var require_message_security_service = __commonJS({
           } else {
             key = legacyBroadcastKey(password, salt);
           }
-          const decrypted = nacl.secretbox.open(encryptedBuffer, nonce, key);
+          const decrypted = nacl3.secretbox.open(encryptedBuffer, nonce, key);
           if (!decrypted) {
             throw new Error("Unable to decrypt broadcast payload");
           }
-          return JSON.parse(naclUtil.encodeUTF8(decrypted));
+          return JSON.parse(naclUtil3.encodeUTF8(decrypted));
         }
         if (encryption.mode === "direct") {
-          const senderPublicKey = naclUtil.decodeBase64(encryption.senderEncryptionPublicKey);
-          const nonce = naclUtil.decodeBase64(encryption.nonce);
-          const decrypted = nacl.box.open(
+          const senderPublicKey = naclUtil3.decodeBase64(encryption.senderEncryptionPublicKey);
+          const nonce = naclUtil3.decodeBase64(encryption.nonce);
+          const decrypted = nacl3.box.open(
             encryptedBuffer,
             nonce,
             senderPublicKey,
@@ -15494,7 +15494,7 @@ var require_message_security_service = __commonJS({
           if (!decrypted) {
             throw new Error("Unable to decrypt direct payload");
           }
-          return JSON.parse(naclUtil.encodeUTF8(decrypted));
+          return JSON.parse(naclUtil3.encodeUTF8(decrypted));
         }
         throw new Error(`Unsupported encryption mode: ${encryption.mode}`);
       }
@@ -15504,10 +15504,10 @@ var require_message_security_service = __commonJS({
           throw new Error(`Missing public key for sender ${envelope.senderId}`);
         }
         const signatureBase = this.canonicalSigningInput(envelope);
-        const isValid = nacl.sign.detached.verify(
-          naclUtil.decodeUTF8(signatureBase),
-          naclUtil.decodeBase64(envelope.security.signing.signature),
-          naclUtil.decodeBase64(senderPublicKey.signingPublicKey)
+        const isValid = nacl3.sign.detached.verify(
+          naclUtil3.decodeUTF8(signatureBase),
+          naclUtil3.decodeBase64(envelope.security.signing.signature),
+          naclUtil3.decodeBase64(senderPublicKey.signingPublicKey)
         );
         if (!isValid) {
           const error2 = new Error(`Invalid signature for sender ${envelope.senderId}`);
@@ -15568,7 +15568,7 @@ var require_message_security_service = __commonJS({
     };
     module.exports = {
       MessageSecurityService,
-      stableStringify,
+      stableStringify: stableStringify2,
       deriveBroadcastKey,
       legacyBroadcastKey,
       DEFAULT_SECURITY_OPTIONS
@@ -16431,13 +16431,13 @@ var require_dignity_p2p = __commonJS({
 // src/react/index.js
 var require_react2 = __commonJS({
   "src/react/index.js"(exports, module) {
-    var { useCallback: useCallback2, useEffect: useEffect6, useState: useState6 } = require_react();
+    var { useCallback: useCallback2, useEffect: useEffect7, useState: useState7 } = require_react();
     var DignityP2P2 = require_dignity_p2p();
     function useDignity2(config) {
-      const [node2, setNode] = useState6(null);
-      const [status, setStatus] = useState6("idle");
-      const [error2, setError] = useState6(null);
-      useEffect6(() => {
+      const [node2, setNode] = useState7(null);
+      const [status, setStatus] = useState7("idle");
+      const [error2, setError] = useState7(null);
+      useEffect7(() => {
         if (!config) {
           return void 0;
         }
@@ -16471,7 +16471,7 @@ var require_react2 = __commonJS({
       };
     }
     function useCollection(node2, collectionName) {
-      const [records, setRecords] = useState6([]);
+      const [records, setRecords] = useState7([]);
       const refresh = useCallback2(() => {
         if (!node2 || !collectionName) {
           setRecords([]);
@@ -16479,7 +16479,7 @@ var require_react2 = __commonJS({
         }
         setRecords(node2.list(collectionName));
       }, [node2, collectionName]);
-      useEffect6(() => {
+      useEffect7(() => {
         refresh();
         if (!node2) {
           return void 0;
@@ -16491,7 +16491,7 @@ var require_react2 = __commonJS({
     }
     function usePeers2(node2, scope = "main", options = {}) {
       const includeSelf = options.includeSelf !== false;
-      const [peers, setPeers] = useState6([]);
+      const [peers, setPeers] = useState7([]);
       const refresh = useCallback2(() => {
         if (!node2) {
           setPeers([]);
@@ -16499,7 +16499,7 @@ var require_react2 = __commonJS({
         }
         setPeers(node2.listPeers(scope, { includeSelf }));
       }, [node2, scope, includeSelf]);
-      useEffect6(() => {
+      useEffect7(() => {
         refresh();
         if (!node2) {
           return void 0;
@@ -16515,7 +16515,7 @@ var require_react2 = __commonJS({
       return peers;
     }
     function useObject2(node2, collectionName, objectId) {
-      const [record, setRecord] = useState6(null);
+      const [record, setRecord] = useState7(null);
       const refresh = useCallback2(() => {
         if (!node2 || !collectionName || !objectId) {
           setRecord(null);
@@ -16523,7 +16523,7 @@ var require_react2 = __commonJS({
         }
         setRecord(node2.read(collectionName, objectId));
       }, [node2, collectionName, objectId]);
-      useEffect6(() => {
+      useEffect7(() => {
         refresh();
         if (!node2) {
           return void 0;
@@ -16539,9 +16539,9 @@ var require_react2 = __commonJS({
       return record;
     }
     function useDiscovery2(node2, scope = "main", options = null) {
-      const [joined, setJoined] = useState6(false);
-      const [error2, setError] = useState6(null);
-      useEffect6(() => {
+      const [joined, setJoined] = useState7(false);
+      const [error2, setError] = useState7(null);
+      useEffect7(() => {
         if (!node2 || !scope || !options) {
           setJoined(false);
           setError(null);
@@ -16568,7 +16568,7 @@ var require_react2 = __commonJS({
       return { joined, error: error2 };
     }
     function useConnectionStats(node2, pollIntervalMs = 2e3) {
-      const [stats, setStats] = useState6({ openCount: 0, peerIds: [] });
+      const [stats, setStats] = useState7({ openCount: 0, peerIds: [] });
       const refresh = useCallback2(() => {
         if (!node2 || typeof node2.getConnectionStats !== "function") {
           setStats({ openCount: 0, peerIds: [] });
@@ -16576,7 +16576,7 @@ var require_react2 = __commonJS({
         }
         setStats(node2.getConnectionStats());
       }, [node2]);
-      useEffect6(() => {
+      useEffect7(() => {
         refresh();
         if (!node2 || !pollIntervalMs) {
           return void 0;
@@ -16599,8 +16599,8 @@ var require_react2 = __commonJS({
       };
     }
     function useMessages(node2, filter = null) {
-      const [messages, setMessages] = useState6([]);
-      useEffect6(() => {
+      const [messages, setMessages] = useState7([]);
+      useEffect7(() => {
         if (!node2) {
           setMessages([]);
           return void 0;
@@ -24113,11 +24113,11 @@ var require_src = __commonJS({
 });
 
 // docs/chess/src/main.jsx
-var import_react9 = __toESM(require_react());
+var import_react10 = __toESM(require_react());
 var import_client = __toESM(require_client());
 
 // docs/chess/src/App.jsx
-var import_react8 = __toESM(require_react());
+var import_react9 = __toESM(require_react());
 
 // docs/chess/src/components/Lobby.jsx
 var import_react = __toESM(require_react());
@@ -24203,18 +24203,21 @@ function parseRoute() {
     hostPeer: params.host || null,
     joinToken: params.join || null,
     watchToken: params.watch || null,
-    resumeToken: params.resume || null
+    resumeToken: params.resume || null,
+    checkpoint: params.checkpoint || null,
+    checkpointRef: params.checkpointRef || null
   };
 }
-function buildLinks({ gameId, roomKey, hostPeer, joinToken, watchToken, resumeToken }) {
+function buildLinks({ gameId, roomKey, hostPeer, joinToken, watchToken, resumeToken, resumeLink }) {
   const base = `${window.location.origin}${window.location.pathname}`;
   const common2 = `game=${encodeURIComponent(gameId)}&room=${encodeURIComponent(roomKey)}`;
   const hostParam = hostPeer ? `&host=${encodeURIComponent(hostPeer)}` : "";
+  const resume = resumeLink || `${base}#${common2}&role=resume&resume=${encodeURIComponent(resumeToken || "")}${hostParam}`;
   return {
-    host: `${base}#${common2}&role=host&resume=${encodeURIComponent(resumeToken)}${hostParam}`,
+    host: `${base}#${common2}&role=host&resume=${encodeURIComponent(resumeToken || "")}${hostParam}`,
     join: `${base}#${common2}&role=join&join=${encodeURIComponent(joinToken)}${hostParam}`,
     watch: `${base}#${common2}&role=watch&watch=${encodeURIComponent(watchToken)}${hostParam}`,
-    resume: `${base}#${common2}&role=resume&resume=${encodeURIComponent(resumeToken)}${hostParam}`
+    resume
   };
 }
 function withHostPeerInHash(hostPeer) {
@@ -24291,6 +24294,9 @@ function saveLocalGameSession(session) {
   }
   const trimmed = sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 40);
   localStorage.setItem(SESSIONS_KEY, JSON.stringify(trimmed));
+  if (session.resumeLink) {
+    localStorage.setItem(`dignity-chess-resume-link:${session.gameId}`, session.resumeLink);
+  }
 }
 function loadChessRecordsFromIndexedDB() {
   if (typeof indexedDB === "undefined") {
@@ -24347,6 +24353,11 @@ async function listLocalGames() {
   return { active, finished };
 }
 function sessionResumeHash(session) {
+  const savedLink = localStorage.getItem(`dignity-chess-resume-link:${session.gameId}`);
+  if (savedLink) {
+    const hashIndex = savedLink.indexOf("#");
+    return hashIndex >= 0 ? savedLink.slice(hashIndex + 1) : savedLink;
+  }
   const role = session.role === "host" ? "host" : "resume";
   const params = new URLSearchParams({
     game: session.gameId,
@@ -24356,6 +24367,9 @@ function sessionResumeHash(session) {
   });
   if (session.hostPeer) {
     params.set("host", session.hostPeer);
+  }
+  if (session.checkpointRef) {
+    params.set("checkpointRef", session.checkpointRef);
   }
   if (session.role === "host" && session.joinToken) {
     params.set("join", session.joinToken);
@@ -24440,7 +24454,7 @@ function Lobby({
       placeholder: "Nickname",
       maxLength: 32
     }
-  )), /* @__PURE__ */ import_react.default.createElement("button", { type: "button", className: "primary", onClick: () => onCreate(generateGameId()) }, "Start new game")), /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__join" }, /* @__PURE__ */ import_react.default.createElement("h2", null, "Join from link"), /* @__PURE__ */ import_react.default.createElement("p", null, "Paste a host, opponent, spectator, or resume link. You will choose or confirm your name on the next screen."), /* @__PURE__ */ import_react.default.createElement(
+  )), /* @__PURE__ */ import_react.default.createElement("button", { type: "button", className: "primary", onClick: () => onCreate(generateGameId()) }, "Start new game")), /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__join" }, /* @__PURE__ */ import_react.default.createElement("h2", null, "Join from link"), /* @__PURE__ */ import_react.default.createElement("p", null, "Paste a host, opponent, spectator, or dual-signed resume link. Resume links restore signed game state from the URL when possible."), /* @__PURE__ */ import_react.default.createElement(
     "textarea",
     {
       rows: 4,
@@ -24501,7 +24515,7 @@ var ROLE_COPY = {
   resume: {
     title: "Resume game",
     action: "Reconnect",
-    hint: "Use the same name you played with before, if possible."
+    hint: "This link carries a dual-signed checkpoint. Use the same device when possible so your seat keys match."
   }
 };
 function JoinGate({ route, defaultNickname, onConfirm, onBack }) {
@@ -24528,7 +24542,7 @@ function JoinGate({ route, defaultNickname, onConfirm, onBack }) {
 }
 
 // docs/chess/src/components/GameView.jsx
-var import_react6 = __toESM(require_react());
+var import_react7 = __toESM(require_react());
 
 // node_modules/chess.js/dist/esm/chess.js
 function rootNode(comment) {
@@ -27987,11 +28001,11 @@ var Chess = class {
 };
 
 // docs/chess/src/components/GameView.jsx
-var import_react7 = __toESM(require_react2());
+var import_react8 = __toESM(require_react2());
 
 // docs/chess/src/lib/dignitySetup.js
 var import_src = __toESM(require_src());
-function createDignityConfig({ nodeId, roomKey, scope, nickname, role }) {
+function createDignityConfig({ nodeId, roomKey, scope, nickname, role, keyPair }) {
   const networkAdapter = (0, import_src.createPeerJSNetworkAdapter)({
     urls: import_src.DEFAULT_CLOUDFLARE_SIGNALING_URLS
   });
@@ -28011,7 +28025,8 @@ function createDignityConfig({ nodeId, roomKey, scope, nickname, role }) {
       },
       resolveBroadcastScope: () => scope,
       discoveryHeartbeatMs: 12e3,
-      presenceTtlMs: 36e3
+      presenceTtlMs: 36e3,
+      keyPair
     },
     __meta: { nickname, role, scope, roomKey }
   };
@@ -28197,6 +28212,382 @@ function installGlobalDebug(dumpFn) {
   }
   window.__chessP2pDump = dumpFn;
   p2pLog("manual dump: run __chessP2pDump() in console");
+}
+
+// docs/chess/src/lib/playerKeys.js
+var import_tweetnacl = __toESM(require_nacl_fast());
+var import_tweetnacl_util = __toESM(require_nacl_util());
+var STORAGE_KEY = "dignity-chess-player-keys-v1";
+function loadStore() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_error) {
+    return {};
+  }
+}
+function saveStore(store) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+}
+function serializeKeyPair(keyPair) {
+  return {
+    signingSecretKey: import_tweetnacl_util.default.encodeBase64(keyPair.signing.secretKey),
+    signingPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.signing.publicKey),
+    encryptionSecretKey: import_tweetnacl_util.default.encodeBase64(keyPair.encryption.secretKey),
+    encryptionPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.encryption.publicKey)
+  };
+}
+function deserializeKeyPair(record) {
+  if (!record?.signingSecretKey || !record?.encryptionSecretKey) {
+    return null;
+  }
+  return {
+    signing: {
+      secretKey: import_tweetnacl_util.default.decodeBase64(record.signingSecretKey),
+      publicKey: import_tweetnacl_util.default.decodeBase64(record.signingPublicKey)
+    },
+    encryption: {
+      secretKey: import_tweetnacl_util.default.decodeBase64(record.encryptionSecretKey),
+      publicKey: import_tweetnacl_util.default.decodeBase64(record.encryptionPublicKey)
+    }
+  };
+}
+function createFreshKeyPair() {
+  return {
+    signing: import_tweetnacl.default.sign.keyPair(),
+    encryption: import_tweetnacl.default.box.keyPair()
+  };
+}
+function keyPairToPublicBundle(keyPair) {
+  return {
+    signingPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.signing.publicKey),
+    encryptionPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.encryption.publicKey)
+  };
+}
+function savePlayerKeyRecord(gameId, seat, keyPair, nickname) {
+  if (!gameId || !seat || !keyPair) {
+    return;
+  }
+  const store = loadStore();
+  const entryKey = `${gameId}:${seat}`;
+  store[entryKey] = {
+    gameId,
+    seat,
+    nickname: nickname || null,
+    ...serializeKeyPair(keyPair),
+    updatedAt: Date.now()
+  };
+  const fingerprint = keyPairToPublicBundle(keyPair).signingPublicKey;
+  store[`fp:${fingerprint}`] = entryKey;
+  saveStore(store);
+}
+function loadPlayerKeyPair(gameId, seat) {
+  const store = loadStore();
+  const record = store[`${gameId}:${seat}`];
+  return deserializeKeyPair(record);
+}
+function findPlayerKeyPairByPublicKey(publicKeyBundle) {
+  if (!publicKeyBundle?.signingPublicKey) {
+    return null;
+  }
+  const store = loadStore();
+  const entryKey = store[`fp:${publicKeyBundle.signingPublicKey}`];
+  if (!entryKey) {
+    return null;
+  }
+  return deserializeKeyPair(store[entryKey]);
+}
+function exportSeatKeyBackup(gameId, seat) {
+  const record = loadStore()[`${gameId}:${seat}`];
+  if (!record) {
+    return null;
+  }
+  return btoa(JSON.stringify(record));
+}
+
+// docs/chess/src/lib/resumeCheckpoint.js
+var import_tweetnacl2 = __toESM(require_nacl_fast());
+var import_tweetnacl_util2 = __toESM(require_nacl_util());
+var CHECKPOINT_VERSION = 1;
+var CHECKPOINT_DB = "dignity-chess-checkpoints";
+var CHECKPOINT_STORE = "bundles";
+var MAX_INLINE_CHECKPOINT_CHARS = 1800;
+function stableStringify(value) {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+  }
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+}
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+function base64UrlToBytes(value) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padLen = (4 - padded.length % 4) % 4;
+  const binary = atob(`${padded}${"=".repeat(padLen)}`);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+function checkpointSigningPayload(checkpoint) {
+  const { signatures, ...rest } = checkpoint;
+  return stableStringify(rest);
+}
+function buildCheckpointDraft({
+  gameId,
+  roomKey,
+  scope,
+  game,
+  seat,
+  nickname,
+  publicKey,
+  peerId
+}) {
+  if (!game?.data) {
+    return null;
+  }
+  return {
+    v: CHECKPOINT_VERSION,
+    gameId,
+    roomKey,
+    scope,
+    fen: game.data.fen,
+    moveHistory: game.data.moveHistory || [],
+    status: game.data.status,
+    turn: game.data.turn,
+    winner: game.data.winner ?? null,
+    joinToken: game.data.joinToken || null,
+    watchToken: game.data.watchToken || null,
+    version: game.version || 1,
+    white: game.data.whitePlayerId ? {
+      peerId: game.data.whitePlayerId,
+      nickname: seat === "white" ? nickname : game.data.whiteNickname || "White",
+      publicKey: seat === "white" ? publicKey : game.data.whitePublicKey || null
+    } : null,
+    black: game.data.blackPlayerId ? {
+      peerId: game.data.blackPlayerId,
+      nickname: seat === "black" ? nickname : game.data.blackNickname || "Black",
+      publicKey: seat === "black" ? publicKey : game.data.blackPublicKey || null
+    } : null,
+    signatures: {},
+    createdAt: Date.now(),
+    proposer: {
+      seat,
+      peerId,
+      nickname,
+      publicKey
+    }
+  };
+}
+function enrichCheckpointPlayerMetadata(checkpoint, game) {
+  if (!checkpoint || !game?.data) {
+    return checkpoint;
+  }
+  const next = { ...checkpoint, signatures: { ...checkpoint.signatures || {} } };
+  if (game.data.whitePlayerId) {
+    next.white = {
+      ...next.white || {},
+      peerId: game.data.whitePlayerId,
+      nickname: game.data.whiteNickname || next.white?.nickname || "White",
+      publicKey: game.data.whitePublicKey || next.white?.publicKey || null
+    };
+  }
+  if (game.data.blackPlayerId) {
+    next.black = {
+      ...next.black || {},
+      peerId: game.data.blackPlayerId,
+      nickname: game.data.blackNickname || next.black?.nickname || "Black",
+      publicKey: game.data.blackPublicKey || next.black?.publicKey || null
+    };
+  }
+  return next;
+}
+function signCheckpoint(checkpoint, keyPair, seat) {
+  const payload = checkpointSigningPayload(checkpoint);
+  const signature = import_tweetnacl2.default.sign.detached(
+    import_tweetnacl_util2.default.decodeUTF8(payload),
+    keyPair.signing.secretKey
+  );
+  return {
+    ...checkpoint,
+    signatures: {
+      ...checkpoint.signatures || {},
+      [seat]: {
+        signature: import_tweetnacl_util2.default.encodeBase64(signature),
+        publicKey: keyPairToPublicBundle(keyPair),
+        signedAt: Date.now()
+      }
+    }
+  };
+}
+function verifyCheckpointSignature(checkpoint, seat) {
+  const entry = checkpoint?.signatures?.[seat];
+  if (!entry?.signature || !entry?.publicKey?.signingPublicKey) {
+    return false;
+  }
+  const payload = checkpointSigningPayload(checkpoint);
+  return import_tweetnacl2.default.sign.detached.verify(
+    import_tweetnacl_util2.default.decodeUTF8(payload),
+    import_tweetnacl_util2.default.decodeBase64(entry.signature),
+    import_tweetnacl_util2.default.decodeBase64(entry.publicKey.signingPublicKey)
+  );
+}
+function isCheckpointFullySigned(checkpoint) {
+  return Boolean(
+    checkpoint && verifyCheckpointSignature(checkpoint, "white") && verifyCheckpointSignature(checkpoint, "black")
+  );
+}
+function checkpointSeatForPublicKey(checkpoint, publicKeyBundle) {
+  if (!checkpoint || !publicKeyBundle?.signingPublicKey) {
+    return null;
+  }
+  if (checkpoint.white?.publicKey?.signingPublicKey === publicKeyBundle.signingPublicKey) {
+    return "white";
+  }
+  if (checkpoint.black?.publicKey?.signingPublicKey === publicKeyBundle.signingPublicKey) {
+    return "black";
+  }
+  return null;
+}
+function serializeCheckpoint(checkpoint) {
+  return bytesToBase64Url(import_tweetnacl_util2.default.decodeUTF8(JSON.stringify(checkpoint)));
+}
+function deserializeCheckpoint(encoded) {
+  if (!encoded) {
+    return null;
+  }
+  try {
+    const json = import_tweetnacl_util2.default.encodeUTF8(base64UrlToBytes(encoded));
+    const parsed = JSON.parse(json);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_error) {
+    return null;
+  }
+}
+function openCheckpointDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(CHECKPOINT_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(CHECKPOINT_STORE)) {
+        db.createObjectStore(CHECKPOINT_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+async function storeCheckpointRef(checkpoint) {
+  const encoded = serializeCheckpoint(checkpoint);
+  const digest = import_tweetnacl_util2.default.encodeBase64(import_tweetnacl2.default.hash(import_tweetnacl_util2.default.decodeUTF8(encoded))).slice(0, 16);
+  const ref = `cp_${digest.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12)}`;
+  if (typeof indexedDB === "undefined") {
+    localStorage.setItem(`dignity-chess-checkpoint:${ref}`, encoded);
+    return ref;
+  }
+  const db = await openCheckpointDb();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(CHECKPOINT_STORE, "readwrite");
+    tx.objectStore(CHECKPOINT_STORE).put({ encoded, checkpoint, savedAt: Date.now() }, ref);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+  localStorage.setItem(`dignity-chess-checkpoint:${ref}`, encoded);
+  return ref;
+}
+async function loadCheckpointRef(ref) {
+  if (!ref) {
+    return null;
+  }
+  const cached = localStorage.getItem(`dignity-chess-checkpoint:${ref}`);
+  if (cached) {
+    return deserializeCheckpoint(cached);
+  }
+  if (typeof indexedDB === "undefined") {
+    return null;
+  }
+  const db = await openCheckpointDb();
+  const record = await new Promise((resolve, reject) => {
+    const tx = db.transaction(CHECKPOINT_STORE, "readonly");
+    const request = tx.objectStore(CHECKPOINT_STORE).get(ref);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+  db.close();
+  if (!record?.encoded) {
+    return null;
+  }
+  return deserializeCheckpoint(record.encoded);
+}
+async function resolveCheckpointFromRoute(route) {
+  if (route.checkpoint) {
+    return deserializeCheckpoint(route.checkpoint);
+  }
+  if (route.checkpointRef) {
+    return loadCheckpointRef(route.checkpointRef);
+  }
+  return null;
+}
+async function buildResumeLink(checkpoint) {
+  const base = `${window.location.origin}${window.location.pathname}`;
+  const encoded = serializeCheckpoint(checkpoint);
+  const common2 = [
+    `game=${encodeURIComponent(checkpoint.gameId)}`,
+    `room=${encodeURIComponent(checkpoint.roomKey)}`,
+    "role=resume"
+  ];
+  if (encoded.length <= MAX_INLINE_CHECKPOINT_CHARS) {
+    return `${base}#${common2.join("&")}&checkpoint=${encoded}`;
+  }
+  const ref = await storeCheckpointRef(checkpoint);
+  return `${base}#${common2.join("&")}&checkpointRef=${encodeURIComponent(ref)}`;
+}
+function gamePatchFromCheckpoint(checkpoint, localNodeId, seat) {
+  const whitePlayerId = seat === "white" ? localNodeId : checkpoint.white?.peerId || null;
+  const blackPlayerId = seat === "black" ? localNodeId : checkpoint.black?.peerId || null;
+  return {
+    fen: checkpoint.fen,
+    moveHistory: checkpoint.moveHistory || [],
+    status: checkpoint.status,
+    turn: checkpoint.turn,
+    winner: checkpoint.winner ?? null,
+    joinToken: checkpoint.joinToken,
+    joinTokenUsed: Boolean(checkpoint.black?.peerId || checkpoint.black?.publicKey),
+    watchToken: checkpoint.watchToken,
+    resumeToken: null,
+    resumeCheckpointId: checkpoint.createdAt,
+    whitePlayerId,
+    blackPlayerId,
+    whiteNickname: checkpoint.white?.nickname || "White",
+    blackNickname: checkpoint.black?.nickname || "Black",
+    whitePublicKey: checkpoint.white?.publicKey || null,
+    blackPublicKey: checkpoint.black?.publicKey || null,
+    lastMove: null
+  };
+}
+function validateCheckpointForResume(checkpoint) {
+  if (!checkpoint || checkpoint.v !== CHECKPOINT_VERSION) {
+    return { ok: false, reason: "unsupported-checkpoint" };
+  }
+  if (!isCheckpointFullySigned(checkpoint)) {
+    return { ok: false, reason: "missing-signatures" };
+  }
+  if (!checkpoint.gameId || !checkpoint.roomKey || !checkpoint.fen) {
+    return { ok: false, reason: "incomplete-checkpoint" };
+  }
+  return { ok: true };
 }
 
 // docs/chess/src/lib/audio.js
@@ -57081,6 +57472,7 @@ function LinkPanel({
   joinToken: joinTokenProp,
   watchToken: watchTokenProp,
   resumeToken: resumeTokenProp,
+  resumeLink: resumeLinkProp,
   onRegenerateResume,
   prominent = false,
   audience = "host"
@@ -57088,6 +57480,7 @@ function LinkPanel({
   const joinToken = game?.data?.joinToken || joinTokenProp;
   const watchToken = game?.data?.watchToken || watchTokenProp;
   const resumeToken = game?.data?.resumeToken || resumeTokenProp;
+  const resumeLinkOverride = resumeLinkProp || null;
   const [copied, setCopied] = (0, import_react4.useState)("");
   const [collapsed, setCollapsed] = (0, import_react4.useState)(false);
   const isPlayer = audience === "player";
@@ -57097,10 +57490,12 @@ function LinkPanel({
     hostPeer,
     joinToken,
     watchToken,
-    resumeToken
+    resumeToken,
+    resumeLink: resumeLinkOverride
   });
+  const ready = isPlayer ? Boolean(hostPeer && (watchToken || resumeLinkOverride) && (resumeToken || resumeLinkOverride)) : Boolean(hostPeer && joinToken && watchToken && (resumeToken || resumeLinkOverride));
   const joinExpired = Boolean(game?.data?.joinTokenUsed);
-  const ready = isPlayer ? Boolean(hostPeer && watchToken && resumeToken) : Boolean(hostPeer && joinToken && watchToken && resumeToken);
+  const resumeHint = resumeLinkOverride ? "Resume link includes a dual-signed checkpoint when both players co-sign in the panel below." : "Use \u201CPropose pause & co-sign checkpoint\u201D to generate a signed resume link.";
   (0, import_react4.useEffect)(() => {
     if (prominent && (joinExpired || isPlayer)) {
       setCollapsed(true);
@@ -57129,7 +57524,7 @@ function LinkPanel({
       "aria-expanded": !collapsed
     },
     collapsed ? "Show" : "Hide"
-  )), collapsed ? /* @__PURE__ */ import_react4.default.createElement("p", { className: "link-panel__summary" }, summary) : null, /* @__PURE__ */ import_react4.default.createElement("div", { className: "link-panel__body" }, !ready ? /* @__PURE__ */ import_react4.default.createElement("p", { className: "link-panel__hint" }, hostPeer ? "Preparing share links\u2026" : "Connecting to host\u2026 links appear once the game syncs.") : /* @__PURE__ */ import_react4.default.createElement(import_react4.default.Fragment, null, /* @__PURE__ */ import_react4.default.createElement("p", { className: "link-panel__hint" }, isPlayer ? "Invite friends to watch live with the spectator link." : "Send the opponent link to your friend. Spectators can watch without playing. The opponent link expires after the first join."), !isPlayer ? /* @__PURE__ */ import_react4.default.createElement("div", { className: "link-row" }, /* @__PURE__ */ import_react4.default.createElement("label", null, "Opponent ", joinExpired ? "(expired)" : ""), /* @__PURE__ */ import_react4.default.createElement("input", { readOnly: true, value: links.join, onFocus: (e) => e.target.select() }), /* @__PURE__ */ import_react4.default.createElement("button", { type: "button", disabled: joinExpired, onClick: () => copyLink("join", links.join) }, copied === "join" ? "Copied" : "Copy")) : null, /* @__PURE__ */ import_react4.default.createElement("div", { className: "link-row" }, /* @__PURE__ */ import_react4.default.createElement("label", null, "Spectators"), /* @__PURE__ */ import_react4.default.createElement("input", { readOnly: true, value: links.watch, onFocus: (e) => e.target.select() }), /* @__PURE__ */ import_react4.default.createElement("button", { type: "button", onClick: () => copyLink("watch", links.watch) }, copied === "watch" ? "Copied" : "Copy")), /* @__PURE__ */ import_react4.default.createElement("div", { className: "link-row" }, /* @__PURE__ */ import_react4.default.createElement("label", null, "Resume game"), /* @__PURE__ */ import_react4.default.createElement("input", { readOnly: true, value: links.resume, onFocus: (e) => e.target.select() }), /* @__PURE__ */ import_react4.default.createElement("button", { type: "button", onClick: () => copyLink("resume", links.resume) }, copied === "resume" ? "Copied" : "Copy"), !isPlayer && onRegenerateResume ? /* @__PURE__ */ import_react4.default.createElement("button", { type: "button", className: "secondary", onClick: onRegenerateResume }, "New resume link") : null))));
+  )), collapsed ? /* @__PURE__ */ import_react4.default.createElement("p", { className: "link-panel__summary" }, summary) : null, /* @__PURE__ */ import_react4.default.createElement("div", { className: "link-panel__body" }, !ready ? /* @__PURE__ */ import_react4.default.createElement("p", { className: "link-panel__hint" }, hostPeer ? "Preparing share links\u2026" : "Connecting to host\u2026 links appear once the game syncs.") : /* @__PURE__ */ import_react4.default.createElement(import_react4.default.Fragment, null, /* @__PURE__ */ import_react4.default.createElement("p", { className: "link-panel__hint" }, isPlayer ? "Invite friends to watch live with the spectator link." : "Send the opponent link to your friend. Spectators can watch without playing. The opponent link expires after the first join."), !isPlayer ? /* @__PURE__ */ import_react4.default.createElement("div", { className: "link-row" }, /* @__PURE__ */ import_react4.default.createElement("label", null, "Opponent ", joinExpired ? "(expired)" : ""), /* @__PURE__ */ import_react4.default.createElement("input", { readOnly: true, value: links.join, onFocus: (e) => e.target.select() }), /* @__PURE__ */ import_react4.default.createElement("button", { type: "button", disabled: joinExpired, onClick: () => copyLink("join", links.join) }, copied === "join" ? "Copied" : "Copy")) : null, /* @__PURE__ */ import_react4.default.createElement("div", { className: "link-row" }, /* @__PURE__ */ import_react4.default.createElement("label", null, "Spectators"), /* @__PURE__ */ import_react4.default.createElement("input", { readOnly: true, value: links.watch, onFocus: (e) => e.target.select() }), /* @__PURE__ */ import_react4.default.createElement("button", { type: "button", onClick: () => copyLink("watch", links.watch) }, copied === "watch" ? "Copied" : "Copy")), /* @__PURE__ */ import_react4.default.createElement("div", { className: "link-row" }, /* @__PURE__ */ import_react4.default.createElement("label", null, "Resume game"), /* @__PURE__ */ import_react4.default.createElement("input", { readOnly: true, value: links.resume, onFocus: (e) => e.target.select() }), /* @__PURE__ */ import_react4.default.createElement("button", { type: "button", onClick: () => copyLink("resume", links.resume) }, copied === "resume" ? "Copied" : "Copy"), !isPlayer && onRegenerateResume ? /* @__PURE__ */ import_react4.default.createElement("button", { type: "button", className: "secondary", onClick: onRegenerateResume }, "Legacy token") : null), /* @__PURE__ */ import_react4.default.createElement("p", { className: "link-panel__hint" }, resumeHint))));
 }
 
 // docs/chess/src/components/MovePanel.jsx
@@ -57219,10 +57614,134 @@ function MovePanel({
   )))) : null);
 }
 
+// docs/chess/src/components/ResumePanel.jsx
+var import_react6 = __toESM(require_react());
+var STEPS = {
+  idle: "Ask both players to co-sign the current position before leaving.",
+  proposed: "Waiting for your opponent to review and sign the checkpoint.",
+  incoming: "Your opponent proposed pausing here. Review and sign to continue later.",
+  ready: "Both players signed this checkpoint. Copy the resume link below."
+};
+function ResumePanel({
+  game,
+  gameId,
+  roomKey,
+  scope,
+  node: node2,
+  keyPair,
+  nickname,
+  mySeat,
+  remotePeerId,
+  pendingProposal,
+  finalizedCheckpoint,
+  onPropose,
+  onAcceptProposal,
+  onDeclineProposal,
+  onFinalized
+}) {
+  const [busy, setBusy] = (0, import_react6.useState)(false);
+  const [resumeLink, setResumeLink] = (0, import_react6.useState)("");
+  const [copied, setCopied] = (0, import_react6.useState)(false);
+  const [seatBackup, setSeatBackup] = (0, import_react6.useState)("");
+  const phase = (0, import_react6.useMemo)(() => {
+    if (finalizedCheckpoint && isCheckpointFullySigned(finalizedCheckpoint)) {
+      return "ready";
+    }
+    if (pendingProposal?.fromSeat && pendingProposal.fromSeat !== mySeat) {
+      return "incoming";
+    }
+    if (pendingProposal?.fromSeat === mySeat) {
+      return "proposed";
+    }
+    return "idle";
+  }, [finalizedCheckpoint, pendingProposal, mySeat]);
+  (0, import_react6.useEffect)(() => {
+    if (!finalizedCheckpoint || !isCheckpointFullySigned(finalizedCheckpoint)) {
+      setResumeLink("");
+      return void 0;
+    }
+    let cancelled = false;
+    buildResumeLink(finalizedCheckpoint).then((link) => {
+      if (!cancelled) {
+        setResumeLink(link);
+        onFinalized?.(finalizedCheckpoint, link);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [finalizedCheckpoint, onFinalized]);
+  (0, import_react6.useEffect)(() => {
+    if (mySeat && gameId) {
+      setSeatBackup(exportSeatKeyBackup(gameId, mySeat) || "");
+    }
+  }, [mySeat, gameId]);
+  async function handlePropose() {
+    if (!node2 || !game || !mySeat || busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const draft = enrichCheckpointPlayerMetadata(
+        buildCheckpointDraft({
+          gameId,
+          roomKey,
+          scope,
+          game,
+          seat: mySeat,
+          nickname,
+          publicKey: node2.getPublicKey(),
+          peerId: node2.nodeId
+        }),
+        game
+      );
+      const signed = signCheckpoint(draft, keyPair, mySeat);
+      await onPropose?.(signed, remotePeerId);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function handleAccept() {
+    if (!node2 || !pendingProposal?.checkpoint || busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const enriched = enrichCheckpointPlayerMetadata(pendingProposal.checkpoint, game);
+      const signed = signCheckpoint(enriched, keyPair, mySeat);
+      await onAcceptProposal?.(signed, remotePeerId);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function copyResumeLink() {
+    if (!resumeLink) {
+      return;
+    }
+    await navigator.clipboard.writeText(resumeLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2e3);
+  }
+  const validation = finalizedCheckpoint ? validateCheckpointForResume(finalizedCheckpoint) : null;
+  return /* @__PURE__ */ import_react6.default.createElement("section", { className: "panel resume-panel" }, /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__head" }, /* @__PURE__ */ import_react6.default.createElement("h3", null, "Resume later"), /* @__PURE__ */ import_react6.default.createElement("span", { className: "resume-panel__phase" }, phase)), /* @__PURE__ */ import_react6.default.createElement("p", { className: "resume-panel__hint" }, STEPS[phase]), phase === "idle" ? /* @__PURE__ */ import_react6.default.createElement(
+    "button",
+    {
+      type: "button",
+      className: "secondary",
+      disabled: !game || game.data.status !== "playing" || !remotePeerId || busy,
+      onClick: handlePropose
+    },
+    busy ? "Signing\u2026" : "Propose pause & co-sign checkpoint"
+  ) : null, phase === "proposed" ? /* @__PURE__ */ import_react6.default.createElement("p", { className: "notice" }, "Checkpoint sent to opponent. They must sign the same position to finalize the resume link.") : null, phase === "incoming" ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__actions" }, /* @__PURE__ */ import_react6.default.createElement("p", null, /* @__PURE__ */ import_react6.default.createElement("strong", null, pendingProposal.checkpoint?.proposer?.nickname || "Opponent"), " ", "signed move ", pendingProposal.checkpoint?.moveHistory?.length || 0, " and wants to pause here."), /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__buttons" }, /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", className: "primary", disabled: busy, onClick: handleAccept }, busy ? "Signing\u2026" : "Sign & finalize resume link"), /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", className: "ghost", disabled: busy, onClick: onDeclineProposal }, "Decline"))) : null, phase === "ready" && resumeLink ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__ready" }, /* @__PURE__ */ import_react6.default.createElement("label", null, "Dual-signed resume link"), /* @__PURE__ */ import_react6.default.createElement("input", { readOnly: true, value: resumeLink, onFocus: (event) => event.target.select() }), /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__buttons" }, /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", onClick: copyResumeLink }, copied ? "Copied" : "Copy resume link")), validation?.ok ? /* @__PURE__ */ import_react6.default.createElement("p", { className: "muted" }, "Both signatures verified. Game state travels in the link when short enough; otherwise this browser keeps a checkpoint ref in IndexedDB.") : /* @__PURE__ */ import_react6.default.createElement("p", { className: "error-inline" }, "Checkpoint validation failed: ", validation?.reason)) : null, seatBackup ? /* @__PURE__ */ import_react6.default.createElement("details", { className: "resume-panel__backup" }, /* @__PURE__ */ import_react6.default.createElement("summary", null, "Seat key backup (optional, same device or manual transfer)"), /* @__PURE__ */ import_react6.default.createElement("p", { className: "muted" }, "Resume links restore the board. Your signing keys stay on this device unless you copy this backup."), /* @__PURE__ */ import_react6.default.createElement("textarea", { readOnly: true, rows: 3, value: seatBackup, onFocus: (event) => event.target.select() })) : null);
+}
+
 // docs/chess/src/components/GameView.jsx
 var COLLECTION2 = "chess-matches";
 var START_FEN = new Chess().fen();
-function canResume(route, game) {
+function canResume(route, game, routeCheckpoint) {
+  if (routeCheckpoint) {
+    return validateCheckpointForResume(routeCheckpoint).ok;
+  }
   return route.resumeToken && game?.data?.resumeToken === route.resumeToken;
 }
 function canWatch(route, game) {
@@ -57232,26 +57751,70 @@ function GameView({ route, nodeId, nickname, onBack }) {
   const scope = scopeForGame(route.gameId);
   const roomKey = route.roomKey;
   p2pLog("GameView mount", { role: route.role, nodeId, gameId: route.gameId, hostPeer: route.hostPeer });
-  const dignityConfig = (0, import_react6.useMemo)(
+  const [routeCheckpoint, setRouteCheckpoint] = (0, import_react7.useState)(null);
+  const [resumeSeat, setResumeSeat] = (0, import_react7.useState)(null);
+  const [keyPair, setKeyPair] = (0, import_react7.useState)(() => {
+    if (route.role === "host") {
+      return loadPlayerKeyPair(route.gameId, "white") || createFreshKeyPair();
+    }
+    if (route.role === "join") {
+      return loadPlayerKeyPair(route.gameId, "black") || createFreshKeyPair();
+    }
+    return createFreshKeyPair();
+  });
+  const [pendingProposal, setPendingProposal] = (0, import_react7.useState)(null);
+  const [finalizedCheckpoint, setFinalizedCheckpoint] = (0, import_react7.useState)(null);
+  const [resumeLink, setResumeLink] = (0, import_react7.useState)("");
+  const restoredFromCheckpointRef = import_react7.default.useRef(false);
+  (0, import_react7.useEffect)(() => {
+    let cancelled = false;
+    resolveCheckpointFromRoute(route).then((checkpoint) => {
+      if (!cancelled) {
+        setRouteCheckpoint(checkpoint);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [route.checkpoint, route.checkpointRef, route.gameId, route.roomKey]);
+  (0, import_react7.useEffect)(() => {
+    if (route.role !== "resume" || !routeCheckpoint) {
+      return;
+    }
+    const whiteKeys = findPlayerKeyPairByPublicKey(routeCheckpoint.white?.publicKey);
+    const blackKeys = findPlayerKeyPairByPublicKey(routeCheckpoint.black?.publicKey);
+    if (whiteKeys) {
+      setKeyPair(whiteKeys);
+      setResumeSeat("white");
+      return;
+    }
+    if (blackKeys) {
+      setKeyPair(blackKeys);
+      setResumeSeat("black");
+      return;
+    }
+    setResumeSeat(null);
+  }, [route.role, routeCheckpoint]);
+  const dignityConfig = (0, import_react7.useMemo)(
     () => createDignityConfig({
       nodeId,
       roomKey,
       scope,
-      role: route.role
+      role: route.role,
+      keyPair
     }),
-    [nodeId, roomKey, scope, route.role]
+    [nodeId, roomKey, scope, route.role, keyPair]
   );
-  const { node: node2, status, error: error2 } = (0, import_react7.useDignity)(dignityConfig);
-  const game = (0, import_react7.useObject)(node2, COLLECTION2, route.gameId);
-  const [roomConnected, setRoomConnected] = (0, import_react6.useState)(route.role === "host");
-  const [connectionCount, setConnectionCount] = (0, import_react6.useState)(0);
-  const [notice, setNotice] = (0, import_react6.useState)("");
-  const [selectedSquare, setSelectedSquare] = (0, import_react6.useState)(null);
-  const [legalTargets, setLegalTargets] = (0, import_react6.useState)([]);
-  const [creating, setCreating] = (0, import_react6.useState)(false);
-  const creatingRef = import_react6.default.useRef(false);
-  const remoteHostPeer = hostPeerFromRoute(route, game, node2?.nodeId);
-  (0, import_react6.useEffect)(() => {
+  const { node: node2, status, error: error2 } = (0, import_react8.useDignity)(dignityConfig);
+  const game = (0, import_react8.useObject)(node2, COLLECTION2, route.gameId);
+  const [roomConnected, setRoomConnected] = (0, import_react7.useState)(route.role === "host");
+  const [connectionCount, setConnectionCount] = (0, import_react7.useState)(0);
+  const [notice, setNotice] = (0, import_react7.useState)("");
+  const [selectedSquare, setSelectedSquare] = (0, import_react7.useState)(null);
+  const [legalTargets, setLegalTargets] = (0, import_react7.useState)([]);
+  const [creating, setCreating] = (0, import_react7.useState)(false);
+  const creatingRef = import_react7.default.useRef(false);
+  (0, import_react7.useEffect)(() => {
     if (!node2) {
       return void 0;
     }
@@ -57262,22 +57825,62 @@ function GameView({ route, nodeId, nickname, onBack }) {
       collection: COLLECTION2
     });
   }, [node2, route.role, scope, route.gameId]);
-  (0, import_react6.useEffect)(() => {
+  (0, import_react7.useEffect)(() => {
     if (status === "error" && error2) {
       p2pError("dignity start failed", error2);
     } else if (status === "running") {
       p2pLog("dignity running", connectionSnapshot(node2));
     }
   }, [status, error2, node2]);
-  (0, import_react6.useEffect)(() => {
-    if (!node2 || status !== "running" || route.role === "host") {
-      if (route.role === "host") {
-        setRoomConnected(true);
+  const discoveryOptions = (0, import_react7.useMemo)(
+    () => {
+      if (!node2 || status !== "running") {
+        return null;
       }
+      if (route.role !== "host" && route.role !== "resume" && !hostPeerFromRoute(route, game, node2.nodeId)) {
+        return null;
+      }
+      const bootstrapHost = hostPeerFromRoute(route, game, node2.nodeId);
+      return {
+        metadata: {
+          nickname,
+          role: route.role,
+          joinToken: route.joinToken || null,
+          signingPublicKey: keyPair ? keyPairToPublicBundle(keyPair).signingPublicKey : null,
+          seat: route.role === "host" ? "white" : route.role === "join" ? "black" : resumeSeat
+        },
+        bootstrapPeerIds: route.role !== "host" && bootstrapHost ? [bootstrapHost] : [],
+        heartbeatIntervalMs: 12e3,
+        ttlMs: 45e3
+      };
+    },
+    [node2, status, route, game, nickname, keyPair, resumeSeat]
+  );
+  const { joined } = (0, import_react8.useDiscovery)(node2, scope, discoveryOptions);
+  const peers = (0, import_react8.usePeers)(node2, scope, { includeSelf: false });
+  const remoteHostPeer = (0, import_react7.useMemo)(() => {
+    if (route.role === "resume" && routeCheckpoint && resumeSeat === "black") {
+      const targetKey = routeCheckpoint.white?.publicKey?.signingPublicKey;
+      const matched = peers.find((peer) => peer.metadata?.signingPublicKey === targetKey);
+      if (matched) {
+        return matched.peerId;
+      }
+    }
+    if (route.role === "resume" && resumeSeat === "white" && node2?.nodeId) {
+      return node2.nodeId;
+    }
+    return hostPeerFromRoute(route, game, node2?.nodeId);
+  }, [route, routeCheckpoint, resumeSeat, peers, game, node2?.nodeId]);
+  (0, import_react7.useEffect)(() => {
+    if (!node2 || status !== "running") {
+      return void 0;
+    }
+    const isLocalHost = route.role === "host" || route.role === "resume" && resumeSeat === "white";
+    if (isLocalHost) {
+      setRoomConnected(true);
       return void 0;
     }
     if (!remoteHostPeer) {
-      p2pWarn("joiner missing host peer target", { routeHost: route.hostPeer, whitePlayerId: game?.data?.whitePlayerId });
       setRoomConnected(false);
       return void 0;
     }
@@ -57290,11 +57893,6 @@ function GameView({ route, nodeId, nickname, onBack }) {
       if (!cancelled) {
         setRoomConnected(result.ok);
         setConnectionCount(node2.networkAdapter?.getOpenConnectionCount?.() || 0);
-        if (result.ok) {
-          p2pLog("connected to host peer", { host: remoteHostPeer, open: result.open });
-        } else {
-          p2pWarn("host connect attempt failed", { host: remoteHostPeer, ...result });
-        }
       }
     }
     maintainHostConnection();
@@ -57303,36 +57901,13 @@ function GameView({ route, nodeId, nickname, onBack }) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [node2, status, route.role, remoteHostPeer, route.hostPeer, game?.data?.whitePlayerId]);
-  const discoveryOptions = (0, import_react6.useMemo)(
-    () => {
-      if (!node2 || status !== "running") {
-        return null;
-      }
-      if (route.role !== "host" && !remoteHostPeer) {
-        return null;
-      }
-      return {
-        metadata: {
-          nickname,
-          role: route.role,
-          joinToken: route.joinToken || null
-        },
-        bootstrapPeerIds: route.role !== "host" && remoteHostPeer ? [remoteHostPeer] : [],
-        heartbeatIntervalMs: 12e3,
-        ttlMs: 45e3
-      };
-    },
-    [node2, status, route.role, route.joinToken, remoteHostPeer, nickname]
-  );
-  const { joined } = (0, import_react7.useDiscovery)(node2, scope, discoveryOptions);
-  const peers = (0, import_react7.usePeers)(node2, scope, { includeSelf: false });
-  (0, import_react6.useEffect)(() => {
+  }, [node2, status, route.role, resumeSeat, remoteHostPeer]);
+  (0, import_react7.useEffect)(() => {
     if (joined) {
       p2pLog("discovery joined", { scope, role: route.role, metadata: discoveryOptions?.metadata });
     }
   }, [joined, scope, route.role, discoveryOptions]);
-  (0, import_react6.useEffect)(() => {
+  (0, import_react7.useEffect)(() => {
     if (peers.length) {
       p2pLog("peers updated", peers.map((p) => ({
         id: p.peerId,
@@ -57341,7 +57916,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
       })));
     }
   }, [peers]);
-  (0, import_react6.useEffect)(() => {
+  (0, import_react7.useEffect)(() => {
     if (!node2 || route.role !== "host") {
       return void 0;
     }
@@ -57357,7 +57932,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
     }, 2e3);
     return () => clearInterval(timer);
   }, [node2, route.role, peers]);
-  const ensureHostGame = (0, import_react6.useCallback)(async () => {
+  const ensureHostGame = (0, import_react7.useCallback)(async () => {
     if (!node2 || route.role !== "host" || creatingRef.current) {
       return node2?.read(COLLECTION2, route.gameId) || null;
     }
@@ -57378,6 +57953,10 @@ function GameView({ route, nodeId, nickname, onBack }) {
           status: "waiting",
           whitePlayerId: node2.nodeId,
           blackPlayerId: null,
+          whiteNickname: nickname,
+          blackNickname: null,
+          whitePublicKey: node2.getPublicKey(),
+          blackPublicKey: null,
           joinToken,
           joinTokenUsed: false,
           watchToken,
@@ -57405,34 +57984,74 @@ function GameView({ route, nodeId, nickname, onBack }) {
     }
     return node2.read(COLLECTION2, route.gameId);
   }, [node2, route.role, route.gameId, route.joinToken, route.watchToken, route.resumeToken, scope, nickname]);
-  const chess = (0, import_react6.useMemo)(() => {
+  const chess = (0, import_react7.useMemo)(() => {
     const instance = new Chess();
-    if (game?.data?.fen) {
-      instance.load(game.data.fen);
+    const fen = game?.data?.fen || routeCheckpoint?.fen;
+    if (fen) {
+      instance.load(fen);
     }
     return instance;
-  }, [game?.data?.fen, game?.version]);
-  const myColor = (0, import_react6.useMemo)(() => {
+  }, [game?.data?.fen, game?.version, routeCheckpoint?.fen]);
+  const myColor = (0, import_react7.useMemo)(() => {
     if (!node2 || !game) {
       return null;
     }
-    if (game.data.whitePlayerId === node2.nodeId) {
+    if (resumeSeat === "white" || game.data.whitePlayerId === node2.nodeId) {
       return "w";
     }
-    if (game.data.blackPlayerId === node2.nodeId) {
+    if (resumeSeat === "black" || game.data.blackPlayerId === node2.nodeId) {
       return "b";
+    }
+    if (routeCheckpoint && keyPair) {
+      const seat = checkpointSeatForPublicKey(routeCheckpoint, keyPairToPublicBundle(keyPair));
+      if (seat === "white") {
+        return "w";
+      }
+      if (seat === "black") {
+        return "b";
+      }
     }
     if (route.role === "watch" || route.role === "join" && !game.data.joinTokenUsed) {
       return null;
     }
     return null;
-  }, [node2, game, route.role]);
+  }, [node2, game, route.role, routeCheckpoint, keyPair, resumeSeat]);
+  const mySeat = (0, import_react7.useMemo)(() => {
+    if (myColor === "w") {
+      return "white";
+    }
+    if (myColor === "b") {
+      return "black";
+    }
+    if (resumeSeat) {
+      return resumeSeat;
+    }
+    if (route.role === "host") {
+      return "white";
+    }
+    if (route.role === "join") {
+      return "black";
+    }
+    return null;
+  }, [myColor, resumeSeat, route.role]);
+  const remotePlayerPeer = (0, import_react7.useMemo)(() => {
+    if (!game?.data) {
+      return null;
+    }
+    if (mySeat === "white") {
+      return game.data.blackPlayerId;
+    }
+    if (mySeat === "black") {
+      return game.data.whitePlayerId;
+    }
+    return null;
+  }, [game, mySeat]);
   const isSpectator = route.role === "watch" || route.role !== "host" && route.role !== "join" && !myColor;
   const roleBadge = route.role === "join" ? myColor === "b" ? "Black" : "Joining\u2026" : route.role === "host" ? myColor === "w" ? "White" : "Host" : isSpectator ? "Spectator" : myColor === "w" ? "White" : myColor === "b" ? "Black" : route.role;
   const canMove = Boolean(
     myColor && game?.data?.status === "playing" && game.data.turn === myColor && !isSpectator
   );
-  (0, import_react6.useEffect)(() => {
+  (0, import_react7.useEffect)(() => {
     if (!node2) {
       return void 0;
     }
@@ -57444,23 +58063,25 @@ function GameView({ route, nodeId, nickname, onBack }) {
       persistence?.detach?.();
     };
   }, [node2]);
-  (0, import_react6.useEffect)(() => {
-    if (!node2 || route.role !== "host") {
+  (0, import_react7.useEffect)(() => {
+    if (!node2 || route.role !== "host" && !(route.role === "resume" && resumeSeat === "white")) {
       return;
     }
     withHostPeerInHash(node2.nodeId);
-  }, [node2, route.role]);
-  (0, import_react6.useEffect)(() => {
+  }, [node2, route.role, resumeSeat]);
+  (0, import_react7.useEffect)(() => {
     if (!node2) {
       return;
     }
+    const isHostSide = route.role === "host" || route.role === "resume" && resumeSeat === "white";
+    if (!isHostSide) {
+      return;
+    }
     peers.forEach((peer) => {
-      if (route.role === "host") {
-        connectToRoomPeer(node2, peer.peerId);
-      }
+      connectToRoomPeer(node2, peer.peerId);
     });
-  }, [node2, route.role, peers]);
-  (0, import_react6.useEffect)(() => {
+  }, [node2, route.role, resumeSeat, peers]);
+  (0, import_react7.useEffect)(() => {
     if (!node2 || status !== "running" || route.role !== "host") {
       return;
     }
@@ -57469,7 +58090,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
     }
     ensureHostGame();
   }, [node2, status, route.role, route.gameId, ensureHostGame]);
-  const completeJoin = (0, import_react6.useCallback)(async (joinerPeerId, joinToken) => {
+  const completeJoin = (0, import_react7.useCallback)(async (joinerPeerId, joinToken, joinerMeta = {}) => {
     if (!node2 || route.role !== "host") {
       return;
     }
@@ -57495,6 +58116,8 @@ function GameView({ route, nodeId, nickname, onBack }) {
     await node2.updateWithRetry(COLLECTION2, route.gameId, (existing) => ({
       ...existing.data,
       blackPlayerId: joinerPeerId,
+      blackNickname: joinerMeta.nickname || existing.data.blackNickname || "Black",
+      blackPublicKey: joinerMeta.publicKey || existing.data.blackPublicKey || null,
       joinTokenUsed: true,
       status: "playing"
     }), {
@@ -57511,7 +58134,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
     p2pLog("completeJoin done \u2014 game playing", { blackPlayerId: joinerPeerId });
     playGameStartSound();
   }, [node2, route.role, route.gameId, scope, ensureHostGame]);
-  (0, import_react6.useEffect)(() => {
+  (0, import_react7.useEffect)(() => {
     if (!node2 || route.role !== "host") {
       return;
     }
@@ -57525,7 +58148,117 @@ function GameView({ route, nodeId, nickname, onBack }) {
       }
     });
   }, [peers, node2, route.role, route.gameId, completeJoin]);
-  (0, import_react6.useEffect)(() => {
+  (0, import_react7.useEffect)(() => {
+    if (!node2) {
+      return void 0;
+    }
+    const handleResumeMessages = async (message) => {
+      if (message.type === "resume-checkpoint-proposal") {
+        setPendingProposal({
+          fromSeat: message.payload?.fromSeat,
+          checkpoint: message.payload?.checkpoint,
+          fromPeer: message.senderId
+        });
+        setNotice("Your opponent proposed pausing here. Review the Resume panel.");
+        return;
+      }
+      if (message.type === "resume-checkpoint-final") {
+        const checkpoint = message.payload?.checkpoint;
+        if (isCheckpointFullySigned(checkpoint)) {
+          setFinalizedCheckpoint(checkpoint);
+          setPendingProposal(null);
+          const link = await buildResumeLink(checkpoint);
+          setResumeLink(link);
+          setNotice("Dual-signed resume link is ready.");
+        }
+        return;
+      }
+      const isHostSide = route.role === "host" || route.role === "resume" && resumeSeat === "white";
+      if (message.type === "resume-rejoin" && isHostSide) {
+        const expectedKey = game?.data?.blackPublicKey?.signingPublicKey || routeCheckpoint?.black?.publicKey?.signingPublicKey;
+        if (message.payload?.publicKey?.signingPublicKey !== expectedKey) {
+          return;
+        }
+        await node2.updateWithRetry(COLLECTION2, route.gameId, (existing) => ({
+          ...existing.data,
+          blackPlayerId: message.payload.peerId || message.senderId,
+          blackNickname: message.payload.nickname || existing.data.blackNickname || "Black",
+          blackPublicKey: message.payload.publicKey || existing.data.blackPublicKey,
+          joinTokenUsed: true,
+          status: existing.data.status === "waiting" ? "playing" : existing.data.status
+        }), {
+          broadcastScope: scope,
+          connectToPeers: [message.payload.peerId || message.senderId]
+        });
+        setNotice("Black rejoined from signed resume link.");
+      }
+    };
+    node2.on("message", handleResumeMessages);
+    return () => node2.off("message", handleResumeMessages);
+  }, [node2, route.role, route.gameId, resumeSeat, routeCheckpoint, game, scope]);
+  (0, import_react7.useEffect)(() => {
+    if (!node2 || status !== "running" || !routeCheckpoint || resumeSeat !== "white") {
+      return;
+    }
+    if (restoredFromCheckpointRef.current) {
+      return;
+    }
+    let cancelled = false;
+    async function restoreCheckpoint() {
+      const patch = gamePatchFromCheckpoint(routeCheckpoint, node2.nodeId, "white");
+      const existing = node2.read(COLLECTION2, route.gameId);
+      if (existing) {
+        await node2.updateWithRetry(COLLECTION2, route.gameId, () => patch, { broadcastScope: scope });
+      } else {
+        await node2.create(COLLECTION2, patch, { id: route.gameId, broadcastScope: scope });
+      }
+      if (!cancelled) {
+        restoredFromCheckpointRef.current = true;
+        withHostPeerInHash(node2.nodeId);
+        setNotice("Restored signed checkpoint as White.");
+      }
+    }
+    restoreCheckpoint().catch((restoreError) => {
+      p2pError("checkpoint restore failed", restoreError);
+      setNotice(restoreError.message);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [node2, status, routeCheckpoint, resumeSeat, route.gameId, scope]);
+  (0, import_react7.useEffect)(() => {
+    if (!node2 || status !== "running" || route.role !== "resume" || resumeSeat !== "black" || !joined) {
+      return void 0;
+    }
+    if (!remoteHostPeer) {
+      return void 0;
+    }
+    let cancelled = false;
+    async function resumeRejoin() {
+      if (cancelled) {
+        return;
+      }
+      await connectToRoomPeer(node2, remoteHostPeer);
+      await node2.sendDirectMessage(remoteHostPeer, "resume-rejoin", {
+        peerId: node2.nodeId,
+        nickname,
+        publicKey: node2.getPublicKey(),
+        checkpointId: routeCheckpoint?.createdAt || null
+      });
+    }
+    resumeRejoin();
+    const timer = setInterval(resumeRejoin, 5e3);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [node2, status, route.role, resumeSeat, joined, remoteHostPeer, nickname, routeCheckpoint]);
+  (0, import_react7.useEffect)(() => {
+    if (mySeat && keyPair && route.gameId) {
+      savePlayerKeyRecord(route.gameId, mySeat, keyPair, nickname);
+    }
+  }, [mySeat, keyPair, route.gameId, nickname]);
+  (0, import_react7.useEffect)(() => {
     if (!node2 || route.role !== "host") {
       return void 0;
     }
@@ -57549,7 +58282,10 @@ function GameView({ route, nodeId, nickname, onBack }) {
       const joinToken = message.payload?.joinToken;
       const joinerPeerId = message.payload?.peerId || message.senderId;
       if (joinToken === current.data.joinToken) {
-        await completeJoin(joinerPeerId, joinToken);
+        await completeJoin(joinerPeerId, joinToken, {
+          nickname: message.payload?.nickname,
+          publicKey: message.payload?.publicKey
+        });
       } else {
         p2pWarn("claim-seat token mismatch", {
           expected: `${current.data.joinToken?.slice(0, 6)}\u2026`,
@@ -57560,7 +58296,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
     node2.on("message", handleMessage);
     return () => node2.off("message", handleMessage);
   }, [node2, route.role, route.gameId, completeJoin, ensureHostGame]);
-  (0, import_react6.useEffect)(() => {
+  (0, import_react7.useEffect)(() => {
     if (!node2 || route.role !== "join" || !route.joinToken || status !== "running" || !joined) {
       return void 0;
     }
@@ -57586,7 +58322,8 @@ function GameView({ route, nodeId, nickname, onBack }) {
         await node2.broadcastMessage("claim-seat", {
           joinToken: route.joinToken,
           peerId: node2.nodeId,
-          nickname
+          nickname,
+          publicKey: node2.getPublicKey()
         }, {
           broadcastScope: scope,
           connectToPeers: remoteHostPeer ? [remoteHostPeer] : []
@@ -57617,7 +58354,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
     nickname,
     scope
   ]);
-  (0, import_react6.useEffect)(() => {
+  (0, import_react7.useEffect)(() => {
     if (!game) {
       return;
     }
@@ -57625,7 +58362,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
       setNotice("You joined as Black.");
     }
   }, [game, route.role, node2]);
-  (0, import_react6.useEffect)(() => {
+  (0, import_react7.useEffect)(() => {
     if (!node2) {
       return void 0;
     }
@@ -57668,7 +58405,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
     game,
     myColor
   ]);
-  (0, import_react6.useEffect)(() => {
+  (0, import_react7.useEffect)(() => {
     if (!node2 || !route.gameId || !route.roomKey) {
       return;
     }
@@ -57680,6 +58417,8 @@ function GameView({ route, nodeId, nickname, onBack }) {
       joinToken: route.joinToken,
       watchToken: route.watchToken,
       resumeToken: route.resumeToken || game?.data?.resumeToken || null,
+      resumeLink: resumeLink || null,
+      checkpointRef: route.checkpointRef || null,
       nickname,
       localNodeId: node2.nodeId,
       status: game?.data?.status || "waiting",
@@ -57689,8 +58428,49 @@ function GameView({ route, nodeId, nickname, onBack }) {
       blackPlayerId: game?.data?.blackPlayerId || null,
       updatedAt: game?.updatedAt || Date.now()
     });
-  }, [node2, route, game, nickname]);
-  const regenerateResumeLink = (0, import_react6.useCallback)(async () => {
+  }, [node2, route, game, nickname, resumeLink]);
+  const handleProposeCheckpoint = (0, import_react7.useCallback)(async (checkpoint, remotePeerId) => {
+    if (!node2) {
+      return;
+    }
+    setPendingProposal({ fromSeat: mySeat, checkpoint, fromPeer: node2.nodeId });
+    if (remotePeerId) {
+      await node2.sendDirectMessage(remotePeerId, "resume-checkpoint-proposal", {
+        fromSeat: mySeat,
+        checkpoint
+      });
+    }
+    setNotice("Checkpoint signed. Waiting for opponent to co-sign.");
+  }, [node2, mySeat]);
+  const handleAcceptCheckpoint = (0, import_react7.useCallback)(async (checkpoint, remotePeerId) => {
+    if (!node2) {
+      return;
+    }
+    setFinalizedCheckpoint(checkpoint);
+    setPendingProposal(null);
+    const link = await buildResumeLink(checkpoint);
+    setResumeLink(link);
+    if (remotePeerId) {
+      await node2.sendDirectMessage(remotePeerId, "resume-checkpoint-final", { checkpoint });
+    }
+    setNotice("Dual-signed resume link is ready.");
+  }, [node2]);
+  const handleFinalizedCheckpoint = (0, import_react7.useCallback)((checkpoint, link) => {
+    setResumeLink(link);
+    if (!node2) {
+      return;
+    }
+    saveLocalGameSession({
+      gameId: route.gameId,
+      roomKey: route.roomKey,
+      role: route.role,
+      resumeLink: link,
+      checkpointRef: route.checkpointRef || null,
+      status: game?.data?.status || "playing",
+      updatedAt: Date.now()
+    });
+  }, [node2, route.gameId, route.roomKey, route.role, route.checkpointRef, game]);
+  const regenerateResumeLink = (0, import_react7.useCallback)(async () => {
     if (!node2 || !game) {
       return;
     }
@@ -57710,7 +58490,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
     await navigator.clipboard.writeText(links.resume);
     setNotice("New resume link copied.");
   }, [node2, game, route.gameId, roomKey, scope]);
-  const applyMove = (0, import_react6.useCallback)(async (from, to) => {
+  const applyMove = (0, import_react7.useCallback)(async (from, to) => {
     if (!node2 || !game || !canMove) {
       return;
     }
@@ -57750,7 +58530,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
     setSelectedSquare(null);
     setLegalTargets([]);
   }, [node2, game, canMove, route.gameId, scope]);
-  const handleSquareClick = (0, import_react6.useCallback)((square) => {
+  const handleSquareClick = (0, import_react7.useCallback)((square) => {
     if (!canMove) {
       return;
     }
@@ -57769,21 +58549,27 @@ function GameView({ route, nodeId, nickname, onBack }) {
     setLegalTargets(moves.map((move) => move.to));
   }, [canMove, selectedSquare, legalTargets, chess, myColor, applyMove]);
   if (!roomKey) {
-    return /* @__PURE__ */ import_react6.default.createElement("p", { className: "error" }, "Missing room key in link.");
+    return /* @__PURE__ */ import_react7.default.createElement("p", { className: "error" }, "Missing room key in link.");
   }
   if (route.role === "join" && !remoteHostPeer) {
-    return /* @__PURE__ */ import_react6.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react6.default.createElement("h2", null, "Invalid opponent link"), /* @__PURE__ */ import_react6.default.createElement("p", null, "This join link is missing the host peer id. Ask the host to copy a fresh opponent link from the Share links panel (links generated after the host connects)."), /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
+    return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Invalid opponent link"), /* @__PURE__ */ import_react7.default.createElement("p", null, "This join link is missing the host peer id. Ask the host to copy a fresh opponent link from the Share links panel (links generated after the host connects)."), /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
   }
   if (route.role === "join" && game && game.data.joinTokenUsed && game.data.blackPlayerId !== node2?.nodeId) {
-    return /* @__PURE__ */ import_react6.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react6.default.createElement("h2", null, "Join link expired"), /* @__PURE__ */ import_react6.default.createElement("p", null, "This opponent link was already used. Request a resume link from a player."), /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
+    return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Join link expired"), /* @__PURE__ */ import_react7.default.createElement("p", null, "This opponent link was already used. Request a resume link from a player."), /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
   }
   if (route.role === "watch" && game && !canWatch(route, game) && route.watchToken) {
-    return /* @__PURE__ */ import_react6.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react6.default.createElement("h2", null, "Invalid spectator link"), /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
+    return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Invalid spectator link"), /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
   }
-  if (route.role === "resume" && game && !canResume(route, game)) {
-    return /* @__PURE__ */ import_react6.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react6.default.createElement("h2", null, "Invalid resume link"), /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
+  if (route.role === "resume" && routeCheckpoint && validateCheckpointForResume(routeCheckpoint).ok && resumeSeat === null) {
+    return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Seat keys not found on this device"), /* @__PURE__ */ import_react7.default.createElement("p", null, "This resume link carries a valid dual-signed checkpoint, but this browser does not have your player signing keys. Open the link on the device that played, or import a seat key backup from the Resume panel before leaving."), /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
   }
-  return /* @__PURE__ */ import_react6.default.createElement("div", { className: "game-layout" }, /* @__PURE__ */ import_react6.default.createElement("header", { className: "game-header" }, /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", className: "ghost", onClick: onBack }, "\u2190 Lobby"), /* @__PURE__ */ import_react6.default.createElement("div", null, /* @__PURE__ */ import_react6.default.createElement("h2", null, "Game ", route.gameId), /* @__PURE__ */ import_react6.default.createElement("p", { className: "status-line" }, "Network: ", status, joined ? " \xB7 in room" : roomConnected ? " \xB7 connecting room\u2026" : " \xB7 waiting for host peer\u2026", remoteHostPeer ? ` \xB7 host ${remoteHostPeer}` : "", connectionCount ? ` \xB7 ${connectionCount} link(s)` : "", error2 ? ` \xB7 ${error2.message}` : "")), /* @__PURE__ */ import_react6.default.createElement("div", { className: "badge" }, roleBadge)), notice ? /* @__PURE__ */ import_react6.default.createElement("p", { className: "notice" }, notice) : null, route.role === "host" && route.joinToken && route.watchToken ? /* @__PURE__ */ import_react6.default.createElement(
+  if (route.role === "resume" && routeCheckpoint && !validateCheckpointForResume(routeCheckpoint).ok) {
+    return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Invalid signed checkpoint"), /* @__PURE__ */ import_react7.default.createElement("p", null, "The resume link checkpoint failed signature validation."), /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
+  }
+  if (route.role === "resume" && !routeCheckpoint && game && !canResume(route, game, routeCheckpoint)) {
+    return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Invalid resume link"), /* @__PURE__ */ import_react7.default.createElement("p", null, "Use a dual-signed resume link generated after both players co-sign the checkpoint."), /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
+  }
+  return /* @__PURE__ */ import_react7.default.createElement("div", { className: "game-layout" }, /* @__PURE__ */ import_react7.default.createElement("header", { className: "game-header" }, /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", className: "ghost", onClick: onBack }, "\u2190 Lobby"), /* @__PURE__ */ import_react7.default.createElement("div", null, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Game ", route.gameId), /* @__PURE__ */ import_react7.default.createElement("p", { className: "status-line" }, "Network: ", status, joined ? " \xB7 in room" : roomConnected ? " \xB7 connecting room\u2026" : " \xB7 waiting for host peer\u2026", remoteHostPeer ? ` \xB7 host ${remoteHostPeer}` : "", connectionCount ? ` \xB7 ${connectionCount} link(s)` : "", error2 ? ` \xB7 ${error2.message}` : "")), /* @__PURE__ */ import_react7.default.createElement("div", { className: "badge" }, roleBadge)), notice ? /* @__PURE__ */ import_react7.default.createElement("p", { className: "notice" }, notice) : null, route.role === "host" && route.joinToken && route.watchToken ? /* @__PURE__ */ import_react7.default.createElement(
     LinkPanel,
     {
       prominent: true,
@@ -57795,9 +58581,29 @@ function GameView({ route, nodeId, nickname, onBack }) {
       joinToken: route.joinToken,
       watchToken: route.watchToken,
       resumeToken: route.resumeToken,
+      resumeLink,
       onRegenerateResume: game ? regenerateResumeLink : void 0
     }
-  ) : null, route.role === "join" && myColor === "b" && game ? /* @__PURE__ */ import_react6.default.createElement(
+  ) : null, mySeat && game?.data?.status === "playing" ? /* @__PURE__ */ import_react7.default.createElement(
+    ResumePanel,
+    {
+      game,
+      gameId: route.gameId,
+      roomKey,
+      scope,
+      node: node2,
+      keyPair,
+      nickname,
+      mySeat,
+      remotePeerId: remotePlayerPeer,
+      pendingProposal,
+      finalizedCheckpoint,
+      onPropose: handleProposeCheckpoint,
+      onAcceptProposal: handleAcceptCheckpoint,
+      onDeclineProposal: () => setPendingProposal(null),
+      onFinalized: handleFinalizedCheckpoint
+    }
+  ) : null, route.role === "join" && myColor === "b" && game ? /* @__PURE__ */ import_react7.default.createElement(
     LinkPanel,
     {
       prominent: true,
@@ -57807,19 +58613,20 @@ function GameView({ route, nodeId, nickname, onBack }) {
       hostPeer: remoteHostPeer,
       game,
       watchToken: route.watchToken,
-      resumeToken: route.resumeToken
+      resumeToken: route.resumeToken,
+      resumeLink
     }
-  ) : null, /* @__PURE__ */ import_react6.default.createElement("div", { className: "game-grid" }, /* @__PURE__ */ import_react6.default.createElement(
+  ) : null, /* @__PURE__ */ import_react7.default.createElement("div", { className: "game-grid" }, /* @__PURE__ */ import_react7.default.createElement(
     Board3D,
     {
-      fen: game?.data?.fen || START_FEN,
+      fen: game?.data?.fen || routeCheckpoint?.fen || START_FEN,
       selectedSquare,
       legalTargets,
       onSquareClick: handleSquareClick,
       orientation: myColor || "w",
       interactive: canMove
     }
-  ), /* @__PURE__ */ import_react6.default.createElement("aside", { className: "side-panel" }, /* @__PURE__ */ import_react6.default.createElement(
+  ), /* @__PURE__ */ import_react7.default.createElement("aside", { className: "side-panel" }, /* @__PURE__ */ import_react7.default.createElement(
     MovePanel,
     {
       chess,
@@ -57828,29 +58635,29 @@ function GameView({ route, nodeId, nickname, onBack }) {
       selectedSquare,
       legalTargets,
       onSquareClick: handleSquareClick,
-      gameStatus: game?.data?.status || "waiting",
-      turn: game?.data?.turn || "w",
+      gameStatus: game?.data?.status || routeCheckpoint?.status || "waiting",
+      turn: game?.data?.turn || routeCheckpoint?.turn || "w",
       roomConnected,
       connectionCount
     }
-  ), /* @__PURE__ */ import_react6.default.createElement("section", { className: "panel" }, /* @__PURE__ */ import_react6.default.createElement("h3", null, "Players"), /* @__PURE__ */ import_react6.default.createElement("ul", null, /* @__PURE__ */ import_react6.default.createElement("li", null, "White: ", game?.data?.whitePlayerId || "\u2014"), /* @__PURE__ */ import_react6.default.createElement("li", null, "Black: ", game?.data?.blackPlayerId || "waiting\u2026")), /* @__PURE__ */ import_react6.default.createElement("h4", null, "Peers (", peers.length, ")"), /* @__PURE__ */ import_react6.default.createElement("ul", null, peers.map((peer) => /* @__PURE__ */ import_react6.default.createElement("li", { key: peer.peerId }, peer.metadata?.nickname || peer.peerId, " ", /* @__PURE__ */ import_react6.default.createElement("span", { className: "muted" }, "(", peer.metadata?.role || "peer", ")"))))), /* @__PURE__ */ import_react6.default.createElement("section", { className: "panel moves" }, /* @__PURE__ */ import_react6.default.createElement("h3", null, "Moves"), /* @__PURE__ */ import_react6.default.createElement("ol", null, (game?.data?.moveHistory || []).map((move) => /* @__PURE__ */ import_react6.default.createElement("li", { key: move }, move)))))));
+  ), /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel" }, /* @__PURE__ */ import_react7.default.createElement("h3", null, "Players"), /* @__PURE__ */ import_react7.default.createElement("ul", null, /* @__PURE__ */ import_react7.default.createElement("li", null, "White: ", game?.data?.whitePlayerId || "\u2014"), /* @__PURE__ */ import_react7.default.createElement("li", null, "Black: ", game?.data?.blackPlayerId || "waiting\u2026")), /* @__PURE__ */ import_react7.default.createElement("h4", null, "Peers (", peers.length, ")"), /* @__PURE__ */ import_react7.default.createElement("ul", null, peers.map((peer) => /* @__PURE__ */ import_react7.default.createElement("li", { key: peer.peerId }, peer.metadata?.nickname || peer.peerId, " ", /* @__PURE__ */ import_react7.default.createElement("span", { className: "muted" }, "(", peer.metadata?.role || "peer", ")"))))), /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel moves" }, /* @__PURE__ */ import_react7.default.createElement("h3", null, "Moves"), /* @__PURE__ */ import_react7.default.createElement("ol", null, (game?.data?.moveHistory || routeCheckpoint?.moveHistory || []).map((move) => /* @__PURE__ */ import_react7.default.createElement("li", { key: move }, move)))))));
 }
 
 // docs/chess/src/App.jsx
-var STORAGE_KEY = "dignity-chess-name";
+var STORAGE_KEY2 = "dignity-chess-name";
 function App() {
-  const [route, setRoute] = (0, import_react8.useState)(() => parseRoute());
-  const [draftNickname, setDraftNickname] = (0, import_react8.useState)(
-    () => localStorage.getItem(STORAGE_KEY) || "Player"
+  const [route, setRoute] = (0, import_react9.useState)(() => parseRoute());
+  const [draftNickname, setDraftNickname] = (0, import_react9.useState)(
+    () => localStorage.getItem(STORAGE_KEY2) || "Player"
   );
-  const [sessionNickname, setSessionNickname] = (0, import_react8.useState)(null);
-  (0, import_react8.useEffect)(() => {
+  const [sessionNickname, setSessionNickname] = (0, import_react9.useState)(null);
+  (0, import_react9.useEffect)(() => {
     const handleHashChange = () => setRoute(parseRoute());
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
   const activeSession = route.gameId && route.roomKey;
-  const nodeId = (0, import_react8.useMemo)(() => {
+  const nodeId = (0, import_react9.useMemo)(() => {
     if (!activeSession || !sessionNickname) {
       return null;
     }
@@ -57858,7 +58665,7 @@ function App() {
   }, [activeSession, sessionNickname, route.role, route.gameId]);
   function persistNickname(name) {
     const trimmed = name.trim() || "Player";
-    localStorage.setItem(STORAGE_KEY, trimmed);
+    localStorage.setItem(STORAGE_KEY2, trimmed);
     setDraftNickname(trimmed);
     setSessionNickname(trimmed);
     return trimmed;
@@ -57907,7 +58714,7 @@ function App() {
     setRoute(parseRoute());
     setSessionNickname(null);
   }
-  return /* @__PURE__ */ import_react8.default.createElement("div", { className: `app-shell${activeSession && sessionNickname ? " app-shell--game" : ""}` }, /* @__PURE__ */ import_react8.default.createElement("header", { className: "topbar" }, /* @__PURE__ */ import_react8.default.createElement("a", { href: "../index.html" }, "dignity.js docs"), !activeSession ? /* @__PURE__ */ import_react8.default.createElement("span", { className: "topbar__hint" }, "Set your nickname in the lobby before starting or joining.") : sessionNickname ? /* @__PURE__ */ import_react8.default.createElement("span", { className: "topbar__player" }, "Playing as ", /* @__PURE__ */ import_react8.default.createElement("strong", null, sessionNickname)) : null), !activeSession ? /* @__PURE__ */ import_react8.default.createElement(
+  return /* @__PURE__ */ import_react9.default.createElement("div", { className: `app-shell${activeSession && sessionNickname ? " app-shell--game" : ""}` }, /* @__PURE__ */ import_react9.default.createElement("header", { className: "topbar" }, /* @__PURE__ */ import_react9.default.createElement("a", { href: "../index.html" }, "dignity.js docs"), !activeSession ? /* @__PURE__ */ import_react9.default.createElement("span", { className: "topbar__hint" }, "Set your nickname in the lobby before starting or joining.") : sessionNickname ? /* @__PURE__ */ import_react9.default.createElement("span", { className: "topbar__player" }, "Playing as ", /* @__PURE__ */ import_react9.default.createElement("strong", null, sessionNickname)) : null), !activeSession ? /* @__PURE__ */ import_react9.default.createElement(
     Lobby,
     {
       nickname: draftNickname,
@@ -57916,7 +58723,7 @@ function App() {
       onJoinPaste: openPastedLink,
       onOpenGame: openSavedGame
     }
-  ) : !sessionNickname ? /* @__PURE__ */ import_react8.default.createElement(
+  ) : !sessionNickname ? /* @__PURE__ */ import_react9.default.createElement(
     JoinGate,
     {
       route,
@@ -57924,7 +58731,7 @@ function App() {
       onConfirm: persistNickname,
       onBack: backToLobby
     }
-  ) : /* @__PURE__ */ import_react8.default.createElement(
+  ) : /* @__PURE__ */ import_react9.default.createElement(
     GameView,
     {
       route,
@@ -57932,11 +58739,11 @@ function App() {
       nickname: sessionNickname,
       onBack: backToLobby
     }
-  ), /* @__PURE__ */ import_react8.default.createElement("footer", { className: "footer" }, "Scope preview: ", route.gameId ? scopeForGame(route.gameId) : "\u2014", " \xB7 Cloudflare PeerJS \xB7 IndexedDB persistence"));
+  ), /* @__PURE__ */ import_react9.default.createElement("footer", { className: "footer" }, "Scope preview: ", route.gameId ? scopeForGame(route.gameId) : "\u2014", " \xB7 Cloudflare PeerJS \xB7 IndexedDB persistence"));
 }
 
 // docs/chess/src/main.jsx
-(0, import_client.createRoot)(document.getElementById("root")).render(/* @__PURE__ */ import_react9.default.createElement(App, null));
+(0, import_client.createRoot)(document.getElementById("root")).render(/* @__PURE__ */ import_react10.default.createElement(App, null));
 /*! Bundled license information:
 
 react/cjs/react.production.js:

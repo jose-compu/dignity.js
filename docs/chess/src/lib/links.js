@@ -57,20 +57,25 @@ export function parseRoute() {
     hostPeer: params.host || null,
     joinToken: params.join || null,
     watchToken: params.watch || null,
-    resumeToken: params.resume || null
+    resumeToken: params.resume || null,
+    checkpoint: params.checkpoint || null,
+    checkpointRef: params.checkpointRef || null
   };
 }
 
-export function buildLinks({ gameId, roomKey, hostPeer, joinToken, watchToken, resumeToken }) {
+export function buildLinks({ gameId, roomKey, hostPeer, joinToken, watchToken, resumeToken, resumeLink }) {
   const base = `${window.location.origin}${window.location.pathname}`;
   const common = `game=${encodeURIComponent(gameId)}&room=${encodeURIComponent(roomKey)}`;
   const hostParam = hostPeer ? `&host=${encodeURIComponent(hostPeer)}` : '';
 
+  const resume = resumeLink
+    || `${base}#${common}&role=resume&resume=${encodeURIComponent(resumeToken || '')}${hostParam}`;
+
   return {
-    host: `${base}#${common}&role=host&resume=${encodeURIComponent(resumeToken)}${hostParam}`,
+    host: `${base}#${common}&role=host&resume=${encodeURIComponent(resumeToken || '')}${hostParam}`,
     join: `${base}#${common}&role=join&join=${encodeURIComponent(joinToken)}${hostParam}`,
     watch: `${base}#${common}&role=watch&watch=${encodeURIComponent(watchToken)}${hostParam}`,
-    resume: `${base}#${common}&role=resume&resume=${encodeURIComponent(resumeToken)}${hostParam}`
+    resume
   };
 }
 

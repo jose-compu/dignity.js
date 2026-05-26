@@ -5,7 +5,7 @@ import {
   DEFAULT_CLOUDFLARE_SIGNALING_URLS
 } from '../../../../src/index.js';
 
-export function createDignityConfig({ nodeId, roomKey, scope, nickname, role }) {
+export function createDignityConfig({ nodeId, roomKey, scope, nickname, role, keyPair }) {
   const networkAdapter = createPeerJSNetworkAdapter({
     urls: DEFAULT_CLOUDFLARE_SIGNALING_URLS
   });
@@ -27,7 +27,8 @@ export function createDignityConfig({ nodeId, roomKey, scope, nickname, role }) 
       },
       resolveBroadcastScope: () => scope,
       discoveryHeartbeatMs: 12000,
-      presenceTtlMs: 36000
+      presenceTtlMs: 36000,
+      keyPair
     },
     __meta: { nickname, role, scope, roomKey }
   };
