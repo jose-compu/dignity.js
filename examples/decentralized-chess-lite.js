@@ -1,3 +1,12 @@
+/**
+ * Node.js chess example.
+ *
+ * Run this example with:
+ *   npm run example:chess
+ *
+ * For the browser-based demo, see:
+ *   docs/chess/
+ */
 const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = require('../src');
 
 function initialBoard() {
