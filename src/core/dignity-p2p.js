@@ -1,5 +1,11 @@
+const crypto = require('crypto');
 const EventEmitter = require('../utils/event-emitter');
-const { MessageSecurityService } = require('../security/message-security-service');
+const { MessageSecurityService, stableStringify } = require('../security/message-security-service');
+
+function computeContentHash(data) {
+  const canonical = stableStringify(data || {});
+  return `sha256:${crypto.createHash('sha256').update(canonical, 'utf8').digest('hex')}`;
+}
 
 /**
  * Core node API for replicated object collections.
@@ -108,6 +114,7 @@ class DignityP2P extends EventEmitter {
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       version: record.version,
+      hash: record.hash || computeContentHash(record.data),
       data: { ...record.data }
     };
   }
@@ -855,11 +862,13 @@ class DignityP2P extends EventEmitter {
       return false;
     }
 
+    const restoredData = { ...(record.data || {}) };
     collection.set(record.id, {
       id: record.id,
       ownerId: record.ownerId,
       collaboratorIds: this.normalizeCollaboratorIds(record.collaboratorIds),
-      data: { ...(record.data || {}) },
+      data: restoredData,
+      hash: record.hash || computeContentHash(restoredData),
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       deletedAt: record.deletedAt || null,
@@ -882,6 +891,7 @@ class DignityP2P extends EventEmitter {
       ownerId: raw.ownerId,
       collaboratorIds: Array.isArray(raw.collaboratorIds) ? [...raw.collaboratorIds] : [],
       data: { ...raw.data },
+      hash: raw.hash || computeContentHash(raw.data),
       createdAt: raw.createdAt,
       updatedAt: raw.updatedAt,
       deletedAt: raw.deletedAt || null,
@@ -918,6 +928,7 @@ class DignityP2P extends EventEmitter {
         ownerId: operation.ownerId,
         collaboratorIds: this.normalizeCollaboratorIds(operation.collaboratorIds),
         data: { ...operation.payload },
+        hash: computeContentHash(operation.payload),
         createdAt: operation.timestamp,
         updatedAt: operation.timestamp,
         deletedAt: null,
@@ -1035,6 +1046,7 @@ class DignityP2P extends EventEmitter {
         ...current.data,
         ...operation.payload
       };
+      current.hash = computeContentHash(current.data);
 
       if (Array.isArray(operation.collaboratorIds) && operation.actorId === current.ownerId) {
         current.collaboratorIds = this.normalizeCollaboratorIds(operation.collaboratorIds);
