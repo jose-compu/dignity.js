@@ -17,11 +17,11 @@ class SlothPermutation {
     let powExponent = exponent;
 
     while (powExponent > 0) {
-      if (powExponent % BigInt(2) === BigInt(1)) {
+      if ((powExponent & BigInt(1)) === BigInt(1)) {
         result = (result * powBase) % modulus;
       }
 
-      powExponent = powExponent / BigInt(2);
+      powExponent = powExponent >> BigInt(1);
       powBase = (powBase * powBase) % modulus;
     }
 
@@ -29,7 +29,7 @@ class SlothPermutation {
   }
 
   quadRes(x) {
-    return this.fastPow(x, (SlothPermutation.p - BigInt(1)) / BigInt(2), SlothPermutation.p) === BigInt(1);
+    return this.fastPow(x, (SlothPermutation.p - BigInt(1)) >> BigInt(1), SlothPermutation.p) === BigInt(1);
   }
 
   modSqrtOp(x) {
@@ -37,10 +37,10 @@ class SlothPermutation {
     let value = x;
 
     if (this.quadRes(value)) {
-      y = this.fastPow(value, (SlothPermutation.p + BigInt(1)) / BigInt(4), SlothPermutation.p);
+      y = this.fastPow(value, (SlothPermutation.p + BigInt(1)) >> BigInt(2), SlothPermutation.p);
     } else {
       value = (-value + SlothPermutation.p) % SlothPermutation.p;
-      y = this.fastPow(value, (SlothPermutation.p + BigInt(1)) / BigInt(4), SlothPermutation.p);
+      y = this.fastPow(value, (SlothPermutation.p + BigInt(1)) >> BigInt(2), SlothPermutation.p);
     }
 
     return y;
