@@ -1,10 +1,14 @@
-const crypto = require('crypto');
+const nacl = require('tweetnacl');
+const naclUtil = require('tweetnacl-util');
 const EventEmitter = require('../utils/event-emitter');
 const { MessageSecurityService, stableStringify } = require('../security/message-security-service');
 
 function computeContentHash(data) {
   const canonical = stableStringify(data || {});
-  return `sha256:${crypto.createHash('sha256').update(canonical, 'utf8').digest('hex')}`;
+  const bytes = naclUtil.decodeUTF8(canonical);
+  const hash = nacl.hash(bytes);
+  const hex = Array.from(hash, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `sha512:${hex}`;
 }
 
 /**
@@ -114,7 +118,7 @@ class DignityP2P extends EventEmitter {
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       version: record.version,
-      hash: record.hash || computeContentHash(record.data),
+      hash: record.hash || null,
       data: { ...record.data }
     };
   }

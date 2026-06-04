@@ -21,7 +21,7 @@ async function waitFor(condition, timeoutMs = 2500, intervalMs = 50) {
 
 function expectedHash(data) {
   const canonical = stableStringify(data || {});
-  return `sha256:${crypto.createHash('sha256').update(canonical, 'utf8').digest('hex')}`;
+  return `sha512:${crypto.createHash('sha512').update(canonical, 'utf8').digest('hex')}`;
 }
 
 describe('content hashes', () => {
@@ -33,7 +33,7 @@ describe('content hashes', () => {
     security = { appPassword: 'test-pwd', powTargetMs: 5 };
   });
 
-  test('create returns a sha256: hash of the record data', async () => {
+  test('create returns a sha512: hash of the record data', async () => {
     const alice = new DignityP2P({ nodeId: 'alice', networkAdapter: new InMemoryNetworkAdapter(hub), security });
     await alice.start();
 
@@ -41,7 +41,7 @@ describe('content hashes', () => {
     const record = await alice.create('notes', data, { id: 'n1' });
 
     expect(record.hash).toBe(expectedHash(data));
-    expect(record.hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(record.hash).toMatch(/^sha512:[0-9a-f]{128}$/);
 
     await alice.stop();
   });
@@ -125,7 +125,7 @@ describe('content hashes', () => {
     const records = alice.list('things');
     expect(records).toHaveLength(2);
     for (const r of records) {
-      expect(r.hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(r.hash).toMatch(/^sha512:[0-9a-f]{128}$/);
     }
 
     await alice.stop();
