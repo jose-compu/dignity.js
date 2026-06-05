@@ -291,6 +291,24 @@ The joiner applies the snapshot via `restoreRecord`, then subsequent move update
 
 ## Development
 
+| Script | Purpose | Notes |
+| --- | --- | --- |
+| `npm test` | Run the full Jest suite with coverage. | Standard local validation before opening a PR or publishing. |
+| `npm run test:unit` | Run the unit-test subset only. | Useful for faster local iteration. |
+| `npm run test:cloudflare-live` | Run the live Cloudflare signaling integration test. | Opt-in; set `RUN_CLOUDFLARE_LIVE_TESTS=1`. |
+| `npm run test:pow-calibrate` | Run the Sloth VDF timing calibration test without coverage. | Opt-in; set `RUN_POW_CALIBRATE=1`. |
+| `npm run build` | Build the published package bundles into `dist/`. | Run after changing library source files. |
+| `npm run build:chess` | Rebuild the browser chess demo bundle only. | Used by the docs site and local chess demo. |
+| `npm run docs:favicon` | Regenerate the docs favicon assets. | Docs maintenance helper. |
+| `npm run docs:build` | Build the docs-specific assets. | Currently rebuilds the chess demo bundle. |
+| `npm run docs:dev` | Start the local docs server. | Serves the main docs and chess demo; auto-builds chess if needed. |
+| `npm run docs:serve` | Start the same local docs server via an alias. | Equivalent to `docs:dev`. |
+| `npm run docs:stop` | Stop the background docs server from a previous run. | Useful if port `4173` is stuck. |
+| `npm run docs:check` | Verify the generated docs assets exist. | Good quick check after docs asset generation. |
+| `npm run example:tictactoe` | Run the Node tic-tac-toe example. | Demonstrates a minimal replicated game flow. |
+| `npm run example:chess` | Run the Node chess example. | Demonstrates the lighter-weight chess sample. |
+| `npm run prepublishOnly` | Run the publish gate locally. | Publish/CI-oriented hook; runs tests and build before `npm publish`. |
+
 ```bash
 npm test
 npm run build
