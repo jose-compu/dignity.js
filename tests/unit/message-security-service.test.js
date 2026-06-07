@@ -491,6 +491,41 @@ describe('MessageSecurityService', () => {
     expect(stableStringify([1, 'a', null])).toBe('[1,"a",null]');
   });
 
+  test('stableStringify sorts nested object keys canonically', () => {
+    const { stableStringify } = require('../../src/security/message-security-service');
+
+    expect(
+      stableStringify({
+        zebra: { beta: 2, alpha: 1 },
+        alpha: { delta: 4, charlie: 3 }
+      })
+    ).toBe('{"alpha":{"charlie":3,"delta":4},"zebra":{"alpha":1,"beta":2}}');
+  });
+
+  test('stableStringify handles empty containers', () => {
+    const { stableStringify } = require('../../src/security/message-security-service');
+
+    expect(stableStringify({})).toBe('{}');
+    expect(stableStringify([])).toBe('[]');
+  });
+
+  test('stableStringify preserves primitive and null values', () => {
+    const { stableStringify } = require('../../src/security/message-security-service');
+
+    expect(stableStringify(null)).toBe('null');
+    expect(stableStringify(false)).toBe('false');
+    expect(stableStringify(7)).toBe('7');
+    expect(stableStringify('plain text')).toBe('"plain text"');
+  });
+
+  test('stableStringify preserves unicode string payloads', () => {
+    const { stableStringify } = require('../../src/security/message-security-service');
+
+    expect(stableStringify({ greeting: 'Привет 👋', accent: 'café' })).toBe(
+      '{"accent":"café","greeting":"Привет 👋"}'
+    );
+  });
+
   test('broadcast encryption uses PBKDF2 KDF by default', async () => {
     const alice = new MessageSecurityService({
       nodeId: 'alice',
