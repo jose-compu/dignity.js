@@ -188,6 +188,26 @@ describe('WebSocketSignalingProvider', () => {
     }
   });
 
+  test('buildConnectionUrl still progresses when Math.random returns zero', () => {
+    const provider = new WebSocketSignalingProvider({
+      url: 'wss://peerjs.92k.de/peerjs?key=peerjs',
+      WebSocketImpl: MockWebSocket
+    });
+    const randomSpy = jest.spyOn(Math, 'random')
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0.1)
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0.2);
+
+    try {
+      const built = provider.buildConnectionUrl();
+      expect(built).toMatch(/[?&]id=dignityjs_[a-z0-9]{10}/);
+      expect(built).toMatch(/[?&]token=[a-z0-9]{10}/);
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
   test('returns url unchanged for non-peerjs hosts', () => {
     const provider = new WebSocketSignalingProvider({
       url: 'wss://custom-server.example/signaling',
