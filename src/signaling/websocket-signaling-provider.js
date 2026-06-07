@@ -1,7 +1,8 @@
 function randomBase36(length) {
   let value = '';
   while (value.length < length) {
-    value += Math.random().toString(36).slice(2) || '0';
+    const chunk = Math.random().toString(36).slice(2);
+    value += chunk.length > 0 ? chunk : '0';
   }
   return value.slice(0, length);
 }
