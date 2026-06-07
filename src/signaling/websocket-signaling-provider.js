@@ -1,3 +1,11 @@
+function randomBase36(length) {
+  let value = '';
+  while (value.length < length) {
+    value += Math.random().toString(36).slice(2) || '0';
+  }
+  return value.slice(0, length);
+}
+
 class WebSocketSignalingProvider {
   constructor({ id, url, WebSocketImpl, priority = 0 }) {
     if (!url) {
@@ -50,8 +58,8 @@ class WebSocketSignalingProvider {
       return this.url;
     }
 
-    const connectionId = `dignityjs_${Math.random().toString(36).slice(2, 12)}`;
-    const token = Math.random().toString(36).slice(2, 12);
+    const connectionId = `dignityjs_${randomBase36(10)}`;
+    const token = randomBase36(10);
     const hasQuery = this.url.includes('?');
     const hasId = /[?&]id=/.test(this.url);
     const hasToken = /[?&]token=/.test(this.url);

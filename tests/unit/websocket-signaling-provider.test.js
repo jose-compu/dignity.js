@@ -168,6 +168,26 @@ describe('WebSocketSignalingProvider', () => {
     expect(built).toMatch(/[?&]id=dignityjs_[a-z0-9]{10}/);
   });
 
+  test('buildConnectionUrl keeps peerjs ids and tokens at 10 chars when random base36 is short', () => {
+    const provider = new WebSocketSignalingProvider({
+      url: 'wss://peerjs.92k.de/peerjs?key=peerjs',
+      WebSocketImpl: MockWebSocket
+    });
+    const randomSpy = jest.spyOn(Math, 'random')
+      .mockReturnValueOnce(0.37750362191663944)
+      .mockReturnValueOnce(0.1)
+      .mockReturnValueOnce(0.37750362191663944)
+      .mockReturnValueOnce(0.2);
+
+    try {
+      const built = provider.buildConnectionUrl();
+      expect(built).toMatch(/[?&]id=dignityjs_[a-z0-9]{10}/);
+      expect(built).toMatch(/[?&]token=[a-z0-9]{10}/);
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
   test('returns url unchanged for non-peerjs hosts', () => {
     const provider = new WebSocketSignalingProvider({
       url: 'wss://custom-server.example/signaling',
