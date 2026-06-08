@@ -1,5 +1,15 @@
+const nacl = require('tweetnacl');
+const naclUtil = require('tweetnacl-util');
 const EventEmitter = require('../utils/event-emitter');
-const { MessageSecurityService } = require('../security/message-security-service');
+const { MessageSecurityService, stableStringify } = require('../security/message-security-service');
+
+function computeContentHash(data) {
+  const canonical = stableStringify(data || {});
+  const bytes = naclUtil.decodeUTF8(canonical);
+  const hash = nacl.hash(bytes);
+  const hex = Array.from(hash, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `sha512:${hex}`;
+}
 
 /**
  * Core node API for replicated object collections.
@@ -101,6 +111,8 @@ class DignityP2P extends EventEmitter {
       return null;
     }
 
+    const normalizedData = { ...(record.data || {}) };
+
     return {
       id: record.id,
       ownerId: record.ownerId,
@@ -108,7 +120,8 @@ class DignityP2P extends EventEmitter {
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       version: record.version,
-      data: { ...record.data }
+      hash: record.hash || computeContentHash(normalizedData),
+      data: normalizedData
     };
   }
 
@@ -204,7 +217,7 @@ class DignityP2P extends EventEmitter {
       ownerId: this.nodeId,
       collaboratorIds,
       timestamp,
-      payload: { ...data }
+      payload: { ...(data || {}) }
     };
 
     this.applyOperation(operation);
@@ -855,11 +868,24 @@ class DignityP2P extends EventEmitter {
       return false;
     }
 
+    const restoredData = { ...(record.data || {}) };
+    const computedHash = computeContentHash(restoredData);
+    if (record.hash && record.hash !== computedHash) {
+      this.emit('warning', {
+        type: 'content-hash-mismatch',
+        collection: collectionName,
+        id: record.id,
+        advertisedHash: record.hash,
+        computedHash
+      });
+    }
+
     collection.set(record.id, {
       id: record.id,
       ownerId: record.ownerId,
       collaboratorIds: this.normalizeCollaboratorIds(record.collaboratorIds),
-      data: { ...(record.data || {}) },
+      data: restoredData,
+      hash: computedHash,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       deletedAt: record.deletedAt || null,
@@ -881,7 +907,8 @@ class DignityP2P extends EventEmitter {
       id: raw.id,
       ownerId: raw.ownerId,
       collaboratorIds: Array.isArray(raw.collaboratorIds) ? [...raw.collaboratorIds] : [],
-      data: { ...raw.data },
+      data: { ...(raw.data || {}) },
+      hash: raw.hash || computeContentHash(raw.data || {}),
       createdAt: raw.createdAt,
       updatedAt: raw.updatedAt,
       deletedAt: raw.deletedAt || null,
@@ -917,7 +944,8 @@ class DignityP2P extends EventEmitter {
         id: operation.id,
         ownerId: operation.ownerId,
         collaboratorIds: this.normalizeCollaboratorIds(operation.collaboratorIds),
-        data: { ...operation.payload },
+        data: { ...(operation.payload || {}) },
+        hash: computeContentHash(operation.payload || {}),
         createdAt: operation.timestamp,
         updatedAt: operation.timestamp,
         deletedAt: null,
@@ -1035,6 +1063,7 @@ class DignityP2P extends EventEmitter {
         ...current.data,
         ...operation.payload
       };
+      current.hash = computeContentHash(current.data);
 
       if (Array.isArray(operation.collaboratorIds) && operation.actorId === current.ownerId) {
         current.collaboratorIds = this.normalizeCollaboratorIds(operation.collaboratorIds);
