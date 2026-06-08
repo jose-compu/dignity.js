@@ -29,6 +29,7 @@ REST-like P2P object API for decentralized JavaScript applications.
 - Optimistic concurrency helpers (`expectedVersion`, `updateWithRetry`, `conflict` events)
 - PeerJS mesh bootstrap: connect before announce/broadcast, auto `publicKey` in presence
 - Late-joiner sync via `pushRecordSnapshot` (full record catch-up when create was missed)
+- Content hashes on active records via `record.hash` (`sha512:` over canonicalized `data`)
 - Auto `connectToPeers` on create/update/delete replication (owner + collaborators)
 - Optional IndexedDB persistence for browser reload survival
 - Optional React hooks via `dignity.js/react`
@@ -160,6 +161,23 @@ await node.updateWithRetry('games', 'g1', (current) => ({
 ```
 
 Use `expectedVersion` for fail-fast local writes. Use `updateWithRetry` for read-modify-write loops in fast multiplayer state.
+
+## Record Content Hashes
+
+Active records returned by `create`, `read`, `list`, `update`, and `pushRecordSnapshot` include a `hash` field:
+
+```js
+const record = await node.create('notes', { title: 'hello' }, { id: 'n1' });
+console.log(record.hash); // sha512:...
+```
+
+Hash details:
+
+- The algorithm is `sha512`, matching `tweetnacl.hash` in both browser and Node builds.
+- The digest covers only `record.data`, not `id`, `ownerId`, timestamps, collaborators, or version.
+- Data is canonicalized with `stableStringify`, so object key order does not affect the hash.
+- Snapshot restore recomputes the digest locally and emits a `warning` with type `content-hash-mismatch` if a remote advertised hash does not match the received `data`.
+- Deleted tombstones returned by `list(collection, { includeDeleted: true })` intentionally omit `hash`.
 
 ## IndexedDB Persistence
 

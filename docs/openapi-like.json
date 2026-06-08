@@ -15,7 +15,8 @@
         }
       },
       "read": {
-        "method": "read(collection, id)"
+        "method": "read(collection, id)",
+        "returns": "active record or null; see recordShape"
       },
       "update": {
         "method": "update(collection, id, patch, options)",
@@ -33,7 +34,8 @@
       },
       "pushRecordSnapshot": {
         "method": "pushRecordSnapshot(collection, id, options)",
-        "description": "broadcast full record for late joiners who missed the initial create"
+        "description": "broadcast full record for late joiners who missed the initial create",
+        "returns": "active record; see recordShape"
       },
       "getRecordPeerIds": {
         "method": "getRecordPeerIds(collection, id, options)",
@@ -46,7 +48,8 @@
     },
     "collections/{collection}": {
       "list": {
-        "method": "list(collection, options)"
+        "method": "list(collection, options)",
+        "returns": "active records with hash; deleted stubs omit hash when includeDeleted is true"
       }
     },
     "peers": {
@@ -60,10 +63,34 @@
   "events": {
     "change": "object create/update/delete/snapshot applied",
     "conflict": "local or remote version mismatch",
-    "warning": "orphan-operation, peer-connect-failed, presence failures",
+    "warning": "orphan-operation, peer-connect-failed, presence failures, content-hash-mismatch",
     "peerdiscovered": "peer joined discovery scope",
     "peerleft": "peer left or timed out",
     "message": "custom decrypted message received"
+  },
+  "recordShape": {
+    "active": {
+      "id": "string",
+      "ownerId": "string",
+      "collaboratorIds": [
+        "peer-id"
+      ],
+      "data": "application payload object",
+      "hash": "sha512:<hex>; computed from canonicalized data only",
+      "createdAt": "unix ms timestamp",
+      "updatedAt": "unix ms timestamp",
+      "version": "monotonic integer"
+    },
+    "deletedStub": {
+      "id": "string",
+      "ownerId": "string",
+      "deletedAt": "unix ms timestamp",
+      "version": "monotonic integer"
+    },
+    "notes": [
+      "hash uses stableStringify(data) so object key order does not change the digest",
+      "restoreRecord recomputes hash locally and emits warning.type=content-hash-mismatch on mismatch"
+    ]
   },
   "persistence": {
     "IndexedDBPersistence": {

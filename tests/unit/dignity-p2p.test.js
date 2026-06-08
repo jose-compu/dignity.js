@@ -737,12 +737,14 @@ describe('DignityP2P', () => {
     await alice.remove('notes', 'deleted-1');
 
     const records = alice.list('notes', { includeDeleted: true });
+    const deletedRecord = records.find((record) => record.id === 'deleted-1');
     expect(records).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'active-1', data: { title: 'active' } }),
         expect.objectContaining({ id: 'deleted-1', deletedAt: expect.any(Number) })
       ])
     );
+    expect(deletedRecord.hash).toBeUndefined();
 
     await alice.stop();
   });

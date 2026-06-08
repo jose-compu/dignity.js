@@ -17,6 +17,11 @@ const {
   IndexedDBPersistence
 } = require('../../src');
 const { useDignity, useCollection, usePeers, useObject, useDiscovery, useMessages } = require('../../src/react');
+const { stableStringify } = require('../../src/security/message-security-service');
+
+function expectedHash(data) {
+  return `sha512:${require('crypto').createHash('sha512').update(stableStringify(data || {}), 'utf8').digest('hex')}`;
+}
 
 describe('IndexedDBPersistence', () => {
   let hub;
@@ -59,7 +64,8 @@ describe('IndexedDBPersistence', () => {
     expect(restored.read('notes', 'n1')).toMatchObject({
       id: 'n1',
       data: { title: 'persist me' },
-      version: 1
+      version: 1,
+      hash: expectedHash({ title: 'persist me' })
     });
 
     await restoredPersistence.clear();
@@ -286,6 +292,27 @@ describe('IndexedDBPersistence', () => {
     await persistence.attach(alice);
 
     expect(persistence.serializeRecord('notes', 'missing')).toBeNull();
+
+    await persistence.detach();
+    await alice.stop();
+  });
+
+  test('serializeRecord persists hash for round-trip parity', async () => {
+    const persistence = new IndexedDBPersistence({ dbName: 'dignity-test-serialize-hash' });
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+
+    await alice.start();
+    await persistence.attach(alice);
+    await alice.create('notes', { title: 'hashed' }, { id: 'n-hash' });
+
+    expect(persistence.serializeRecord('notes', 'n-hash')).toMatchObject({
+      id: 'n-hash',
+      hash: expectedHash({ title: 'hashed' })
+    });
 
     await persistence.detach();
     await alice.stop();

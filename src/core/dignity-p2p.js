@@ -111,6 +111,8 @@ class DignityP2P extends EventEmitter {
       return null;
     }
 
+    const normalizedData = { ...(record.data || {}) };
+
     return {
       id: record.id,
       ownerId: record.ownerId,
@@ -118,8 +120,8 @@ class DignityP2P extends EventEmitter {
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       version: record.version,
-      hash: record.hash || null,
-      data: { ...record.data }
+      hash: record.hash || computeContentHash(normalizedData),
+      data: normalizedData
     };
   }
 
@@ -215,7 +217,7 @@ class DignityP2P extends EventEmitter {
       ownerId: this.nodeId,
       collaboratorIds,
       timestamp,
-      payload: { ...data }
+      payload: { ...(data || {}) }
     };
 
     this.applyOperation(operation);
@@ -867,12 +869,23 @@ class DignityP2P extends EventEmitter {
     }
 
     const restoredData = { ...(record.data || {}) };
+    const computedHash = computeContentHash(restoredData);
+    if (record.hash && record.hash !== computedHash) {
+      this.emit('warning', {
+        type: 'content-hash-mismatch',
+        collection: collectionName,
+        id: record.id,
+        advertisedHash: record.hash,
+        computedHash
+      });
+    }
+
     collection.set(record.id, {
       id: record.id,
       ownerId: record.ownerId,
       collaboratorIds: this.normalizeCollaboratorIds(record.collaboratorIds),
       data: restoredData,
-      hash: record.hash || computeContentHash(restoredData),
+      hash: computedHash,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       deletedAt: record.deletedAt || null,
@@ -894,8 +907,8 @@ class DignityP2P extends EventEmitter {
       id: raw.id,
       ownerId: raw.ownerId,
       collaboratorIds: Array.isArray(raw.collaboratorIds) ? [...raw.collaboratorIds] : [],
-      data: { ...raw.data },
-      hash: raw.hash || computeContentHash(raw.data),
+      data: { ...(raw.data || {}) },
+      hash: raw.hash || computeContentHash(raw.data || {}),
       createdAt: raw.createdAt,
       updatedAt: raw.updatedAt,
       deletedAt: raw.deletedAt || null,
@@ -931,8 +944,8 @@ class DignityP2P extends EventEmitter {
         id: operation.id,
         ownerId: operation.ownerId,
         collaboratorIds: this.normalizeCollaboratorIds(operation.collaboratorIds),
-        data: { ...operation.payload },
-        hash: computeContentHash(operation.payload),
+        data: { ...(operation.payload || {}) },
+        hash: computeContentHash(operation.payload || {}),
         createdAt: operation.timestamp,
         updatedAt: operation.timestamp,
         deletedAt: null,

@@ -71,6 +71,31 @@ describe('content hashes', () => {
     await alice.stop();
   });
 
+  test('hash is stable across object key order differences', async () => {
+    const alice = new DignityP2P({ nodeId: 'alice', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+    await alice.start();
+
+    const r1 = await alice.create('notes', { b: 1, a: 2 }, { id: 'order-a' });
+    const r2 = await alice.create('notes', { a: 2, b: 1 }, { id: 'order-b' });
+
+    expect(r1.hash).toBe(r2.hash);
+    expect(r1.hash).toBe(expectedHash({ a: 2, b: 1 }));
+
+    await alice.stop();
+  });
+
+  test('create with empty payload hashes the canonical empty object', async () => {
+    const alice = new DignityP2P({ nodeId: 'alice', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+    await alice.start();
+
+    const record = await alice.create('notes', {}, { id: 'empty' });
+
+    expect(record.data).toEqual({});
+    expect(record.hash).toBe(expectedHash({}));
+
+    await alice.stop();
+  });
+
   test('hash is replicated to peers via broadcast', async () => {
     const alice = new DignityP2P({ nodeId: 'alice', networkAdapter: new InMemoryNetworkAdapter(hub), security });
     const bob = new DignityP2P({ nodeId: 'bob', networkAdapter: new InMemoryNetworkAdapter(hub), security });
@@ -113,6 +138,36 @@ describe('content hashes', () => {
 
     await alice.stop();
     await bob.stop();
+  });
+
+  test('restoreRecord recomputes mismatched remote hash and emits warning', () => {
+    const alice = new DignityP2P({ nodeId: 'alice', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+    const warningHandler = jest.fn();
+    alice.on('warning', warningHandler);
+
+    const applied = alice.restoreRecord('items', {
+      id: 'item-1',
+      ownerId: 'bob',
+      collaboratorIds: [],
+      data: { value: 42 },
+      hash: 'sha512:deadbeef',
+      createdAt: 1,
+      updatedAt: 1,
+      deletedAt: null,
+      version: 1
+    });
+
+    expect(applied).toBe(true);
+    expect(alice.read('items', 'item-1').hash).toBe(expectedHash({ value: 42 }));
+    expect(warningHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'content-hash-mismatch',
+        collection: 'items',
+        id: 'item-1',
+        advertisedHash: 'sha512:deadbeef',
+        computedHash: expectedHash({ value: 42 })
+      })
+    );
   });
 
   test('list includes hash on each record', async () => {
