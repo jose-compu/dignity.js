@@ -6,6 +6,12 @@ class SlothPermutation {
   static p = BigInt(
     '170082004324204494273811327264862981553264701145937538369570764779791492622392118654022654452947093285873855529044371650895045691292912712699015605832276411308653107069798639938826015099738961427172366594187783204437869906954750443653318078358839409699824714551430573905637228307966826784684174483831608534979'
   );
+  // precompute values for optimization:
+  // (p - 1) / 2
+  static pHalf = (SlothPermutation.p - BigInt(1)) >> BigInt(1);
+  // (p + 1) / 4
+  // p ≡ 3 (mod 4) ⇒ (p+1) divisible by 4
+  static pQuarter = (SlothPermutation.p + BigInt(1)) >> BigInt(2);
 
   fastPow(base, exponent, modulus) {
     if (modulus === BigInt(1)) {
@@ -17,11 +23,11 @@ class SlothPermutation {
     let powExponent = exponent;
 
     while (powExponent > 0) {
-      if (powExponent % BigInt(2) === BigInt(1)) {
+      if ((powExponent & BigInt(1)) === BigInt(1)) {
         result = (result * powBase) % modulus;
       }
 
-      powExponent = powExponent / BigInt(2);
+      powExponent = powExponent >> BigInt(1);
       powBase = (powBase * powBase) % modulus;
     }
 
@@ -29,7 +35,7 @@ class SlothPermutation {
   }
 
   quadRes(x) {
-    return this.fastPow(x, (SlothPermutation.p - BigInt(1)) / BigInt(2), SlothPermutation.p) === BigInt(1);
+    return this.fastPow(x, SlothPermutation.pHalf, SlothPermutation.p) === BigInt(1);
   }
 
   modSqrtOp(x) {
@@ -37,10 +43,10 @@ class SlothPermutation {
     let value = x;
 
     if (this.quadRes(value)) {
-      y = this.fastPow(value, (SlothPermutation.p + BigInt(1)) / BigInt(4), SlothPermutation.p);
+      y = this.fastPow(value, SlothPermutation.pQuarter, SlothPermutation.p);
     } else {
       value = (-value + SlothPermutation.p) % SlothPermutation.p;
-      y = this.fastPow(value, (SlothPermutation.p + BigInt(1)) / BigInt(4), SlothPermutation.p);
+      y = this.fastPow(value, SlothPermutation.pQuarter, SlothPermutation.p);
     }
 
     return y;
