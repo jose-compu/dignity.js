@@ -16,43 +16,6 @@ var __commonJS = (cb, mod) => function __require2() {
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 var __privateAdd = (obj, member, value) => member.has(obj) ? __typeError("Cannot add the same private member more than once") : member instanceof WeakSet ? member.add(obj) : member.set(obj, value);
 
-// src/utils/event-emitter.js
-var require_event_emitter = __commonJS({
-  "src/utils/event-emitter.js"(exports, module) {
-    var EventEmitter = class {
-      constructor() {
-        this.handlers = /* @__PURE__ */ new Map();
-      }
-      on(eventName, handler) {
-        if (!this.handlers.has(eventName)) {
-          this.handlers.set(eventName, /* @__PURE__ */ new Set());
-        }
-        this.handlers.get(eventName).add(handler);
-      }
-      off(eventName, handler) {
-        const eventHandlers = this.handlers.get(eventName);
-        if (!eventHandlers) {
-          return;
-        }
-        eventHandlers.delete(handler);
-        if (eventHandlers.size === 0) {
-          this.handlers.delete(eventName);
-        }
-      }
-      emit(eventName, payload) {
-        const eventHandlers = this.handlers.get(eventName);
-        if (!eventHandlers) {
-          return;
-        }
-        for (const handler of eventHandlers) {
-          handler(payload);
-        }
-      }
-    };
-    module.exports = EventEmitter;
-  }
-});
-
 // (disabled):crypto
 var require_crypto = __commonJS({
   "(disabled):crypto"() {
@@ -2349,6 +2312,43 @@ var require_nacl_util = __commonJS({
   }
 });
 
+// src/utils/event-emitter.js
+var require_event_emitter = __commonJS({
+  "src/utils/event-emitter.js"(exports, module) {
+    var EventEmitter = class {
+      constructor() {
+        this.handlers = /* @__PURE__ */ new Map();
+      }
+      on(eventName, handler) {
+        if (!this.handlers.has(eventName)) {
+          this.handlers.set(eventName, /* @__PURE__ */ new Set());
+        }
+        this.handlers.get(eventName).add(handler);
+      }
+      off(eventName, handler) {
+        const eventHandlers = this.handlers.get(eventName);
+        if (!eventHandlers) {
+          return;
+        }
+        eventHandlers.delete(handler);
+        if (eventHandlers.size === 0) {
+          this.handlers.delete(eventName);
+        }
+      }
+      emit(eventName, payload) {
+        const eventHandlers = this.handlers.get(eventName);
+        if (!eventHandlers) {
+          return;
+        }
+        for (const handler of eventHandlers) {
+          handler(payload);
+        }
+      }
+    };
+    module.exports = EventEmitter;
+  }
+});
+
 // src/security/sloth-vdf.js
 var require_sloth_vdf = __commonJS({
   "src/security/sloth-vdf.js"(exports, module) {
@@ -2361,25 +2361,25 @@ var require_sloth_vdf = __commonJS({
         let powBase = base % modulus;
         let powExponent = exponent;
         while (powExponent > 0) {
-          if (powExponent % BigInt(2) === BigInt(1)) {
+          if ((powExponent & BigInt(1)) === BigInt(1)) {
             result = result * powBase % modulus;
           }
-          powExponent = powExponent / BigInt(2);
+          powExponent = powExponent >> BigInt(1);
           powBase = powBase * powBase % modulus;
         }
         return result;
       }
       quadRes(x) {
-        return this.fastPow(x, (_SlothPermutation.p - BigInt(1)) / BigInt(2), _SlothPermutation.p) === BigInt(1);
+        return this.fastPow(x, _SlothPermutation.pHalf, _SlothPermutation.p) === BigInt(1);
       }
       modSqrtOp(x) {
         let y;
         let value = x;
         if (this.quadRes(value)) {
-          y = this.fastPow(value, (_SlothPermutation.p + BigInt(1)) / BigInt(4), _SlothPermutation.p);
+          y = this.fastPow(value, _SlothPermutation.pQuarter, _SlothPermutation.p);
         } else {
           value = (-value + _SlothPermutation.p) % _SlothPermutation.p;
-          y = this.fastPow(value, (_SlothPermutation.p + BigInt(1)) / BigInt(4), _SlothPermutation.p);
+          y = this.fastPow(value, _SlothPermutation.pQuarter, _SlothPermutation.p);
         }
         return y;
       }
@@ -2411,6 +2411,12 @@ var require_sloth_vdf = __commonJS({
     __publicField(_SlothPermutation, "p", BigInt(
       "170082004324204494273811327264862981553264701145937538369570764779791492622392118654022654452947093285873855529044371650895045691292912712699015605832276411308653107069798639938826015099738961427172366594187783204437869906954750443653318078358839409699824714551430573905637228307966826784684174483831608534979"
     ));
+    // precompute values for optimization:
+    // (p - 1) / 2
+    __publicField(_SlothPermutation, "pHalf", _SlothPermutation.p - BigInt(1) >> BigInt(1));
+    // (p + 1) / 4
+    // p ≡ 3 (mod 4) ⇒ (p+1) divisible by 4
+    __publicField(_SlothPermutation, "pQuarter", _SlothPermutation.p + BigInt(1) >> BigInt(2));
     var SlothPermutation = _SlothPermutation;
     module.exports = SlothPermutation;
   }
@@ -2871,8 +2877,17 @@ var require_message_security_service = __commonJS({
 // src/core/dignity-p2p.js
 var require_dignity_p2p = __commonJS({
   "src/core/dignity-p2p.js"(exports, module) {
+    var nacl = require_nacl_fast();
+    var naclUtil = require_nacl_util();
     var EventEmitter = require_event_emitter();
-    var { MessageSecurityService } = require_message_security_service();
+    var { MessageSecurityService, stableStringify } = require_message_security_service();
+    function computeContentHash(data) {
+      const canonical = stableStringify(data || {});
+      const bytes = naclUtil.decodeUTF8(canonical);
+      const hash = nacl.hash(bytes);
+      const hex = Array.from(hash, (b) => b.toString(16).padStart(2, "0")).join("");
+      return `sha512:${hex}`;
+    }
     var DignityP2P = class extends EventEmitter {
       constructor({ nodeId, networkAdapter, idGenerator, now, security } = {}) {
         super();
@@ -2931,6 +2946,7 @@ var require_dignity_p2p = __commonJS({
         if (!record || record.deletedAt) {
           return null;
         }
+        const normalizedData = { ...record.data || {} };
         return {
           id: record.id,
           ownerId: record.ownerId,
@@ -2938,7 +2954,8 @@ var require_dignity_p2p = __commonJS({
           createdAt: record.createdAt,
           updatedAt: record.updatedAt,
           version: record.version,
-          data: { ...record.data }
+          hash: record.hash || computeContentHash(normalizedData),
+          data: normalizedData
         };
       }
       canUpdateRecord(record, actorId) {
@@ -3016,7 +3033,7 @@ var require_dignity_p2p = __commonJS({
           ownerId: this.nodeId,
           collaboratorIds,
           timestamp,
-          payload: { ...data }
+          payload: { ...data || {} }
         };
         this.applyOperation(operation);
         await this.broadcastMessage("operation", operation, {
@@ -3549,11 +3566,23 @@ var require_dignity_p2p = __commonJS({
         if (current && current.version >= record.version) {
           return false;
         }
+        const restoredData = { ...record.data || {} };
+        const computedHash = computeContentHash(restoredData);
+        if (record.hash && record.hash !== computedHash) {
+          this.emit("warning", {
+            type: "content-hash-mismatch",
+            collection: collectionName,
+            id: record.id,
+            advertisedHash: record.hash,
+            computedHash
+          });
+        }
         collection.set(record.id, {
           id: record.id,
           ownerId: record.ownerId,
           collaboratorIds: this.normalizeCollaboratorIds(record.collaboratorIds),
-          data: { ...record.data || {} },
+          data: restoredData,
+          hash: computedHash,
           createdAt: record.createdAt,
           updatedAt: record.updatedAt,
           deletedAt: record.deletedAt || null,
@@ -3571,7 +3600,8 @@ var require_dignity_p2p = __commonJS({
           id: raw.id,
           ownerId: raw.ownerId,
           collaboratorIds: Array.isArray(raw.collaboratorIds) ? [...raw.collaboratorIds] : [],
-          data: { ...raw.data },
+          data: { ...raw.data || {} },
+          hash: raw.hash || computeContentHash(raw.data || {}),
           createdAt: raw.createdAt,
           updatedAt: raw.updatedAt,
           deletedAt: raw.deletedAt || null,
@@ -3601,7 +3631,8 @@ var require_dignity_p2p = __commonJS({
             id: operation.id,
             ownerId: operation.ownerId,
             collaboratorIds: this.normalizeCollaboratorIds(operation.collaboratorIds),
-            data: { ...operation.payload },
+            data: { ...operation.payload || {} },
+            hash: computeContentHash(operation.payload || {}),
             createdAt: operation.timestamp,
             updatedAt: operation.timestamp,
             deletedAt: null,
@@ -3704,6 +3735,7 @@ var require_dignity_p2p = __commonJS({
             ...current.data,
             ...operation.payload
           };
+          current.hash = computeContentHash(current.data);
           if (Array.isArray(operation.collaboratorIds) && operation.actorId === current.ownerId) {
             current.collaboratorIds = this.normalizeCollaboratorIds(operation.collaboratorIds);
           }
@@ -3789,6 +3821,14 @@ var require_signaling_pool = __commonJS({
 // src/signaling/websocket-signaling-provider.js
 var require_websocket_signaling_provider = __commonJS({
   "src/signaling/websocket-signaling-provider.js"(exports, module) {
+    function randomBase36(length) {
+      let value = "";
+      while (value.length < length) {
+        const chunk = Math.random().toString(36).slice(2);
+        value += chunk.length > 0 ? chunk : "0";
+      }
+      return value.slice(0, length);
+    }
     var WebSocketSignalingProvider = class {
       constructor({ id, url, WebSocketImpl, priority = 0 }) {
         if (!url) {
@@ -3832,8 +3872,8 @@ var require_websocket_signaling_provider = __commonJS({
         if (!peerJsHostPattern.test(this.url)) {
           return this.url;
         }
-        const connectionId = `dignityjs_${Math.random().toString(36).slice(2, 12)}`;
-        const token = Math.random().toString(36).slice(2, 12);
+        const connectionId = `dignityjs_${randomBase36(10)}`;
+        const token = randomBase36(10);
         const hasQuery = this.url.includes("?");
         const hasId = /[?&]id=/.test(this.url);
         const hasToken = /[?&]token=/.test(this.url);
@@ -11059,6 +11099,7 @@ var require_indexeddb_persistence = __commonJS({
           ownerId: record.ownerId,
           collaboratorIds: Array.isArray(record.collaboratorIds) ? [...record.collaboratorIds] : [],
           data: { ...record.data },
+          hash: record.hash || null,
           createdAt: record.createdAt,
           updatedAt: record.updatedAt,
           deletedAt: record.deletedAt,
@@ -11119,6 +11160,7 @@ var require_indexeddb_persistence = __commonJS({
             ownerId: stored.ownerId,
             collaboratorIds: stored.collaboratorIds,
             data: stored.data,
+            hash: stored.hash || null,
             createdAt: stored.createdAt,
             updatedAt: stored.updatedAt,
             deletedAt: stored.deletedAt,

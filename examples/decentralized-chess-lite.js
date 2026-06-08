@@ -4,8 +4,8 @@
  * Run this example with:
  *   npm run example:chess
  *
- * For the browser-based demo, see:
- *   docs/chess/
+ * For the browser 3D demo (PeerJS, dual-signed resume, IndexedDB), see:
+ *   docs/chess/   — rebuild with: npm run build:chess
  */
 const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = require('../src');
 

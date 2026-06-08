@@ -78,11 +78,11 @@ export default function Lobby({
     <div className="lobby-layout">
       <section className="lobby lobby__top">
         <div className="lobby__hero">
-          <p className="eyebrow">Decentralized demo</p>
+          <p className="eyebrow">dignity.js v0.5.4 · decentralized demo</p>
           <h1>3D Chess on dignity.js</h1>
           <p>
-            Peer-to-peer chess over Cloudflare PeerJS signaling, encrypted room scopes,
-            IndexedDB persistence, and React hooks.
+            Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption,
+            dual-signed resume links, IndexedDB persistence, and React hooks.
           </p>
           <label className="lobby__nickname">
             Your nickname

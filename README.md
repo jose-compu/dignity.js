@@ -6,8 +6,8 @@
 [![npm version](https://img.shields.io/npm/v/dignity.js?color=cb3837&label=npm)](https://www.npmjs.com/package/dignity.js)
 [![npm downloads](https://img.shields.io/npm/dm/dignity.js?color=blue)](https://www.npmjs.com/package/dignity.js)
 [![CI](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml/badge.svg)](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-150%2B%20passing-brightgreen)
-![coverage](https://img.shields.io/badge/coverage-99%25-brightgreen)
+![tests](https://img.shields.io/badge/tests-213%2B%20passing-brightgreen)
+![coverage](https://img.shields.io/badge/coverage-92%25-brightgreen)
 ![license](https://img.shields.io/badge/license-Apache%202.0-black)
 
 REST-like P2P object API for decentralized JavaScript applications.
@@ -360,7 +360,7 @@ If 4173 is busy, `docs:dev` auto-picks the next free port (4174, 4175, …) and 
 
 - **Documentation:** [jose-compu.github.io/dignity.js](https://jose-compu.github.io/dignity.js/)
 - Docs site source: `docs/index.html` (local: `npm run docs:dev`)
-- **3D Chess demo:** `docs/chess/` → [local chess demo](http://127.0.0.1:4173/chess/) when `docs:dev` is running
+- **3D Chess demo:** `docs/chess/` — PeerJS mesh, dual-signed resume links, IndexedDB → [local chess demo](http://127.0.0.1:4173/chess/) when `docs:dev` is running
 - API metadata: `docs/openapi-like.json`
 - Minimal demos:
   - `examples/decentralized-tictactoe.js`

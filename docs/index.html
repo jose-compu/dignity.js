@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="dignity.js v0.5.2 — REST-like P2P object API for decentralized JavaScript applications." />
+    <meta name="description" content="dignity.js v0.5.4 — REST-like P2P object API for decentralized JavaScript applications." />
     <title>dignity.js · Documentation</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.ico" sizes="32x32" />
@@ -16,7 +16,7 @@
       <a class="site-header__brand" href="#overview">
         <img src="./assets/dignity-logo.svg" alt="" width="344" height="80" />
         <!-- <span>dignity.js</span> -->
-        <span class="site-header__version">v0.5.2</span>
+        <span class="site-header__version">v0.5.4</span>
       </a>
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
@@ -45,6 +45,7 @@
             <a href="#discovery">Room discovery</a>
             <a href="#messaging">Direct messaging</a>
             <a href="#concurrency">Concurrency</a>
+            <a href="#content-hashes">Content hashes</a>
             <a href="#security">Security model</a>
             <a href="#persistence">IndexedDB persistence</a>
             <a href="#react">React hooks</a>
@@ -86,6 +87,10 @@
               <article class="card">
                 <h3>Browser-first</h3>
                 <p>IIFE, ESM, and CJS bundles. Optional IndexedDB persistence and React hooks.</p>
+              </article>
+              <article class="card">
+                <h3>Content hashes</h3>
+                <p><code>record.hash</code> — <code>sha512:</code> digests over canonical <code>data</code> via <code>stableStringify</code>.</p>
               </article>
             </div>
           </section>
@@ -153,7 +158,7 @@ await bob.stop();</code></pre>
             </div>
             <div class="callout">
               <strong>In-memory adapter</strong>
-              <code>InMemoryNetworkAdapter</code> is for tests and local demos. Production browser apps use a WebRTC network adapter (see project issues for the browser transport roadmap).
+              <code>InMemoryNetworkAdapter</code> is for tests and local demos. Production browser apps use <code>createPeerJSNetworkAdapter</code> (see the <a href="./chess/index.html">3D Chess demo</a>).
             </div>
           </section>
 
@@ -307,6 +312,25 @@ await node.updateWithRetry('games', 'g1', (current) => ({
   score: current.data.score + 1
 }));</code></pre>
             </div>
+          </section>
+
+          <section id="content-hashes" class="section">
+            <h2>Record content hashes</h2>
+            <p>
+              Active records from <code>create</code>, <code>read</code>, <code>list</code>, <code>update</code>,
+              and <code>pushRecordSnapshot</code> include a <code>hash</code> field:
+            </p>
+            <div class="code-block">
+              <pre><code class="language-javascript">const record = await node.create('notes', { title: 'hello' }, { id: 'n1' });
+console.log(record.hash); // sha512:&lt;128-char hex&gt;</code></pre>
+            </div>
+            <ul>
+              <li>Algorithm: <code>sha512</code> via <code>tweetnacl.hash</code> (browser and Node).</li>
+              <li>Scope: canonical <code>record.data</code> only — not <code>id</code>, owner, timestamps, collaborators, or version.</li>
+              <li>Canonicalization: <code>stableStringify</code> so object key order does not change the digest.</li>
+              <li>Replication: hashes are set on create/update and travel with snapshots.</li>
+              <li>Integrity: <code>restoreRecord</code> recomputes locally; mismatched remote hashes emit <code>warning</code> with <code>type: 'content-hash-mismatch'</code>.</li>
+            </ul>
           </section>
 
           <section id="security" class="section">
@@ -547,7 +571,7 @@ const pool = createDefaultSignalingPool({
                   </tr>
                   <tr>
                     <td><span class="tag tag--event">warning</span></td>
-                    <td><code>{ type, ... }</code> — non-fatal issues (heartbeat, persistence, etc.)</td>
+                    <td><code>{ type, ... }</code> — non-fatal issues (heartbeat, persistence, <code>content-hash-mismatch</code>, <code>orphan-operation</code>, etc.)</td>
                   </tr>
                 </tbody>
               </table>
@@ -600,6 +624,11 @@ const pool = createDefaultSignalingPool({
                     <td>Replicated move history with compact board model</td>
                     <td><code>npm run example:chess</code></td>
                   </tr>
+                  <tr>
+                    <td><a href="./chess/index.html"><code>docs/chess/</code></a></td>
+                    <td>3D browser chess — PeerJS mesh, dual-signed resume links, IndexedDB, React hooks</td>
+                    <td><code>npm run build:chess</code> then <code>npm run docs:serve</code></td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -608,7 +637,7 @@ const pool = createDefaultSignalingPool({
           <section id="development" class="section">
             <h2>Development</h2>
             <div class="code-block">
-              <pre><code class="language-bash"># Run tests (177+ passing, ~99.5% line coverage)
+              <pre><code class="language-bash"># Run tests (213+ passing, ~92% line coverage)
 npm test
 
 # Build browser + Node bundles
@@ -625,7 +654,7 @@ npm run example:chess</code></pre>
 
           <footer class="site-footer">
             <p>
-              dignity.js v0.5.2 ·
+              dignity.js v0.5.4 ·
               <a href="https://github.com/jose-compu/dignity.js/blob/main/LICENSE">Apache 2.0</a> ·
               <a href="https://github.com/jose-compu/dignity.js">GitHub</a> ·
               <a href="https://www.npmjs.com/package/dignity.js">npm</a>
