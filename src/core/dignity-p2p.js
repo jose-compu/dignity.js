@@ -754,6 +754,7 @@ class DignityP2P extends EventEmitter {
     await this.broadcastMessage('peer-group:gossip', {
       groupId,
       gossipId,
+      publisherId: this.nodeId,
       hop: 0,
       maxHop,
       innerMessageType,
@@ -785,6 +786,7 @@ class DignityP2P extends EventEmitter {
     const {
       groupId,
       gossipId,
+      publisherId = decrypted.senderId,
       hop = 0,
       maxHop: payloadMaxHop,
       innerMessageType,
@@ -806,7 +808,8 @@ class DignityP2P extends EventEmitter {
     this.markSeenGossip(gossipId);
     await this.dispatchPeerGroupInnerMessage(innerMessageType, innerPayload, {
       groupId,
-      senderId: decrypted.senderId
+      senderId: decrypted.senderId,
+      publisherId
     });
 
     const group = this.peerGroups.get(groupId);
@@ -834,6 +837,7 @@ class DignityP2P extends EventEmitter {
     await this.broadcastMessage('peer-group:gossip', {
       groupId,
       gossipId,
+      publisherId,
       hop: hop + 1,
       maxHop,
       innerMessageType,
@@ -844,15 +848,15 @@ class DignityP2P extends EventEmitter {
     });
   }
 
-  normalizeGossipOperation(operation, senderId) {
-    if (!operation || !senderId) {
+  normalizeGossipOperation(operation, publisherId) {
+    if (!operation || !publisherId) {
       return null;
     }
 
-    if (operation.actorId && operation.actorId !== senderId) {
+    if (operation.actorId && operation.actorId !== publisherId) {
       this.emit('warning', {
         type: 'gossip-operation-actor-mismatch',
-        senderId,
+        publisherId,
         actorId: operation.actorId,
         kind: operation.kind,
         collection: operation.collectionName,
@@ -863,11 +867,11 @@ class DignityP2P extends EventEmitter {
 
     const normalized = {
       ...operation,
-      actorId: senderId
+      actorId: publisherId
     };
 
     if (normalized.kind === 'create') {
-      normalized.ownerId = senderId;
+      normalized.ownerId = publisherId;
     }
 
     return normalized;
@@ -875,7 +879,10 @@ class DignityP2P extends EventEmitter {
 
   async dispatchPeerGroupInnerMessage(innerMessageType, innerPayload, context = {}) {
     if (innerMessageType === 'operation') {
-      const operation = this.normalizeGossipOperation(innerPayload, context.senderId);
+      const operation = this.normalizeGossipOperation(
+        innerPayload,
+        context.publisherId || context.senderId
+      );
       if (operation) {
         this.applyOperation(operation);
       }

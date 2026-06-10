@@ -53,10 +53,61 @@ describe('security audit v0.6.0', () => {
     };
 
     await victim.publishToPeerGroup('feed:audit', 'operation', forgedOperation, { fanout: 1 });
-    await fastSleep(30);
 
-    expect(follower.read('counters', 'c1').data.value).toBe(1);
-    expect(warnings.some((event) => event.type === 'gossip-operation-actor-mismatch')).toBe(true);
+    expect(await fastWaitFor(
+      () => warnings.some((event) => event.type === 'gossip-operation-actor-mismatch'),
+      2000
+    )).toBe(true);
+    expect(await fastWaitFor(
+      () => follower.read('counters', 'c1')?.data?.value === 1,
+      2000
+    )).toBe(true);
+
+    await owner.stop();
+    await victim.stop();
+    await follower.stop();
+  });
+
+  test('gossip operations reject forged actorId even when relayed by owner', async () => {
+    const owner = new DignityP2P({ nodeId: 'owner', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+    const victim = new DignityP2P({ nodeId: 'victim', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+    const follower = new DignityP2P({ nodeId: 'follower', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+    const warnings = [];
+
+    follower.on('warning', (event) => warnings.push(event));
+
+    await owner.start();
+    await victim.start();
+    await follower.start();
+
+    await owner.joinPeerGroup('feed:relay-audit', { fanout: 1, maxActivePeers: 3 });
+    await victim.joinPeerGroup('feed:relay-audit', { fanout: 1, maxActivePeers: 3 });
+    await follower.joinPeerGroup('feed:relay-audit', { bootstrapPeerIds: ['owner'], fanout: 1, maxActivePeers: 3 });
+
+    await owner.create('scores', { value: 1 }, { id: 's1' });
+    await owner.publishRecordToPeerGroup('feed:relay-audit', 'scores', 's1', { fanout: 1 });
+    expect(await fastWaitFor(() => follower.read('scores', 's1') !== null)).toBe(true);
+
+    jest.spyOn(victim, 'selectPeerGroupFanout').mockReturnValue(['owner']);
+
+    await victim.publishToPeerGroup('feed:relay-audit', 'operation', {
+      opId: 'forged-relay-op',
+      kind: 'update',
+      collectionName: 'scores',
+      id: 's1',
+      actorId: 'owner',
+      ownerId: 'owner',
+      collaboratorIds: [],
+      timestamp: Date.now(),
+      payload: { value: 999 },
+      baseVersion: 1
+    }, { fanout: 1 });
+
+    expect(await fastWaitFor(
+      () => warnings.some((event) => event.type === 'gossip-operation-actor-mismatch'),
+      2000
+    )).toBe(true);
+    expect(follower.read('scores', 's1').data.value).toBe(1);
 
     await owner.stop();
     await victim.stop();
