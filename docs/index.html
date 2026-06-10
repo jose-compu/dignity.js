@@ -34,6 +34,7 @@
           <nav>
             <a href="#overview">Overview</a>
             <a href="#installation">Installation</a>
+            <a href="#tutorial">Tutorial</a>
             <a href="#quick-start">Quick start</a>
             <a href="#browser">Browser usage</a>
           </nav>
@@ -106,6 +107,136 @@
             <div class="code-block">
               <pre><code class="language-bash">npm install dignity.js react react-dom</code></pre>
             </div>
+          </section>
+
+          <section id="tutorial" class="section">
+            <h2>Beginner tutorial</h2>
+            <p class="lead">
+              New to P2P? Follow these eight short lessons. The full walkthrough is also in
+              <a href="https://github.com/jose-compu/dignity.js/blob/main/TUTORIAL.md" target="_blank" rel="noopener noreferrer"><code>TUTORIAL.md</code></a>
+              in the repository.
+            </p>
+
+            <div class="card-grid">
+              <article class="card">
+                <h3>Lesson 1</h3>
+                <p>Two peers, one shared object — <code>InMemoryNetworkHub</code> basics.</p>
+              </article>
+              <article class="card">
+                <h3>Lesson 2</h3>
+                <p>Rooms — <code>joinDiscovery</code> and <code>broadcastScope</code>.</p>
+              </article>
+              <article class="card">
+                <h3>Lesson 3–5</h3>
+                <p>Ownership, collaborators, and version conflicts.</p>
+              </article>
+              <article class="card">
+                <h3>Lesson 6–8</h3>
+                <p>Browser/PeerJS, PeerGroup spectators, IndexedDB persistence.</p>
+              </article>
+            </div>
+
+            <h3>Lesson 1 — Hello, two peers</h3>
+            <p>A <strong>node</strong> is one participant. The in-memory adapter wires peers inside one process (tests and learning):</p>
+            <div class="code-block">
+              <pre><code class="language-javascript">const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = require('dignity.js');
+
+const hub = new InMemoryNetworkHub();
+const security = { appPassword: 'my-team-secret', powSteps: 22 };
+
+const alice = new DignityP2P({ nodeId: 'alice', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+const bob   = new DignityP2P({ nodeId: 'bob',   networkAdapter: new InMemoryNetworkAdapter(hub), security });
+
+await alice.start();
+await bob.start();
+
+await alice.create('notes', { title: 'Hello P2P' }, { id: 'note-1' });
+console.log(bob.read('notes', 'note-1')); // replicated automatically</code></pre>
+            </div>
+
+            <h3>Lesson 2 — Find peers in a room</h3>
+            <p>Use <strong>scoped discovery</strong> so peers see who is online before collaborating:</p>
+            <div class="code-block">
+              <pre><code class="language-javascript">await alice.joinDiscovery('lobby', { metadata: { nickname: 'Alice' } });
+await bob.joinDiscovery('lobby', { bootstrapPeerIds: ['alice'] });
+
+console.log(alice.listPeers('lobby').map((p) => p.peerId));
+
+await alice.create('notes', { title: 'Room note' }, {
+  id: 'note-2',
+  broadcastScope: 'lobby'
+});</code></pre>
+            </div>
+
+            <h3>Lesson 3 — Only the owner can edit</h3>
+            <p>The peer that calls <code>create</code> becomes <code>ownerId</code>. Others can read but not update unless you add them as collaborators:</p>
+            <div class="code-block">
+              <pre><code class="language-javascript">await alice.create('games', { score: 0 }, { id: 'g1' });
+await alice.update('games', 'g1', { score: 10 });   // OK
+await bob.update('games', 'g1', { score: 999 });    // rejected — Bob is not owner
+
+alice.on('change', (e) => console.log(e.kind, e.collection, e.id));</code></pre>
+            </div>
+
+            <h3>Lesson 4 — Invite a collaborator</h3>
+            <div class="code-block">
+              <pre><code class="language-javascript">await alice.update('docs', 'd1', { body: 'shared' }, {
+  collaborators: ['alice', 'bob']
+});
+await bob.update('docs', 'd1', { body: 'Bob edited' }); // OK now</code></pre>
+            </div>
+
+            <h3>Lesson 5 — Versions and conflicts</h3>
+            <p>Each update increments <code>version</code>. Use <code>expectedVersion</code> or <code>updateWithRetry</code> to avoid overwriting concurrent edits (see <a href="#concurrency">Concurrency</a>).</p>
+
+            <h3>Lesson 6 — Real browsers (PeerJS)</h3>
+            <p>Swap the in-memory adapter for <code>createPeerJSNetworkAdapter</code> and a signaling server. Open the <a href="./chess/index.html">3D Chess demo</a> in two tabs to see live WebRTC sync.</p>
+
+            <h3>Lesson 7 — Small teams vs big audiences</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Scenario</th>
+                    <th>Mode</th>
+                    <th>API</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>2–8 players co-editing</td>
+                    <td>Direct mesh</td>
+                    <td><code>create</code> / <code>update</code> + <code>connectToPeers</code></td>
+                  </tr>
+                  <tr>
+                    <td>Spectators, public feeds</td>
+                    <td>PeerGroup gossip</td>
+                    <td><code>joinPeerGroup</code> + <code>publishRecordToPeerGroup</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-javascript">// Spectator watches a chess game (read-only epidemic feed)
+await spectator.joinPeerGroup('spectate:chess:game-42', { bootstrapPeerIds: ['white-host'] });
+await white.publishRecordToPeerGroup('spectate:chess:game-42', 'chess-matches', 'game-42');</code></pre>
+            </div>
+            <p>Details: <a href="#peer-groups">PeerGroup gossip</a>.</p>
+
+            <h3>Lesson 8 — Survive page reload</h3>
+            <p>Attach <code>IndexedDBPersistence</code> in the browser so objects persist locally (see <a href="#persistence">IndexedDB persistence</a>).</p>
+
+            <div class="callout callout--warn">
+              <strong>Common mistakes</strong>
+              <ul>
+                <li>Mismatched <code>appPassword</code> between peers — messages fail to decrypt.</li>
+                <li>Skipping <code>await node.start()</code> — nothing replicates.</li>
+                <li>Using the in-memory adapter in production — use PeerJS instead.</li>
+                <li>Keeping the default password — always set a strong <code>appPassword</code>.</li>
+              </ul>
+            </div>
+
+            <p><strong>Next:</strong> run <code>node examples/decentralized-tictactoe.js</code> or read the full <a href="https://github.com/jose-compu/dignity.js/blob/main/TUTORIAL.md" target="_blank" rel="noopener noreferrer">TUTORIAL.md</a>.</p>
           </section>
 
           <section id="quick-start" class="section">

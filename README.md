@@ -41,6 +41,10 @@ REST-like P2P object API for decentralized JavaScript applications.
 npm install dignity.js
 ```
 
+## Tutorial
+
+**New to dignity.js?** Start with [TUTORIAL.md](./TUTORIAL.md) — eight short lessons from two in-memory peers to browser PeerJS and PeerGroup spectators. The [docs site tutorial](https://jose-compu.github.io/dignity.js/#tutorial) covers the same path.
+
 ## Quick Start
 
 ```js
@@ -136,7 +140,7 @@ await node.publishRecordToPeerGroup('feed:alice', 'posts', 'post-1');
 await node.leavePeerGroup('feed:alice');
 ```
 
-Small collaborations (chess players, document co-editing) should keep using direct `connectToPeers` mesh. Large read-only audiences (chess spectators, public timelines) should use PeerGroup gossip. See `docs/PEER_GROUP_PLAN.md`.
+Small collaborations (chess players, document co-editing) should keep using direct `connectToPeers` mesh. Large read-only audiences (chess spectators, public timelines) should use PeerGroup gossip. See the [docs PeerGroup section](https://jose-compu.github.io/dignity.js/#peer-groups).
 
 ## Room / Team Discovery
 
