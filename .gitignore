@@ -35,5 +35,8 @@ Thumbs.db
 .cursor/
 .issue-bodies/
 
+# Local planning notes (not for repo)
+docs/PEER_GROUP_PLAN.md
+
 # npm pack output
 *.tgz
