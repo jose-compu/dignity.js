@@ -30,6 +30,13 @@ const {
   MessageSecurityService,
   DEFAULT_SECURITY_OPTIONS
 } = require('./security/message-security-service');
+const {
+  PEER_GROUP_SCOPE_PREFIX,
+  DEFAULT_PEER_GROUP_OPTIONS,
+  peerGroupScope,
+  parsePeerGroupScope,
+  selectFanoutPeers
+} = require('./gossip/peer-group');
 
 module.exports = {
   DignityP2P,
@@ -47,5 +54,10 @@ module.exports = {
   VDF,
   SlothPermutation,
   MessageSecurityService,
-  DEFAULT_SECURITY_OPTIONS
+  DEFAULT_SECURITY_OPTIONS,
+  PEER_GROUP_SCOPE_PREFIX,
+  DEFAULT_PEER_GROUP_OPTIONS,
+  peerGroupScope,
+  parsePeerGroupScope,
+  selectFanoutPeers
 };

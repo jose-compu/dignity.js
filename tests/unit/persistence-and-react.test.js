@@ -18,6 +18,7 @@ const {
 } = require('../../src');
 const { useDignity, useCollection, usePeers, useObject, useDiscovery, useMessages } = require('../../src/react');
 const { stableStringify } = require('../../src/security/message-security-service');
+const { fastTestSecurity } = require('../helpers/fast-security');
 
 function expectedHash(data) {
   return `sha512:${require('crypto').createHash('sha512').update(stableStringify(data || {}), 'utf8').digest('hex')}`;
@@ -29,10 +30,7 @@ describe('IndexedDBPersistence', () => {
 
   beforeEach(() => {
     hub = new InMemoryNetworkHub();
-    defaultSecurity = {
-      appPassword: 'test-app-password',
-      powTargetMs: 5
-    };
+    defaultSecurity = fastTestSecurity();
   });
 
   test('persists and hydrates object state across node restarts', async () => {
@@ -399,10 +397,7 @@ describe('React hooks', () => {
     nodeConfig = {
       nodeId: 'alice',
       networkAdapter: new InMemoryNetworkAdapter(hub),
-      security: {
-        appPassword: 'test-app-password',
-        powTargetMs: 5
-      }
+      security: fastTestSecurity()
     };
   });
 

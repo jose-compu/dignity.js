@@ -5,19 +5,7 @@ const {
   InMemoryNetworkAdapter
 } = require('../../src');
 const { stableStringify } = require('../../src/security/message-security-service');
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitFor(condition, timeoutMs = 2500, intervalMs = 50) {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    if (condition()) return true;
-    await sleep(intervalMs);
-  }
-  return false;
-}
+const { fastTestSecurity, fastWaitFor } = require('../helpers/fast-security');
 
 function expectedHash(data) {
   const canonical = stableStringify(data || {});
@@ -30,7 +18,7 @@ describe('content hashes', () => {
 
   beforeEach(() => {
     hub = new InMemoryNetworkHub();
-    security = { appPassword: 'test-pwd', powTargetMs: 5 };
+    security = fastTestSecurity({ appPassword: 'test-pwd' });
   });
 
   test('create returns a sha512: hash of the record data', async () => {
@@ -106,7 +94,7 @@ describe('content hashes', () => {
     const data = { msg: 'hello peer' };
     const created = await alice.create('chat', data, { id: 'msg1' });
 
-    await waitFor(() => bob.read('chat', 'msg1') !== null);
+    expect(await fastWaitFor(() => bob.read('chat', 'msg1') !== null)).toBe(true);
 
     const bobRecord = bob.read('chat', 'msg1');
     expect(bobRecord.hash).toBe(created.hash);
@@ -128,7 +116,7 @@ describe('content hashes', () => {
 
     await alice.pushRecordSnapshot('items', 'item1', { connectToPeers: ['bob'] });
 
-    await waitFor(() => bob.read('items', 'item1') !== null);
+    expect(await fastWaitFor(() => bob.read('items', 'item1') !== null)).toBe(true);
 
     const aliceRecord = alice.read('items', 'item1');
     const bobRecord = bob.read('items', 'item1');

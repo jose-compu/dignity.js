@@ -12,6 +12,10 @@ describe('public API exports', () => {
     expect(api.IndexedDBPersistence).toBeDefined();
     expect(api.PeerJSNetworkAdapter).toBeDefined();
     expect(api.createPeerJSNetworkAdapter).toBeDefined();
+    expect(api.peerGroupScope).toBeDefined();
+    expect(api.parsePeerGroupScope).toBeDefined();
+    expect(api.DEFAULT_PEER_GROUP_OPTIONS).toBeDefined();
+    expect(api.selectFanoutPeers).toBeDefined();
   });
 
   test('exports sane default configs', () => {

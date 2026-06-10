@@ -120,6 +120,24 @@ await node.create('matches', { mode: 'coop' }, {
 
 Peers with a different password for `coop:red` cannot decrypt that broadcast traffic.
 
+## PeerGroup Gossip (scalable PubSub)
+
+For high-fanout object updates (millions of subscribers per published object), use multiplexed gossip groups. Each peer keeps a bounded number of active transports (`maxActivePeers` per group, `globalMaxOpenConnections` per node).
+
+```js
+// Follow 200 accounts = 200 joined groups, few connections each
+await node.joinPeerGroup('feed:alice', {
+  bootstrapPeerIds: ['publisher-peer-id'],
+  fanout: 3,
+  maxActivePeers: 8
+});
+
+await node.publishRecordToPeerGroup('feed:alice', 'posts', 'post-1');
+await node.leavePeerGroup('feed:alice');
+```
+
+Small collaborations (chess players, document co-editing) should keep using direct `connectToPeers` mesh. Large read-only audiences (chess spectators, public timelines) should use PeerGroup gossip. See `docs/PEER_GROUP_PLAN.md`.
+
 ## Room / Team Discovery
 
 Use scoped discovery to find active peers in a room (for example `main`, `team:red`, `raid-42`).

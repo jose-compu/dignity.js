@@ -15582,6 +15582,65 @@ var require_message_security_service = __commonJS({
   }
 });
 
+// src/gossip/peer-group.js
+var require_peer_group = __commonJS({
+  "src/gossip/peer-group.js"(exports, module) {
+    var PEER_GROUP_SCOPE_PREFIX = "gossip:";
+    var DEFAULT_PEER_GROUP_OPTIONS = {
+      fanout: 3,
+      maxActivePeers: 8,
+      maxHops: 6,
+      relayEnabled: true
+    };
+    function peerGroupScope(groupId) {
+      if (!groupId) {
+        throw new Error("peerGroupScope requires groupId");
+      }
+      return `${PEER_GROUP_SCOPE_PREFIX}${groupId}`;
+    }
+    function parsePeerGroupScope(scope) {
+      if (!scope || !scope.startsWith(PEER_GROUP_SCOPE_PREFIX)) {
+        return null;
+      }
+      return scope.slice(PEER_GROUP_SCOPE_PREFIX.length);
+    }
+    function shufflePeerIds(peerIds, randomFn = Math.random) {
+      const list = [...peerIds];
+      for (let i = list.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(randomFn() * (i + 1));
+        [list[i], list[j]] = [list[j], list[i]];
+      }
+      return list;
+    }
+    function selectFanoutPeers({
+      peers,
+      count,
+      excludePeerIds = [],
+      connectedPeerIds = [],
+      randomFn = Math.random
+    }) {
+      const excluded = new Set(excludePeerIds.filter(Boolean));
+      const candidates = peers.map((entry) => entry.peerId || entry).filter((peerId) => peerId && !excluded.has(peerId));
+      const connected = new Set(connectedPeerIds.filter(Boolean));
+      const preferred = candidates.filter((peerId) => connected.has(peerId));
+      const others = candidates.filter((peerId) => !connected.has(peerId));
+      const ordered = [
+        ...shufflePeerIds(preferred, randomFn),
+        ...shufflePeerIds(others, randomFn)
+      ];
+      return ordered.slice(0, Math.max(0, count));
+    }
+    module.exports = {
+      PEER_GROUP_SCOPE_PREFIX,
+      DEFAULT_PEER_GROUP_OPTIONS,
+      peerGroupScope,
+      parsePeerGroupScope,
+      shufflePeerIds,
+      selectFanoutPeers
+    };
+  }
+});
+
 // src/core/dignity-p2p.js
 var require_dignity_p2p = __commonJS({
   "src/core/dignity-p2p.js"(exports, module) {
@@ -15589,6 +15648,11 @@ var require_dignity_p2p = __commonJS({
     var naclUtil3 = require_nacl_util();
     var EventEmitter = require_event_emitter();
     var { MessageSecurityService, stableStringify: stableStringify2 } = require_message_security_service();
+    var {
+      DEFAULT_PEER_GROUP_OPTIONS,
+      peerGroupScope,
+      selectFanoutPeers
+    } = require_peer_group();
     function computeContentHash(data) {
       const canonical = stableStringify2(data || {});
       const bytes = naclUtil3.decodeUTF8(canonical);
@@ -15621,6 +15685,13 @@ var require_dignity_p2p = __commonJS({
         this.defaultPresenceTtlMs = security && typeof security.presenceTtlMs === "number" ? security.presenceTtlMs : 45e3;
         this.discoveryRooms = /* @__PURE__ */ new Map();
         this.presenceByScope = /* @__PURE__ */ new Map();
+        this.peerGroups = /* @__PURE__ */ new Map();
+        this.seenGossipIds = /* @__PURE__ */ new Map();
+        this.defaultPeerGroupFanout = security && typeof security.peerGroupFanout === "number" ? security.peerGroupFanout : DEFAULT_PEER_GROUP_OPTIONS.fanout;
+        this.defaultPeerGroupMaxActivePeers = security && typeof security.peerGroupMaxActivePeers === "number" ? security.peerGroupMaxActivePeers : DEFAULT_PEER_GROUP_OPTIONS.maxActivePeers;
+        this.defaultGossipMaxHops = security && typeof security.gossipMaxHops === "number" ? security.gossipMaxHops : DEFAULT_PEER_GROUP_OPTIONS.maxHops;
+        this.globalMaxOpenConnections = security && typeof security.globalMaxOpenConnections === "number" ? security.globalMaxOpenConnections : 32;
+        this.gossipIdTtlMs = security && typeof security.gossipIdTtlMs === "number" ? security.gossipIdTtlMs : 5 * 60 * 1e3;
         this.state = /* @__PURE__ */ new Map();
         this.appliedOperations = /* @__PURE__ */ new Set();
         this.boundMessageHandler = this.handleIncomingMessage.bind(this);
@@ -15630,6 +15701,14 @@ var require_dignity_p2p = __commonJS({
         await this.networkAdapter.start(this.nodeId);
       }
       async stop() {
+        const joinedGroups = Array.from(this.peerGroups.keys());
+        for (const groupId of joinedGroups) {
+          try {
+            await this.leavePeerGroup(groupId);
+          } catch (error2) {
+            this.emit("warning", { type: "peer-group-leave-failed", groupId, error: error2 });
+          }
+        }
         const joinedScopes = Array.from(this.discoveryRooms.keys());
         for (const scope of joinedScopes) {
           try {
@@ -15978,6 +16057,7 @@ var require_dignity_p2p = __commonJS({
         const connectToPeers = securityContext.connectToPeers;
         if (Array.isArray(connectToPeers) && connectToPeers.length > 0) {
           await this.ensureConnectedToPeers(connectToPeers);
+          await this.enforceConnectionBudget();
         }
         const envelope = await this.securityService.secureOutgoingMessage({
           messageType,
@@ -15985,6 +16065,11 @@ var require_dignity_p2p = __commonJS({
           targetId: null,
           securityContext
         });
+        const fanoutPeerIds = securityContext.fanoutPeerIds;
+        if (Array.isArray(fanoutPeerIds) && fanoutPeerIds.length > 0 && typeof this.networkAdapter.sendToPeers === "function") {
+          await this.networkAdapter.sendToPeers(envelope, fanoutPeerIds);
+          return;
+        }
         await this.networkAdapter.broadcast(envelope);
       }
       async sendDirectMessage(targetId, messageType, payload) {
@@ -16000,7 +16085,236 @@ var require_dignity_p2p = __commonJS({
           payload,
           targetId
         });
+        if (targetId && typeof this.networkAdapter.sendToPeers === "function") {
+          await this.networkAdapter.sendToPeers(envelope, [targetId]);
+          return;
+        }
         await this.networkAdapter.broadcast(envelope);
+      }
+      peerGroupScopeFor(groupId) {
+        return peerGroupScope(groupId);
+      }
+      getPeerGroupConfig(groupId) {
+        return this.peerGroups.get(groupId) || null;
+      }
+      listPeerGroupMembers(groupId, options = {}) {
+        return this.listPeers(this.peerGroupScopeFor(groupId), options);
+      }
+      getPeerGroupStats() {
+        const adapter2 = this.networkAdapter;
+        const openPeerIds = typeof adapter2.listOpenPeerIds === "function" ? adapter2.listOpenPeerIds() : [];
+        return {
+          joinedGroups: Array.from(this.peerGroups.keys()),
+          seenGossipCount: this.seenGossipIds.size,
+          openConnectionCount: openPeerIds.length,
+          globalMaxOpenConnections: this.globalMaxOpenConnections
+        };
+      }
+      pruneSeenGossip() {
+        const now = this.now();
+        for (const [gossipId, expiresAt] of this.seenGossipIds.entries()) {
+          if (expiresAt <= now) {
+            this.seenGossipIds.delete(gossipId);
+          }
+        }
+      }
+      hasSeenGossip(gossipId) {
+        if (!gossipId) {
+          return false;
+        }
+        this.pruneSeenGossip();
+        return this.seenGossipIds.has(gossipId);
+      }
+      markSeenGossip(gossipId) {
+        if (!gossipId) {
+          return;
+        }
+        this.seenGossipIds.set(gossipId, this.now() + this.gossipIdTtlMs);
+      }
+      listConnectedPeerIds() {
+        if (typeof this.networkAdapter.listOpenPeerIds === "function") {
+          return this.networkAdapter.listOpenPeerIds();
+        }
+        return [];
+      }
+      selectPeerGroupFanout(groupId, count, excludePeerIds = []) {
+        const scope = this.peerGroupScopeFor(groupId);
+        const peers = this.listPeers(scope, { includeSelf: false });
+        return selectFanoutPeers({
+          peers,
+          count,
+          excludePeerIds: [...excludePeerIds, this.nodeId],
+          connectedPeerIds: this.listConnectedPeerIds()
+        });
+      }
+      async enforceConnectionBudget() {
+        const adapter2 = this.networkAdapter;
+        if (typeof adapter2.listOpenPeerIds !== "function" || typeof adapter2.disconnectPeer !== "function") {
+          return;
+        }
+        const openPeerIds = adapter2.listOpenPeerIds();
+        if (openPeerIds.length <= this.globalMaxOpenConnections) {
+          return;
+        }
+        const excess = openPeerIds.length - this.globalMaxOpenConnections;
+        const toClose = openPeerIds.slice(0, excess);
+        for (const peerId of toClose) {
+          try {
+            await adapter2.disconnectPeer(peerId);
+          } catch (error2) {
+            this.emit("warning", { type: "peer-disconnect-failed", peerId, error: error2 });
+          }
+        }
+      }
+      async joinPeerGroup(groupId, options = {}) {
+        if (!groupId) {
+          throw new Error("joinPeerGroup requires groupId");
+        }
+        const scope = this.peerGroupScopeFor(groupId);
+        const config = {
+          fanout: typeof options.fanout === "number" ? options.fanout : this.defaultPeerGroupFanout,
+          maxActivePeers: typeof options.maxActivePeers === "number" ? options.maxActivePeers : this.defaultPeerGroupMaxActivePeers,
+          maxHops: typeof options.maxHops === "number" ? options.maxHops : this.defaultGossipMaxHops,
+          relayEnabled: options.relayEnabled !== false
+        };
+        await this.joinDiscovery(scope, {
+          metadata: {
+            peerGroup: groupId,
+            ...options.metadata || {}
+          },
+          bootstrapPeerIds: options.bootstrapPeerIds,
+          heartbeatIntervalMs: options.heartbeatIntervalMs,
+          ttlMs: options.ttlMs
+        });
+        this.peerGroups.set(groupId, config);
+        this.emit("peergroupjoined", { groupId, config });
+        return config;
+      }
+      async leavePeerGroup(groupId) {
+        if (!groupId) {
+          return;
+        }
+        const scope = this.peerGroupScopeFor(groupId);
+        await this.leaveDiscovery(scope);
+        this.peerGroups.delete(groupId);
+        this.emit("peergroupleft", { groupId });
+      }
+      async publishToPeerGroup(groupId, innerMessageType, innerPayload, options = {}) {
+        if (!groupId) {
+          throw new Error("publishToPeerGroup requires groupId");
+        }
+        const group = this.peerGroups.get(groupId);
+        if (!group && options.allowUnjoined !== true) {
+          throw new Error(`PeerGroup ${groupId} has not been joined`);
+        }
+        const fanout = typeof options.fanout === "number" ? options.fanout : group ? group.fanout : this.defaultPeerGroupFanout;
+        const maxActivePeers = group ? group.maxActivePeers : this.defaultPeerGroupMaxActivePeers;
+        const maxHop = typeof options.maxHops === "number" ? options.maxHops : group ? group.maxHops : this.defaultGossipMaxHops;
+        const fanoutPeerIds = this.selectPeerGroupFanout(groupId, fanout, [this.nodeId]);
+        if (fanoutPeerIds.length > 0) {
+          await this.ensureConnectedToPeers(fanoutPeerIds.slice(0, maxActivePeers));
+          await this.enforceConnectionBudget();
+        }
+        const gossipId = options.gossipId || this.idGenerator();
+        this.markSeenGossip(gossipId);
+        await this.broadcastMessage("peer-group:gossip", {
+          groupId,
+          gossipId,
+          hop: 0,
+          maxHop,
+          innerMessageType,
+          innerPayload
+        }, {
+          broadcastScope: this.peerGroupScopeFor(groupId),
+          fanoutPeerIds
+        });
+        return { gossipId, fanoutPeerIds };
+      }
+      async publishRecordToPeerGroup(groupId, collectionName, id, options = {}) {
+        const collection = this.getCollection(collectionName);
+        const raw = collection.get(id);
+        if (!raw || raw.deletedAt) {
+          throw new Error(`Object ${id} does not exist in ${collectionName}`);
+        }
+        const record = this.normalizeRecord(raw);
+        return this.publishToPeerGroup(groupId, "record:snapshot", {
+          collectionName,
+          record
+        }, options);
+      }
+      async handlePeerGroupGossip(decrypted) {
+        const payload = decrypted.payload || {};
+        const {
+          groupId,
+          gossipId,
+          hop = 0,
+          maxHop = this.defaultGossipMaxHops,
+          innerMessageType,
+          innerPayload
+        } = payload;
+        if (!groupId || !innerMessageType) {
+          return;
+        }
+        if (this.hasSeenGossip(gossipId)) {
+          return;
+        }
+        this.markSeenGossip(gossipId);
+        await this.dispatchPeerGroupInnerMessage(innerMessageType, innerPayload, {
+          groupId,
+          senderId: decrypted.senderId
+        });
+        const group = this.peerGroups.get(groupId);
+        if (!group || group.relayEnabled === false || hop >= maxHop) {
+          return;
+        }
+        const relayPeers = this.selectPeerGroupFanout(groupId, group.fanout, [
+          decrypted.senderId,
+          this.nodeId
+        ]);
+        if (relayPeers.length === 0) {
+          return;
+        }
+        await this.ensureConnectedToPeers(relayPeers.slice(0, group.maxActivePeers));
+        await this.enforceConnectionBudget();
+        await this.broadcastMessage("peer-group:gossip", {
+          groupId,
+          gossipId,
+          hop: hop + 1,
+          maxHop,
+          innerMessageType,
+          innerPayload
+        }, {
+          broadcastScope: this.peerGroupScopeFor(groupId),
+          fanoutPeerIds: relayPeers
+        });
+      }
+      async dispatchPeerGroupInnerMessage(innerMessageType, innerPayload, context = {}) {
+        if (innerMessageType === "operation") {
+          this.applyOperation(innerPayload);
+          return;
+        }
+        if (innerMessageType === "record:snapshot") {
+          const { collectionName, record } = innerPayload || {};
+          if (collectionName && record) {
+            const applied = this.restoreRecord(collectionName, record);
+            if (applied) {
+              this.emit("change", {
+                kind: "snapshot",
+                collection: collectionName,
+                id: record.id,
+                via: "peer-group",
+                groupId: context.groupId
+              });
+            }
+          }
+          return;
+        }
+        this.emit("peergroupmessage", {
+          groupId: context.groupId,
+          senderId: context.senderId,
+          type: innerMessageType,
+          payload: innerPayload
+        });
       }
       getPresenceMap(scope) {
         if (!this.presenceByScope.has(scope)) {
@@ -16218,6 +16532,10 @@ var require_dignity_p2p = __commonJS({
             map.delete(peerId);
             this.emit("peerleft", { scope, peerId, reason: "leave" });
           }
+          return;
+        }
+        if (decrypted.messageType === "peer-group:gossip") {
+          await this.handlePeerGroupGossip(decrypted);
           return;
         }
         this.emit("message", {
@@ -23699,6 +24017,16 @@ var require_in_memory_network = __commonJS({
         }
         await Promise.all(deliveries);
       }
+      async sendToPeers(senderId, message, peerIds = []) {
+        const targets = new Set((peerIds || []).filter((peerId) => peerId && peerId !== senderId));
+        const deliveries = [];
+        for (const [nodeId, adapter2] of this.adapters.entries()) {
+          if (nodeId !== senderId && targets.has(nodeId)) {
+            deliveries.push(adapter2.receive(message));
+          }
+        }
+        await Promise.all(deliveries);
+      }
     };
     var InMemoryNetworkAdapter = class {
       constructor(hub) {
@@ -23708,6 +24036,7 @@ var require_in_memory_network = __commonJS({
         this.hub = hub;
         this.nodeId = null;
         this.messageHandlers = /* @__PURE__ */ new Set();
+        this.connectedPeers = /* @__PURE__ */ new Set();
       }
       async start(nodeId) {
         this.nodeId = nodeId;
@@ -23718,12 +24047,34 @@ var require_in_memory_network = __commonJS({
           this.hub.unregister(this.nodeId);
         }
         this.nodeId = null;
+        this.connectedPeers.clear();
+      }
+      async connectToPeer(remotePeerId) {
+        if (!remotePeerId || remotePeerId === this.nodeId) {
+          return;
+        }
+        this.connectedPeers.add(remotePeerId);
       }
       async broadcast(message) {
         if (!this.nodeId) {
           throw new Error("Network adapter has not been started");
         }
         await this.hub.broadcast(this.nodeId, message);
+      }
+      async sendToPeers(message, peerIds = []) {
+        if (!this.nodeId) {
+          throw new Error("Network adapter has not been started");
+        }
+        await this.hub.sendToPeers(this.nodeId, message, peerIds);
+      }
+      listOpenPeerIds() {
+        return [...this.connectedPeers];
+      }
+      getOpenConnectionCount() {
+        return this.connectedPeers.size;
+      }
+      isConnectedTo(remotePeerId) {
+        return this.connectedPeers.has(remotePeerId);
       }
       onMessage(handler) {
         this.messageHandlers.add(handler);
@@ -23902,6 +24253,29 @@ var require_peerjs_network = __commonJS({
           }
         }
         await Promise.all(deliveries);
+      }
+      async sendToPeers(message, peerIds = []) {
+        if (!this.peer) {
+          throw new Error("PeerJS network adapter has not been started");
+        }
+        const targets = new Set((peerIds || []).filter(Boolean));
+        if (targets.size === 0) {
+          return;
+        }
+        const deliveries = [];
+        for (const [peerId, connection] of this.connections.entries()) {
+          if (targets.has(peerId) && connection.open) {
+            deliveries.push(connection.send(message));
+          }
+        }
+        await Promise.all(deliveries);
+      }
+      async disconnectPeer(remotePeerId) {
+        const connection = this.connections.get(remotePeerId);
+        if (connection && typeof connection.close === "function") {
+          connection.close();
+        }
+        this.connections.delete(remotePeerId);
       }
       getOpenConnectionCount() {
         return this.listOpenPeerIds().length;
@@ -24133,6 +24507,12 @@ var require_src = __commonJS({
       MessageSecurityService,
       DEFAULT_SECURITY_OPTIONS
     } = require_message_security_service();
+    var {
+      PEER_GROUP_SCOPE_PREFIX,
+      DEFAULT_PEER_GROUP_OPTIONS,
+      peerGroupScope,
+      selectFanoutPeers
+    } = require_peer_group();
     module.exports = {
       DignityP2P: DignityP2P2,
       createDefaultSignalingPool,
@@ -24149,7 +24529,11 @@ var require_src = __commonJS({
       VDF,
       SlothPermutation,
       MessageSecurityService,
-      DEFAULT_SECURITY_OPTIONS
+      DEFAULT_SECURITY_OPTIONS,
+      PEER_GROUP_SCOPE_PREFIX,
+      DEFAULT_PEER_GROUP_OPTIONS,
+      peerGroupScope,
+      selectFanoutPeers
     };
   }
 });
@@ -24276,6 +24660,9 @@ function withHostPeerInHash(hostPeer) {
 }
 function scopeForGame(gameId) {
   return `room:chess:${gameId}`;
+}
+function spectatorPeerGroupForGame(gameId) {
+  return `spectate:chess:${gameId}`;
 }
 function nodeIdForRole(role, gameId) {
   const suffix = randomToken(4);
@@ -24488,7 +24875,7 @@ function Lobby({
   function handleOpenGame(game) {
     onOpenGame(sessionResumeHash(game));
   }
-  return /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby-layout" }, /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v0.5.4 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, dual-signed resume links, IndexedDB persistence, and React hooks."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname" }, "Your nickname", /* @__PURE__ */ import_react.default.createElement(
+  return /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby-layout" }, /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v0.5.4 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname" }, "Your nickname", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
       value: nickname,
@@ -28077,6 +28464,50 @@ async function attachPersistence(node2, collections = ["chess-matches"]) {
   const persistence = new import_src.IndexedDBPersistence({ collections });
   await persistence.attach(node2);
   return persistence;
+}
+
+// docs/chess/src/lib/spectatorFeed.js
+var SPECTATOR_FEED_COLLECTION = "chess-matches";
+async function joinSpectatorFeed(node2, gameId, options = {}) {
+  if (!node2?.joinPeerGroup) {
+    return null;
+  }
+  const groupId = spectatorPeerGroupForGame(gameId);
+  return node2.joinPeerGroup(groupId, {
+    fanout: 3,
+    maxActivePeers: 6,
+    maxHops: 6,
+    ...options,
+    metadata: {
+      role: "spectator",
+      ...options.metadata || {}
+    }
+  });
+}
+async function leaveSpectatorFeed(node2, gameId) {
+  if (!node2?.leavePeerGroup) {
+    return;
+  }
+  await node2.leavePeerGroup(spectatorPeerGroupForGame(gameId));
+}
+async function publishSpectatorSnapshot(node2, gameId, options = {}) {
+  if (!node2?.publishRecordToPeerGroup) {
+    return null;
+  }
+  const groupId = spectatorPeerGroupForGame(gameId);
+  try {
+    return await node2.publishRecordToPeerGroup(
+      groupId,
+      SPECTATOR_FEED_COLLECTION,
+      gameId,
+      { fanout: options.fanout ?? 3 }
+    );
+  } catch (error2) {
+    if (typeof console !== "undefined") {
+      console.warn("[chess-spectator-feed] publish failed", error2);
+    }
+    return null;
+  }
 }
 
 // docs/chess/src/lib/p2pDebug.js
@@ -57879,6 +58310,9 @@ function GameView({ route, nodeId, nickname, onBack }) {
       if (!node2 || status !== "running") {
         return null;
       }
+      if (route.role === "watch") {
+        return null;
+      }
       if (route.role !== "host" && route.role !== "resume" && !hostPeerFromRoute(route, game, node2.nodeId)) {
         return null;
       }
@@ -57962,7 +58396,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
     if (!node2 || route.role !== "host") {
       return void 0;
     }
-    peers.forEach((peer) => {
+    peers.filter((peer) => peer.metadata?.role !== "watch").forEach((peer) => {
       connectToRoomPeer(node2, peer.peerId).then((result) => {
         if (!result.ok) {
           p2pWarn("host connect to peer failed", { peer: peer.peerId, ...result });
@@ -58013,6 +58447,9 @@ function GameView({ route, nodeId, nickname, onBack }) {
           broadcastScope: scope
         }
       );
+      await joinSpectatorFeed(node2, route.gameId, {
+        metadata: { role: "publisher", seat: "white", nickname }
+      });
       p2pLog("game created on host", { gameId: route.gameId, whitePlayerId: node2.nodeId, joinToken: `${joinToken.slice(0, 6)}\u2026` });
       setNotice("Game created. Share the opponent link to start.");
       playGameStartSound();
@@ -58119,10 +58556,60 @@ function GameView({ route, nodeId, nickname, onBack }) {
     if (!isHostSide) {
       return;
     }
-    peers.forEach((peer) => {
+    peers.filter((peer) => peer.metadata?.role !== "watch").forEach((peer) => {
       connectToRoomPeer(node2, peer.peerId);
     });
   }, [node2, route.role, resumeSeat, peers]);
+  (0, import_react7.useEffect)(() => {
+    if (!node2 || status !== "running" || route.role !== "watch") {
+      return void 0;
+    }
+    const host = hostPeerFromRoute(route, game, node2.nodeId);
+    if (!host) {
+      return void 0;
+    }
+    let active = true;
+    joinSpectatorFeed(node2, route.gameId, {
+      bootstrapPeerIds: [host],
+      metadata: { role: "spectator", nickname }
+    }).then(() => {
+      if (active) {
+        p2pLog("spectator gossip feed joined", { gameId: route.gameId, host });
+      }
+    }).catch((joinError) => {
+      p2pWarn("spectator gossip feed join failed", joinError);
+    });
+    return () => {
+      active = false;
+      leaveSpectatorFeed(node2, route.gameId).catch(() => {
+      });
+    };
+  }, [node2, status, route.role, route.gameId, game, nickname, route.hostPeer]);
+  (0, import_react7.useEffect)(() => {
+    if (!node2 || route.role !== "host") {
+      return void 0;
+    }
+    const handleSpectatorJoined = async ({ scope: scope2, metadata }) => {
+      if (!scope2 || !scope2.includes(`spectate:chess:${route.gameId}`)) {
+        return;
+      }
+      if (metadata?.role === "spectator") {
+        await publishSpectatorSnapshot(node2, route.gameId);
+      }
+    };
+    node2.on("peerdiscovered", handleSpectatorJoined);
+    return () => node2.off("peerdiscovered", handleSpectatorJoined);
+  }, [node2, route.role, route.gameId]);
+  (0, import_react7.useEffect)(() => {
+    if (!node2 || !game || game.data.blackPlayerId !== node2.nodeId) {
+      return;
+    }
+    joinSpectatorFeed(node2, route.gameId, {
+      metadata: { role: "publisher", seat: "black", nickname }
+    }).catch((joinError) => {
+      p2pWarn("black publisher feed join failed", joinError);
+    });
+  }, [node2, game, route.gameId, nickname]);
   (0, import_react7.useEffect)(() => {
     if (!node2 || status !== "running" || route.role !== "host") {
       return;
@@ -58171,6 +58658,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
       broadcastScope: scope,
       connectToPeers: [joinerPeerId]
     });
+    await publishSpectatorSnapshot(node2, route.gameId);
     p2pLog("completeJoin snapshot pushed", { joinerPeerId, gameId: route.gameId });
     setNotice("Opponent joined. Game started.");
     p2pLog("completeJoin done \u2014 game playing", { blackPlayerId: joinerPeerId });
@@ -58561,6 +59049,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
       broadcastScope: scope,
       connectToPeers: peerTargets
     });
+    await publishSpectatorSnapshot(node2, route.gameId);
     if (move.captured) {
       playCaptureSound();
     } else {

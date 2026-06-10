@@ -1,0 +1,58 @@
+flowchart TB
+  subgraph Apps["Your app"]
+    UI["UI / game / notes app"]
+    React["dignity.js/react hooks"]
+    Examples["Examples: chess, tic-tac-toe"]
+  end
+
+  subgraph Core["DignityP2P core"]
+    API["REST-like API\ncreate · read · list · update · remove"]
+    Repl["Operation log + replication"]
+    Disc["Discovery and presence\njoinDiscovery / listPeers"]
+    Snap["pushRecordSnapshot\nlate-joiner catch-up"]
+    Hash["record.hash\nsha512 over canonical data"]
+  end
+
+  subgraph Security["MessageSecurityService"]
+    Sign["Ed25519 signing"]
+    Bcast["Broadcast encryption\nPBKDF2 + shared password"]
+    Direct["Direct encryption\nrecipient public key"]
+    PoW["Sloth VDF proof-of-work"]
+    Canon["stableStringify\ncanonical payloads"]
+    Ban["Auto peer ban on bad sig/PoW"]
+  end
+
+  subgraph Network["Network adapters"]
+    PeerJS["PeerJS / WebRTC"]
+    WS["WebSocket signaling pool"]
+    Mem["InMemoryNetwork\nlocal / tests"]
+  end
+
+  subgraph Persist["Optional persistence"]
+    IDB["IndexedDB\nreload survival"]
+  end
+
+  UI --> API
+  React --> API
+  Examples --> API
+
+  API --> Repl
+  API --> Disc
+  API --> Snap
+  Repl --> Hash
+
+  Repl --> Security
+  Disc --> Security
+  Snap --> Security
+
+  Canon --> Sign
+  Canon --> PoW
+  Canon --> Hash
+
+  Security --> Network
+  Network --> PeerJS
+  Network --> WS
+  Network --> Mem
+
+  Repl --> IDB
+  IDB --> Repl

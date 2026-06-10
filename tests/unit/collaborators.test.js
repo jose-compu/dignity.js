@@ -1,4 +1,5 @@
 const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = require('../../src');
+const { fastTestSecurity } = require('../helpers/fast-security');
 
 describe('collaborators and ownership transfer', () => {
   let hub;
@@ -12,19 +13,19 @@ describe('collaborators and ownership transfer', () => {
     owner = new DignityP2P({
       nodeId: 'owner',
       networkAdapter: new InMemoryNetworkAdapter(hub),
-      security: { appPassword: 'shared', powTargetMs: 50 }
+      security: fastTestSecurity({ appPassword: 'shared' })
     });
 
     collaborator = new DignityP2P({
       nodeId: 'collaborator',
       networkAdapter: new InMemoryNetworkAdapter(hub),
-      security: { appPassword: 'shared', powTargetMs: 50 }
+      security: fastTestSecurity({ appPassword: 'shared' })
     });
 
     observer = new DignityP2P({
       nodeId: 'observer',
       networkAdapter: new InMemoryNetworkAdapter(hub),
-      security: { appPassword: 'shared', powTargetMs: 50 }
+      security: fastTestSecurity({ appPassword: 'shared' })
     });
 
     await owner.start();

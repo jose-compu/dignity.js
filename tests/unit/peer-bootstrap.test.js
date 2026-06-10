@@ -1,11 +1,9 @@
 const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = require('../../src');
+const { fastTestSecurity } = require('../helpers/fast-security');
 
 describe('Peer bootstrap and key trust (chess lessons)', () => {
   const hub = new InMemoryNetworkHub();
-  const defaultSecurity = {
-    appPassword: 'room-password',
-    powTargetMs: 5
-  };
+  const defaultSecurity = fastTestSecurity({ appPassword: 'room-password' });
 
   test('joinDiscovery injects publicKey into presence metadata', async () => {
     const alice = new DignityP2P({

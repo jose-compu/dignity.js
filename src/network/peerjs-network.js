@@ -185,6 +185,34 @@ class PeerJSNetworkAdapter {
     await Promise.all(deliveries);
   }
 
+  async sendToPeers(message, peerIds = []) {
+    if (!this.peer) {
+      throw new Error('PeerJS network adapter has not been started');
+    }
+
+    const targets = new Set((peerIds || []).filter(Boolean));
+    if (targets.size === 0) {
+      return;
+    }
+
+    const deliveries = [];
+    for (const [peerId, connection] of this.connections.entries()) {
+      if (targets.has(peerId) && connection.open) {
+        deliveries.push(connection.send(message));
+      }
+    }
+
+    await Promise.all(deliveries);
+  }
+
+  async disconnectPeer(remotePeerId) {
+    const connection = this.connections.get(remotePeerId);
+    if (connection && typeof connection.close === 'function') {
+      connection.close();
+    }
+    this.connections.delete(remotePeerId);
+  }
+
   getOpenConnectionCount() {
     return this.listOpenPeerIds().length;
   }

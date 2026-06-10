@@ -82,7 +82,7 @@ export default function Lobby({
           <h1>3D Chess on dignity.js</h1>
           <p>
             Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption,
-            dual-signed resume links, IndexedDB persistence, and React hooks.
+            dual-signed resume links, and scalable spectator feeds via PeerGroup gossip.
           </p>
           <label className="lobby__nickname">
             Your nickname
