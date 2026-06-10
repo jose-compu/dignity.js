@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="dignity.js v0.5.4 — REST-like P2P object API for decentralized JavaScript applications." />
+    <meta name="description" content="dignity.js v0.6.0 — REST-like P2P object API for decentralized JavaScript applications." />
     <title>dignity.js · Documentation</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.ico" sizes="32x32" />
@@ -16,7 +16,7 @@
       <a class="site-header__brand" href="#overview">
         <img src="./assets/dignity-logo.svg" alt="" width="344" height="80" />
         <!-- <span>dignity.js</span> -->
-        <span class="site-header__version">v0.5.4</span>
+        <span class="site-header__version">v0.6.0</span>
       </a>
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
@@ -34,6 +34,7 @@
           <nav>
             <a href="#overview">Overview</a>
             <a href="#installation">Installation</a>
+            <a href="#tutorial">Tutorial</a>
             <a href="#quick-start">Quick start</a>
             <a href="#browser">Browser usage</a>
           </nav>
@@ -43,6 +44,7 @@
           <nav>
             <a href="#object-api">Object API</a>
             <a href="#discovery">Room discovery</a>
+            <a href="#peer-groups">PeerGroup gossip</a>
             <a href="#messaging">Direct messaging</a>
             <a href="#concurrency">Concurrency</a>
             <a href="#content-hashes">Content hashes</a>
@@ -105,6 +107,136 @@
             <div class="code-block">
               <pre><code class="language-bash">npm install dignity.js react react-dom</code></pre>
             </div>
+          </section>
+
+          <section id="tutorial" class="section">
+            <h2>Beginner tutorial</h2>
+            <p class="lead">
+              New to P2P? Follow these eight short lessons. The full walkthrough is also in
+              <a href="https://github.com/jose-compu/dignity.js/blob/main/TUTORIAL.md" target="_blank" rel="noopener noreferrer"><code>TUTORIAL.md</code></a>
+              in the repository.
+            </p>
+
+            <div class="card-grid">
+              <article class="card">
+                <h3>Lesson 1</h3>
+                <p>Two peers, one shared object — <code>InMemoryNetworkHub</code> basics.</p>
+              </article>
+              <article class="card">
+                <h3>Lesson 2</h3>
+                <p>Rooms — <code>joinDiscovery</code> and <code>broadcastScope</code>.</p>
+              </article>
+              <article class="card">
+                <h3>Lesson 3–5</h3>
+                <p>Ownership, collaborators, and version conflicts.</p>
+              </article>
+              <article class="card">
+                <h3>Lesson 6–8</h3>
+                <p>Browser/PeerJS, PeerGroup spectators, IndexedDB persistence.</p>
+              </article>
+            </div>
+
+            <h3>Lesson 1 — Hello, two peers</h3>
+            <p>A <strong>node</strong> is one participant. The in-memory adapter wires peers inside one process (tests and learning):</p>
+            <div class="code-block">
+              <pre><code class="language-javascript">const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = require('dignity.js');
+
+const hub = new InMemoryNetworkHub();
+const security = { appPassword: 'my-team-secret', powSteps: 22 };
+
+const alice = new DignityP2P({ nodeId: 'alice', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+const bob   = new DignityP2P({ nodeId: 'bob',   networkAdapter: new InMemoryNetworkAdapter(hub), security });
+
+await alice.start();
+await bob.start();
+
+await alice.create('notes', { title: 'Hello P2P' }, { id: 'note-1' });
+console.log(bob.read('notes', 'note-1')); // replicated automatically</code></pre>
+            </div>
+
+            <h3>Lesson 2 — Find peers in a room</h3>
+            <p>Use <strong>scoped discovery</strong> so peers see who is online before collaborating:</p>
+            <div class="code-block">
+              <pre><code class="language-javascript">await alice.joinDiscovery('lobby', { metadata: { nickname: 'Alice' } });
+await bob.joinDiscovery('lobby', { bootstrapPeerIds: ['alice'] });
+
+console.log(alice.listPeers('lobby').map((p) => p.peerId));
+
+await alice.create('notes', { title: 'Room note' }, {
+  id: 'note-2',
+  broadcastScope: 'lobby'
+});</code></pre>
+            </div>
+
+            <h3>Lesson 3 — Only the owner can edit</h3>
+            <p>The peer that calls <code>create</code> becomes <code>ownerId</code>. Others can read but not update unless you add them as collaborators:</p>
+            <div class="code-block">
+              <pre><code class="language-javascript">await alice.create('games', { score: 0 }, { id: 'g1' });
+await alice.update('games', 'g1', { score: 10 });   // OK
+await bob.update('games', 'g1', { score: 999 });    // rejected — Bob is not owner
+
+alice.on('change', (e) => console.log(e.kind, e.collection, e.id));</code></pre>
+            </div>
+
+            <h3>Lesson 4 — Invite a collaborator</h3>
+            <div class="code-block">
+              <pre><code class="language-javascript">await alice.update('docs', 'd1', { body: 'shared' }, {
+  collaborators: ['alice', 'bob']
+});
+await bob.update('docs', 'd1', { body: 'Bob edited' }); // OK now</code></pre>
+            </div>
+
+            <h3>Lesson 5 — Versions and conflicts</h3>
+            <p>Each update increments <code>version</code>. Use <code>expectedVersion</code> or <code>updateWithRetry</code> to avoid overwriting concurrent edits (see <a href="#concurrency">Concurrency</a>).</p>
+
+            <h3>Lesson 6 — Real browsers (PeerJS)</h3>
+            <p>Swap the in-memory adapter for <code>createPeerJSNetworkAdapter</code> and a signaling server. Open the <a href="./chess/index.html">3D Chess demo</a> in two tabs to see live WebRTC sync.</p>
+
+            <h3>Lesson 7 — Small teams vs big audiences</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Scenario</th>
+                    <th>Mode</th>
+                    <th>API</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>2–8 players co-editing</td>
+                    <td>Direct mesh</td>
+                    <td><code>create</code> / <code>update</code> + <code>connectToPeers</code></td>
+                  </tr>
+                  <tr>
+                    <td>Spectators, public feeds</td>
+                    <td>PeerGroup gossip</td>
+                    <td><code>joinPeerGroup</code> + <code>publishRecordToPeerGroup</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-javascript">// Spectator watches a chess game (read-only epidemic feed)
+await spectator.joinPeerGroup('spectate:chess:game-42', { bootstrapPeerIds: ['white-host'] });
+await white.publishRecordToPeerGroup('spectate:chess:game-42', 'chess-matches', 'game-42');</code></pre>
+            </div>
+            <p>Details: <a href="#peer-groups">PeerGroup gossip</a>.</p>
+
+            <h3>Lesson 8 — Survive page reload</h3>
+            <p>Attach <code>IndexedDBPersistence</code> in the browser so objects persist locally (see <a href="#persistence">IndexedDB persistence</a>).</p>
+
+            <div class="callout callout--warn">
+              <strong>Common mistakes</strong>
+              <ul>
+                <li>Mismatched <code>appPassword</code> between peers — messages fail to decrypt.</li>
+                <li>Skipping <code>await node.start()</code> — nothing replicates.</li>
+                <li>Using the in-memory adapter in production — use PeerJS instead.</li>
+                <li>Keeping the default password — always set a strong <code>appPassword</code>.</li>
+              </ul>
+            </div>
+
+            <p><strong>Next:</strong> run <code>node examples/decentralized-tictactoe.js</code> or read the full <a href="https://github.com/jose-compu/dignity.js/blob/main/TUTORIAL.md" target="_blank" rel="noopener noreferrer">TUTORIAL.md</a>.</p>
           </section>
 
           <section id="quick-start" class="section">
@@ -280,6 +412,182 @@ await node.leaveDiscovery('team:red');</code></pre>
             </div>
           </section>
 
+          <section id="peer-groups" class="section">
+            <h2>PeerGroup gossip (scalable PubSub)</h2>
+            <p>
+              Scale object-update distribution to <strong>millions of subscribers</strong> per published
+              object while each peer keeps a <em>small, bounded</em> number of active transports.
+              Think decentralized Twitter: you follow 200 accounts (200 multiplexed gossip groups);
+              a popular account can have millions of followers sharing relay load.
+            </p>
+
+            <h3>Two replication modes</h3>
+            <p>Apps can mix both modes on the same node.</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Mode</th>
+                    <th>Use case</th>
+                    <th>API</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Direct mesh</td>
+                    <td>Chess players, small teams, owner + collaborators</td>
+                    <td><code>create</code> / <code>update</code> with <code>connectToPeers</code> (unchanged)</td>
+                  </tr>
+                  <tr>
+                    <td>PeerGroup gossip</td>
+                    <td>Spectators, public feeds, high-fanout read replicas</td>
+                    <td><code>joinPeerGroup</code> + <code>publishToPeerGroup</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3>Architecture</h3>
+            <div class="code-block">
+              <pre><code>Publisher --fanout=3--> Peer A --relay--> Peer D ...
+              \-------> Peer B --relay--> Peer E ...
+               \------> Peer C --relay--> Peer F ...</code></pre>
+            </div>
+            <ul>
+              <li><strong>Presence</strong> — each group reuses scoped <code>joinDiscovery('gossip:{groupId}')</code> as a membership directory.</li>
+              <li><strong>Transport</strong> — <code>sendToPeers(envelope, peerIds)</code>; not full-mesh broadcast.</li>
+              <li><strong>Relay</strong> — subscribers re-forward to <code>fanout</code> random peers until <code>maxHops</code>.</li>
+              <li><strong>Dedup</strong> — <code>gossipId</code> cache (TTL-bounded) stops infinite loops.</li>
+              <li><strong>Connection budget</strong> — <code>maxActivePeers</code> per group + <code>globalMaxOpenConnections</code> per node.</li>
+            </ul>
+
+            <h3>Core API</h3>
+            <div class="code-block">
+              <pre><code class="language-javascript">await node.joinPeerGroup('spectate:chess:game-1', {
+  bootstrapPeerIds: [hostPeerId],
+  fanout: 3,
+  maxActivePeers: 8,
+  maxHops: 6,
+  metadata: { role: 'spectator' }
+});
+
+await node.publishToPeerGroup('spectate:chess:game-1', 'record:snapshot', {
+  collectionName: 'chess-matches',
+  record
+}, { fanout: 3 });
+
+// Convenience wrapper for local records
+await node.publishRecordToPeerGroup('feed:alice', 'posts', 'post-1');
+
+// Custom app events
+await node.publishToPeerGroup('feed:alice', 'timeline:update', { id: 'post-1' });
+
+await node.leavePeerGroup('spectate:chess:game-1');
+
+node.listPeerGroupMembers('spectate:chess:game-1');
+node.getPeerGroupStats();
+// { joinedGroups, seenGossipCount, openConnectionCount, globalMaxOpenConnections }</code></pre>
+            </div>
+
+            <h3>Inner message types</h3>
+            <p>Relayed inside <code>peer-group:gossip</code>:</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Purpose</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>operation</code></td>
+                    <td>Replicated CRUD operation</td>
+                  </tr>
+                  <tr>
+                    <td><code>record:snapshot</code></td>
+                    <td>Late-joiner catch-up</td>
+                  </tr>
+                  <tr>
+                    <td>App-defined</td>
+                    <td>Custom payloads via <code>publishToPeerGroup</code> (emits <code>peergroupmessage</code>)</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3>Security</h3>
+            <ul>
+              <li>Group-scoped encryption via existing <code>broadcastScope = gossip:{groupId}</code>.</li>
+              <li>Signatures and PoW verified before relay (same <code>MessageSecurityService</code> path).</li>
+              <li>Invalid gossip rejected; banned peers ignored.</li>
+              <li><code>record:snapshot</code> gossip carries <code>record.hash</code> (<code>sha512:</code> over canonical <code>data</code>). Receivers recompute locally and <strong>reject</strong> snapshots whose hash does not match payload data (emits <code>content-hash-mismatch</code>).</li>
+              <li><code>gossipId</code> dedup cache prevents replay loops across relays.</li>
+              <li>Set <code>relayEnabled: false</code> on a group to receive updates without re-forwarding.</li>
+            </ul>
+
+            <h3>Chess spectators</h3>
+            <p>
+              The <a href="./chess/index.html">3D Chess demo</a> mixes both replication modes:
+            </p>
+            <ul>
+              <li><strong>Players</strong> — direct mesh between white/black (low latency).</li>
+              <li><strong>Spectators</strong> — <code>joinPeerGroup('spectate:chess:{gameId}')</code>.</li>
+              <li><strong>Moves</strong> — mover updates on the direct path; also <code>publishRecordToPeerGroup</code> for spectators.</li>
+              <li><strong>New spectator</strong> — epidemic relay + host snapshot on join; host does not O(N) connect.</li>
+            </ul>
+
+            <h3>Defaults</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Option</th>
+                    <th>Default</th>
+                    <th>Rationale</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>fanout</code></td>
+                    <td>3</td>
+                    <td>Classic gossip fanout</td>
+                  </tr>
+                  <tr>
+                    <td><code>maxActivePeers</code></td>
+                    <td>8</td>
+                    <td>Keeps local PeerJS channels small</td>
+                  </tr>
+                  <tr>
+                    <td><code>maxHops</code></td>
+                    <td>6</td>
+                    <td>Covers large graphs with low diameter</td>
+                  </tr>
+                  <tr>
+                    <td><code>globalMaxOpenConnections</code></td>
+                    <td>32</td>
+                    <td>Hard cap per node</td>
+                  </tr>
+                  <tr>
+                    <td><code>gossipIdTtlMs</code></td>
+                    <td>5 min</td>
+                    <td>Dedup window</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3>Roadmap</h3>
+            <p><strong>v0.6.0 (shipped)</strong> — core gossip, chess spectators, unit + e2e tests.</p>
+            <p><strong>v0.6.x polish</strong> — <code>subscribeObjectFeed</code> wrapper, connection LRU trim, IndexedDB joined-group persistence, React <code>usePeerGroup</code> hook, 50+ node integration test.</p>
+            <p><strong>Future</strong> — publisher rate limits, partial snapshot / delta feeds, cross-group fan-in metrics.</p>
+            <p>
+              Tracking:
+              <a href="https://github.com/jose-compu/dignity.js/issues/54" target="_blank" rel="noopener noreferrer">#54 PeerGroup core</a>,
+              <a href="https://github.com/jose-compu/dignity.js/issues/55" target="_blank" rel="noopener noreferrer">#55 Chess spectators</a>.
+            </p>
+          </section>
+
           <section id="messaging" class="section">
             <h2>Direct secure messaging</h2>
             <p>Send end-to-end encrypted messages to a specific peer:</p>
@@ -329,7 +637,7 @@ console.log(record.hash); // sha512:&lt;128-char hex&gt;</code></pre>
               <li>Scope: canonical <code>record.data</code> only — not <code>id</code>, owner, timestamps, collaborators, or version.</li>
               <li>Canonicalization: <code>stableStringify</code> so object key order does not change the digest.</li>
               <li>Replication: hashes are set on create/update and travel with snapshots.</li>
-              <li>Integrity: <code>restoreRecord</code> recomputes locally; mismatched remote hashes emit <code>warning</code> with <code>type: 'content-hash-mismatch'</code>.</li>
+              <li>Integrity: <code>restoreRecord</code> recomputes locally; mismatched remote hashes emit <code>warning</code> with <code>type: 'content-hash-mismatch'</code>. Gossip snapshots use strict mode and are rejected on mismatch.</li>
             </ul>
           </section>
 
@@ -637,8 +945,11 @@ const pool = createDefaultSignalingPool({
           <section id="development" class="section">
             <h2>Development</h2>
             <div class="code-block">
-              <pre><code class="language-bash"># Run tests (213+ passing, ~92% line coverage)
+              <pre><code class="language-bash"># Run tests (237+ passing, ~91% line coverage)
 npm test
+
+# PeerGroup unit + e2e tests only
+npm run test:peer-group
 
 # Build browser + Node bundles
 npm run build
@@ -654,7 +965,7 @@ npm run example:chess</code></pre>
 
           <footer class="site-footer">
             <p>
-              dignity.js v0.5.4 ·
+              dignity.js v0.6.0 ·
               <a href="https://github.com/jose-compu/dignity.js/blob/main/LICENSE">Apache 2.0</a> ·
               <a href="https://github.com/jose-compu/dignity.js">GitHub</a> ·
               <a href="https://www.npmjs.com/package/dignity.js">npm</a>

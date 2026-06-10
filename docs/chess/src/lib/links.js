@@ -98,6 +98,11 @@ export function scopeForGame(gameId) {
   return `room:chess:${gameId}`;
 }
 
+/** Scalable gossip group for read-only spectators (PeerGroup API). */
+export function spectatorPeerGroupForGame(gameId) {
+  return `spectate:chess:${gameId}`;
+}
+
 export function nodeIdForRole(role, gameId) {
   const suffix = randomToken(4);
   const gameBit = gameId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6);

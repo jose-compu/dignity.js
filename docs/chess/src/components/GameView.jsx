@@ -8,6 +8,7 @@ import {
 } from '../../../../src/react/index.js';
 import { createDignityConfig, attachPersistence } from '../lib/dignitySetup.js';
 import { buildLinks, randomToken, scopeForGame, withHostPeerInHash, connectToRoomPeer, hostPeerFromRoute } from '../lib/links.js';
+import { joinSpectatorFeed, leaveSpectatorFeed, publishSpectatorSnapshot } from '../lib/spectatorFeed.js';
 import {
   attachNodeDebugListeners,
   connectionSnapshot,
@@ -173,6 +174,10 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
         return null;
       }
 
+      if (route.role === 'watch') {
+        return null;
+      }
+
       if (route.role !== 'host' && route.role !== 'resume' && !hostPeerFromRoute(route, game, node.nodeId)) {
         return null;
       }
@@ -274,13 +279,15 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
       return undefined;
     }
 
-    peers.forEach((peer) => {
-      connectToRoomPeer(node, peer.peerId).then((result) => {
-        if (!result.ok) {
-          p2pWarn('host connect to peer failed', { peer: peer.peerId, ...result });
-        }
+    peers
+      .filter((peer) => peer.metadata?.role !== 'watch')
+      .forEach((peer) => {
+        connectToRoomPeer(node, peer.peerId).then((result) => {
+          if (!result.ok) {
+            p2pWarn('host connect to peer failed', { peer: peer.peerId, ...result });
+          }
+        });
       });
-    });
 
     const timer = setInterval(() => {
       setConnectionCount(node.networkAdapter?.getOpenConnectionCount?.() || 0);
@@ -332,6 +339,10 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
           broadcastScope: scope
         }
       );
+      await joinSpectatorFeed(node, route.gameId, {
+        metadata: { role: 'publisher', seat: 'white', nickname }
+      });
+
       p2pLog('game created on host', { gameId: route.gameId, whitePlayerId: node.nodeId, joinToken: `${joinToken.slice(0, 6)}…` });
       setNotice('Game created. Share the opponent link to start.');
       playGameStartSound();
@@ -465,10 +476,70 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
       return;
     }
 
-    peers.forEach((peer) => {
-      connectToRoomPeer(node, peer.peerId);
-    });
+    peers
+      .filter((peer) => peer.metadata?.role !== 'watch')
+      .forEach((peer) => {
+        connectToRoomPeer(node, peer.peerId);
+      });
   }, [node, route.role, resumeSeat, peers]);
+
+  useEffect(() => {
+    if (!node || status !== 'running' || route.role !== 'watch') {
+      return undefined;
+    }
+
+    const host = hostPeerFromRoute(route, game, node.nodeId);
+    if (!host) {
+      return undefined;
+    }
+
+    let active = true;
+    joinSpectatorFeed(node, route.gameId, {
+      bootstrapPeerIds: [host],
+      metadata: { role: 'spectator', nickname }
+    }).then(() => {
+      if (active) {
+        p2pLog('spectator gossip feed joined', { gameId: route.gameId, host });
+      }
+    }).catch((joinError) => {
+      p2pWarn('spectator gossip feed join failed', joinError);
+    });
+
+    return () => {
+      active = false;
+      leaveSpectatorFeed(node, route.gameId).catch(() => {});
+    };
+  }, [node, status, route.role, route.gameId, game, nickname, route.hostPeer]);
+
+  useEffect(() => {
+    if (!node || route.role !== 'host') {
+      return undefined;
+    }
+
+    const handleSpectatorJoined = async ({ scope, metadata }) => {
+      if (!scope || !scope.includes(`spectate:chess:${route.gameId}`)) {
+        return;
+      }
+      if (metadata?.role === 'spectator') {
+        await publishSpectatorSnapshot(node, route.gameId);
+      }
+    };
+
+    node.on('peerdiscovered', handleSpectatorJoined);
+    return () => node.off('peerdiscovered', handleSpectatorJoined);
+  }, [node, route.role, route.gameId]);
+
+  useEffect(() => {
+    if (!node || !game || game.data.blackPlayerId !== node.nodeId) {
+      return;
+    }
+
+    joinSpectatorFeed(node, route.gameId, {
+      metadata: { role: 'publisher', seat: 'black', nickname }
+    }).catch((joinError) => {
+      p2pWarn('black publisher feed join failed', joinError);
+    });
+  }, [node, game, route.gameId, nickname]);
 
   useEffect(() => {
     if (!node || status !== 'running' || route.role !== 'host') {
@@ -526,6 +597,7 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
       broadcastScope: scope,
       connectToPeers: [joinerPeerId]
     });
+    await publishSpectatorSnapshot(node, route.gameId);
     p2pLog('completeJoin snapshot pushed', { joinerPeerId, gameId: route.gameId });
 
     setNotice('Opponent joined. Game started.');
@@ -982,6 +1054,8 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
       broadcastScope: scope,
       connectToPeers: peerTargets
     });
+
+    await publishSpectatorSnapshot(node, route.gameId);
 
     if (move.captured) {
       playCaptureSound();

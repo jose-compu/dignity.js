@@ -387,8 +387,16 @@ class MessageSecurityService {
 
       let key;
       if (encryption.kdf === 'pbkdf2') {
-        const iterations = encryption.kdfIterations || DEFAULT_SECURITY_OPTIONS.kdfIterations;
-        key = await deriveBroadcastKey(password, salt, iterations);
+        const configuredIterations = this.options.kdfIterations || DEFAULT_SECURITY_OPTIONS.kdfIterations;
+        const requestedIterations = encryption.kdfIterations || configuredIterations;
+        const minIterations = Math.max(1000, Math.floor(configuredIterations * 0.1));
+        const maxIterations = configuredIterations * 2;
+
+        if (requestedIterations < minIterations || requestedIterations > maxIterations) {
+          throw new Error(`Invalid kdfIterations: ${requestedIterations}`);
+        }
+
+        key = await deriveBroadcastKey(password, salt, requestedIterations);
       } else {
         key = legacyBroadcastKey(password, salt);
       }

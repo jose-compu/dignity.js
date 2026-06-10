@@ -58,6 +58,14 @@
       "ensureConnectedToPeers": "connect to many peers before broadcast",
       "joinDiscovery": "scoped presence; options.bootstrapPeerIds connects before announce",
       "broadcastMessage": "custom app messages; options.connectToPeers"
+    },
+    "peerGroups": {
+      "joinPeerGroup": "join scalable gossip group (multiplexed); options.fanout, maxActivePeers, bootstrapPeerIds",
+      "leavePeerGroup": "leave gossip group and scoped presence",
+      "listPeerGroupMembers": "list presence in gossip:{groupId} scope",
+      "publishToPeerGroup": "epidemic publish with bounded fanout; inner types: operation, record:snapshot, custom",
+      "publishRecordToPeerGroup": "publish normalized record snapshot into gossip group",
+      "getPeerGroupStats": "{ joinedGroups, seenGossipCount, openConnectionCount, globalMaxOpenConnections }"
     }
   },
   "events": {

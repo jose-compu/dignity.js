@@ -3,6 +3,7 @@ const {
   InMemoryNetworkHub,
   InMemoryNetworkAdapter
 } = require('../../src');
+const { fastTestSecurity } = require('../helpers/fast-security');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -25,10 +26,7 @@ describe('DignityP2P', () => {
 
   beforeEach(() => {
     hub = new InMemoryNetworkHub();
-    defaultSecurity = {
-      appPassword: 'test-app-password',
-      powTargetMs: 5
-    };
+    defaultSecurity = fastTestSecurity();
   });
 
   test('creates, reads, updates and deletes owned objects', async () => {
@@ -317,16 +315,23 @@ describe('DignityP2P', () => {
   });
 
   test('bans peer when signature is invalid and ignores later messages while banned', async () => {
+    const securedSecurity = fastTestSecurity({
+      signingEnabled: true,
+      encryptionEnabled: true,
+      powEnabled: true,
+      powSteps: 1,
+      powTargetMs: 1
+    });
     const alice = new DignityP2P({
       nodeId: 'alice',
       networkAdapter: new InMemoryNetworkAdapter(hub),
-      security: defaultSecurity
+      security: securedSecurity
     });
     const bob = new DignityP2P({
       nodeId: 'bob',
       networkAdapter: new InMemoryNetworkAdapter(hub),
       security: {
-        ...defaultSecurity,
+        ...securedSecurity,
         banDurationMs: 60 * 60 * 1000
       }
     });
@@ -366,16 +371,23 @@ describe('DignityP2P', () => {
   });
 
   test('removes ban after configured duration', async () => {
+    const securedSecurity = fastTestSecurity({
+      signingEnabled: true,
+      encryptionEnabled: true,
+      powEnabled: true,
+      powSteps: 1,
+      powTargetMs: 1
+    });
     const alice = new DignityP2P({
       nodeId: 'alice',
       networkAdapter: new InMemoryNetworkAdapter(hub),
-      security: defaultSecurity
+      security: securedSecurity
     });
     const bob = new DignityP2P({
       nodeId: 'bob',
       networkAdapter: new InMemoryNetworkAdapter(hub),
       security: {
-        ...defaultSecurity,
+        ...securedSecurity,
         banDurationMs: 30
       }
     });
@@ -649,11 +661,11 @@ describe('DignityP2P', () => {
     await alice.stop();
   });
 
-  test('handleIncomingMessage processes raw operation payloads', async () => {
+  test('handleIncomingMessage processes raw operation payloads when security is disabled', async () => {
     const alice = new DignityP2P({
       nodeId: 'alice',
       networkAdapter: new InMemoryNetworkAdapter(hub),
-      security: defaultSecurity
+      security: { ...defaultSecurity, enabled: false }
     });
     await alice.start();
 
@@ -663,6 +675,27 @@ describe('DignityP2P', () => {
     });
 
     expect(alice.read('raw', 'r1')).toMatchObject({ data: { v: 1 } });
+    await alice.stop();
+  });
+
+  test('handleIncomingMessage rejects raw operation payloads when security is enabled', async () => {
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    const ignored = [];
+    alice.on('messageignored', (event) => ignored.push(event));
+
+    await alice.start();
+
+    await alice.handleIncomingMessage({
+      opId: 'raw-2', kind: 'create', collectionName: 'raw', id: 'r2',
+      actorId: 'alice', ownerId: 'alice', timestamp: 1, payload: { v: 2 }
+    });
+
+    expect(alice.read('raw', 'r2')).toBeNull();
+    expect(ignored[0].reason).toBe('raw-operation-rejected');
     await alice.stop();
   });
 

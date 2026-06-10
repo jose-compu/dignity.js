@@ -3,6 +3,7 @@ const {
   InMemoryNetworkHub,
   InMemoryNetworkAdapter
 } = require('../../src');
+const { fastTestSecurity } = require('../helpers/fast-security');
 
 describe('DignityP2P concurrency', () => {
   let hub;
@@ -10,10 +11,7 @@ describe('DignityP2P concurrency', () => {
 
   beforeEach(() => {
     hub = new InMemoryNetworkHub();
-    defaultSecurity = {
-      appPassword: 'test-app-password',
-      powTargetMs: 5
-    };
+    defaultSecurity = fastTestSecurity();
   });
 
   test('update throws VERSION_CONFLICT when expectedVersion mismatches', async () => {
