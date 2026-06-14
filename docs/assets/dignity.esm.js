@@ -2769,8 +2769,14 @@ var require_message_security_service = __commonJS({
           const nonce = naclUtil.decodeBase64(encryption.nonce);
           let key;
           if (encryption.kdf === "pbkdf2") {
-            const iterations = encryption.kdfIterations || DEFAULT_SECURITY_OPTIONS.kdfIterations;
-            key = await deriveBroadcastKey(password, salt, iterations);
+            const configuredIterations = this.options.kdfIterations || DEFAULT_SECURITY_OPTIONS.kdfIterations;
+            const requestedIterations = encryption.kdfIterations || configuredIterations;
+            const minIterations = Math.max(1e3, Math.floor(configuredIterations * 0.1));
+            const maxIterations = configuredIterations * 2;
+            if (requestedIterations < minIterations || requestedIterations > maxIterations) {
+              throw new Error(`Invalid kdfIterations: ${requestedIterations}`);
+            }
+            key = await deriveBroadcastKey(password, salt, requestedIterations);
           } else {
             key = legacyBroadcastKey(password, salt);
           }
@@ -2984,8 +2990,9 @@ var require_dignity_p2p = __commonJS({
         this.defaultGossipMaxHops = security && typeof security.gossipMaxHops === "number" ? security.gossipMaxHops : DEFAULT_PEER_GROUP_OPTIONS.maxHops;
         this.globalMaxOpenConnections = security && typeof security.globalMaxOpenConnections === "number" ? security.globalMaxOpenConnections : 32;
         this.gossipIdTtlMs = security && typeof security.gossipIdTtlMs === "number" ? security.gossipIdTtlMs : 5 * 60 * 1e3;
+        this.maxAppliedOperations = security && typeof security.maxAppliedOperations === "number" ? security.maxAppliedOperations : 5e4;
         this.state = /* @__PURE__ */ new Map();
-        this.appliedOperations = /* @__PURE__ */ new Set();
+        this.appliedOperations = /* @__PURE__ */ new Map();
         this.boundMessageHandler = this.handleIncomingMessage.bind(this);
       }
       async start() {
@@ -3512,6 +3519,7 @@ var require_dignity_p2p = __commonJS({
         await this.broadcastMessage("peer-group:gossip", {
           groupId,
           gossipId,
+          publisherId: this.nodeId,
           hop: 0,
           maxHop,
           innerMessageType,
@@ -3539,12 +3547,16 @@ var require_dignity_p2p = __commonJS({
         const {
           groupId,
           gossipId,
+          publisherId = decrypted.senderId,
           hop = 0,
-          maxHop = this.defaultGossipMaxHops,
+          maxHop: payloadMaxHop,
           innerMessageType,
           innerPayload
         } = payload;
-        if (!groupId || !innerMessageType) {
+        if (!groupId || !innerMessageType || !gossipId) {
+          return;
+        }
+        if (!this.peerGroups.has(groupId)) {
           return;
         }
         if (this.hasSeenGossip(gossipId)) {
@@ -3553,9 +3565,12 @@ var require_dignity_p2p = __commonJS({
         this.markSeenGossip(gossipId);
         await this.dispatchPeerGroupInnerMessage(innerMessageType, innerPayload, {
           groupId,
-          senderId: decrypted.senderId
+          senderId: decrypted.senderId,
+          publisherId
         });
         const group = this.peerGroups.get(groupId);
+        const configuredMaxHop = group ? group.maxHops : this.defaultGossipMaxHops;
+        const maxHop = typeof payloadMaxHop === "number" ? Math.min(payloadMaxHop, configuredMaxHop) : configuredMaxHop;
         if (!group || group.relayEnabled === false || hop >= maxHop) {
           return;
         }
@@ -3571,6 +3586,7 @@ var require_dignity_p2p = __commonJS({
         await this.broadcastMessage("peer-group:gossip", {
           groupId,
           gossipId,
+          publisherId,
           hop: hop + 1,
           maxHop,
           innerMessageType,
@@ -3580,15 +3596,49 @@ var require_dignity_p2p = __commonJS({
           fanoutPeerIds: relayPeers
         });
       }
+      normalizeGossipOperation(operation, publisherId) {
+        if (!operation || !publisherId) {
+          return null;
+        }
+        if (operation.actorId && operation.actorId !== publisherId) {
+          this.emit("warning", {
+            type: "gossip-operation-actor-mismatch",
+            publisherId,
+            actorId: operation.actorId,
+            kind: operation.kind,
+            collection: operation.collectionName,
+            id: operation.id
+          });
+          return null;
+        }
+        const normalized = {
+          ...operation,
+          actorId: publisherId
+        };
+        if (normalized.kind === "create") {
+          normalized.ownerId = publisherId;
+        }
+        return normalized;
+      }
       async dispatchPeerGroupInnerMessage(innerMessageType, innerPayload, context = {}) {
         if (innerMessageType === "operation") {
-          this.applyOperation(innerPayload);
+          const operation = this.normalizeGossipOperation(
+            innerPayload,
+            context.publisherId || context.senderId
+          );
+          if (operation) {
+            this.applyOperation(operation);
+          }
           return;
         }
         if (innerMessageType === "record:snapshot") {
           const { collectionName, record } = innerPayload || {};
           if (collectionName && record) {
-            const applied = this.restoreRecord(collectionName, record);
+            const applied = this.restoreRecord(collectionName, record, {
+              rejectOnHashMismatch: true,
+              rejectOnOwnershipMismatch: true,
+              via: "peer-group"
+            });
             if (applied) {
               this.emit("change", {
                 kind: "snapshot",
@@ -3738,6 +3788,13 @@ var require_dignity_p2p = __commonJS({
       }
       async handleIncomingMessage(message) {
         if (message && message.opId && message.kind) {
+          if (this.securityService.options.enabled) {
+            this.emit("messageignored", {
+              reason: "raw-operation-rejected",
+              hint: "Unsigned raw operations are disabled when security is enabled"
+            });
+            return;
+          }
           this.applyOperation(message);
           return;
         }
@@ -3747,9 +3804,6 @@ var require_dignity_p2p = __commonJS({
             reason: "peer-banned"
           });
           return;
-        }
-        if (message && message.senderId && message.senderPublicKey) {
-          this.trustPeerPublicKey(message.senderId, message.senderPublicKey);
         }
         let decrypted;
         try {
@@ -3767,6 +3821,9 @@ var require_dignity_p2p = __commonJS({
         }
         if (!decrypted || decrypted.ignored) {
           return;
+        }
+        if (message && message.senderId && message.senderPublicKey) {
+          this.trustPeerPublicKey(message.senderId, message.senderPublicKey);
         }
         if (decrypted.messageType === "operation") {
           this.applyOperation(decrypted.payload);
@@ -3791,18 +3848,27 @@ var require_dignity_p2p = __commonJS({
           const payload = decrypted.payload || {};
           const scope = payload.scope || "main";
           const peerId = payload.peerId || decrypted.senderId;
-          if (!peerId) {
+          if (!peerId || peerId !== decrypted.senderId) {
             return;
           }
+          if (!this.discoveryRooms.has(scope)) {
+            return;
+          }
+          const room = this.discoveryRooms.get(scope);
           const presenceMap = this.getPresenceMap(scope);
           const isNewPeerInScope = !presenceMap.has(peerId);
+          const requestedTtl = typeof payload.ttlMs === "number" ? payload.ttlMs : room.ttlMs;
+          const ttlMs = Math.min(requestedTtl, room.ttlMs);
           this.upsertPresence(
             scope,
             peerId,
             payload.metadata || {},
-            payload.ttlMs || this.defaultPresenceTtlMs,
-            payload.announcedAt || this.now()
+            ttlMs,
+            this.now()
           );
+          if (payload.metadata && payload.metadata.publicKey) {
+            this.trustPeerPublicKey(peerId, payload.metadata.publicKey);
+          }
           if (isNewPeerInScope && peerId !== this.nodeId && this.discoveryRooms.has(scope)) {
             if (typeof this.networkAdapter.connectToPeer === "function") {
               Promise.resolve(this.connectToPeer(peerId)).catch((error) => {
@@ -3819,6 +3885,9 @@ var require_dignity_p2p = __commonJS({
           const payload = decrypted.payload || {};
           const scope = payload.scope || "main";
           const peerId = payload.peerId || decrypted.senderId;
+          if (!peerId || peerId !== decrypted.senderId) {
+            return;
+          }
           const map = this.presenceByScope.get(scope);
           if (map && peerId && map.has(peerId)) {
             map.delete(peerId);
@@ -3875,7 +3944,7 @@ var require_dignity_p2p = __commonJS({
       emitConflict(details) {
         this.emit("conflict", details);
       }
-      restoreRecord(collectionName, record) {
+      restoreRecord(collectionName, record, options = {}) {
         if (!record || !record.id) {
           return false;
         }
@@ -3886,14 +3955,42 @@ var require_dignity_p2p = __commonJS({
         }
         const restoredData = { ...record.data || {} };
         const computedHash = computeContentHash(restoredData);
-        if (record.hash && record.hash !== computedHash) {
+        const rejectOnHashMismatch = options.rejectOnHashMismatch === true;
+        const rejectOnOwnershipMismatch = options.rejectOnOwnershipMismatch === true;
+        if (rejectOnOwnershipMismatch && current && record.ownerId && current.ownerId !== record.ownerId) {
+          this.emit("warning", {
+            type: "ownership-mismatch",
+            collection: collectionName,
+            id: record.id,
+            currentOwnerId: current.ownerId,
+            advertisedOwnerId: record.ownerId,
+            via: options.via || null
+          });
+          return false;
+        }
+        if (!record.hash) {
+          const warning = {
+            type: "content-hash-missing",
+            collection: collectionName,
+            id: record.id,
+            via: options.via || null
+          };
+          this.emit("warning", warning);
+          if (rejectOnHashMismatch) {
+            return false;
+          }
+        } else if (record.hash !== computedHash) {
           this.emit("warning", {
             type: "content-hash-mismatch",
             collection: collectionName,
             id: record.id,
             advertisedHash: record.hash,
-            computedHash
+            computedHash,
+            via: options.via || null
           });
+          if (rejectOnHashMismatch) {
+            return false;
+          }
         }
         collection.set(record.id, {
           id: record.id,
@@ -3935,6 +4032,15 @@ var require_dignity_p2p = __commonJS({
         });
         return record;
       }
+      pruneAppliedOperations() {
+        while (this.appliedOperations.size > this.maxAppliedOperations) {
+          const oldestOpId = this.appliedOperations.keys().next().value;
+          if (!oldestOpId) {
+            break;
+          }
+          this.appliedOperations.delete(oldestOpId);
+        }
+      }
       applyOperation(operation) {
         if (!operation || !operation.opId || this.appliedOperations.has(operation.opId)) {
           return false;
@@ -3956,7 +4062,8 @@ var require_dignity_p2p = __commonJS({
             deletedAt: null,
             version: 1
           });
-          this.appliedOperations.add(operation.opId);
+          this.appliedOperations.set(operation.opId, this.now());
+          this.pruneAppliedOperations();
           this.emit("change", { kind: "create", collection: operation.collectionName, id: operation.id });
           return true;
         }
@@ -4000,7 +4107,8 @@ var require_dignity_p2p = __commonJS({
           }
           current.updatedAt = operation.timestamp;
           current.version += 1;
-          this.appliedOperations.add(operation.opId);
+          this.appliedOperations.set(operation.opId, this.now());
+          this.pruneAppliedOperations();
           this.emit("change", {
             kind: "transfer-ownership",
             collection: operation.collectionName,
@@ -4029,7 +4137,8 @@ var require_dignity_p2p = __commonJS({
           current.deletedAt = operation.timestamp;
           current.updatedAt = operation.timestamp;
           current.version += 1;
-          this.appliedOperations.add(operation.opId);
+          this.appliedOperations.set(operation.opId, this.now());
+          this.pruneAppliedOperations();
           this.emit("change", { kind: "delete", collection: operation.collectionName, id: operation.id });
           return true;
         }
@@ -4059,7 +4168,8 @@ var require_dignity_p2p = __commonJS({
           }
           current.updatedAt = operation.timestamp;
           current.version += 1;
-          this.appliedOperations.add(operation.opId);
+          this.appliedOperations.set(operation.opId, this.now());
+          this.pruneAppliedOperations();
           this.emit("change", { kind: "update", collection: operation.collectionName, id: operation.id });
           return true;
         }
@@ -11601,6 +11711,7 @@ var require_index = __commonJS({
       PEER_GROUP_SCOPE_PREFIX,
       DEFAULT_PEER_GROUP_OPTIONS,
       peerGroupScope,
+      parsePeerGroupScope,
       selectFanoutPeers
     } = require_peer_group();
     module.exports = {
@@ -11623,6 +11734,7 @@ var require_index = __commonJS({
       PEER_GROUP_SCOPE_PREFIX,
       DEFAULT_PEER_GROUP_OPTIONS,
       peerGroupScope,
+      parsePeerGroupScope,
       selectFanoutPeers
     };
   }
