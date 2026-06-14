@@ -59,8 +59,21 @@ export function parseRoute() {
     watchToken: params.watch || null,
     resumeToken: params.resume || null,
     checkpoint: params.checkpoint || null,
-    checkpointRef: params.checkpointRef || null
+    checkpointRef: params.checkpointRef || null,
+    seat: params.seat || null
   };
+}
+
+export function bootstrapHostForRoute(route, game, localNodeId, { resumeSeat = null } = {}) {
+  if (route.role === 'host' || (route.role === 'resume' && resumeSeat === 'white')) {
+    return null;
+  }
+
+  if (route.role === 'resume' && resumeSeat === 'black') {
+    return null;
+  }
+
+  return hostPeerFromRoute(route, game, localNodeId);
 }
 
 export function buildLinks({ gameId, roomKey, hostPeer, joinToken, watchToken, resumeToken, resumeLink }) {

@@ -124,7 +124,7 @@ export function sessionResumeHash(session) {
     resume: session.resumeToken || ''
   });
 
-  if (session.hostPeer) {
+  if (session.hostPeer && session.role !== 'resume') {
     params.set('host', session.hostPeer);
   }
   if (session.checkpointRef) {

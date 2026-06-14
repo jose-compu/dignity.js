@@ -189,7 +189,8 @@ export default function ResumePanel({
           </div>
           {validation?.ok ? (
             <p className="muted">
-              Both signatures verified. Game state travels in the link when short enough; otherwise this browser keeps a checkpoint ref in IndexedDB.
+              Both signatures verified. The signed board state is embedded in the link when it fits in the URL;
+              otherwise this browser keeps a local checkpoint ref (not shareable across devices).
             </p>
           ) : (
             <p className="error-inline">Checkpoint validation failed: {validation?.reason}</p>

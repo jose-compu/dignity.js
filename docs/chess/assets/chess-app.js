@@ -15477,8 +15477,14 @@ var require_message_security_service = __commonJS({
           const nonce = naclUtil3.decodeBase64(encryption.nonce);
           let key;
           if (encryption.kdf === "pbkdf2") {
-            const iterations = encryption.kdfIterations || DEFAULT_SECURITY_OPTIONS.kdfIterations;
-            key = await deriveBroadcastKey(password, salt, iterations);
+            const configuredIterations = this.options.kdfIterations || DEFAULT_SECURITY_OPTIONS.kdfIterations;
+            const requestedIterations = encryption.kdfIterations || configuredIterations;
+            const minIterations = Math.max(1e3, Math.floor(configuredIterations * 0.1));
+            const maxIterations = configuredIterations * 2;
+            if (requestedIterations < minIterations || requestedIterations > maxIterations) {
+              throw new Error(`Invalid kdfIterations: ${requestedIterations}`);
+            }
+            key = await deriveBroadcastKey(password, salt, requestedIterations);
           } else {
             key = legacyBroadcastKey(password, salt);
           }
@@ -15692,8 +15698,9 @@ var require_dignity_p2p = __commonJS({
         this.defaultGossipMaxHops = security && typeof security.gossipMaxHops === "number" ? security.gossipMaxHops : DEFAULT_PEER_GROUP_OPTIONS.maxHops;
         this.globalMaxOpenConnections = security && typeof security.globalMaxOpenConnections === "number" ? security.globalMaxOpenConnections : 32;
         this.gossipIdTtlMs = security && typeof security.gossipIdTtlMs === "number" ? security.gossipIdTtlMs : 5 * 60 * 1e3;
+        this.maxAppliedOperations = security && typeof security.maxAppliedOperations === "number" ? security.maxAppliedOperations : 5e4;
         this.state = /* @__PURE__ */ new Map();
-        this.appliedOperations = /* @__PURE__ */ new Set();
+        this.appliedOperations = /* @__PURE__ */ new Map();
         this.boundMessageHandler = this.handleIncomingMessage.bind(this);
       }
       async start() {
@@ -16220,6 +16227,7 @@ var require_dignity_p2p = __commonJS({
         await this.broadcastMessage("peer-group:gossip", {
           groupId,
           gossipId,
+          publisherId: this.nodeId,
           hop: 0,
           maxHop,
           innerMessageType,
@@ -16247,12 +16255,16 @@ var require_dignity_p2p = __commonJS({
         const {
           groupId,
           gossipId,
+          publisherId = decrypted.senderId,
           hop = 0,
-          maxHop = this.defaultGossipMaxHops,
+          maxHop: payloadMaxHop,
           innerMessageType,
           innerPayload
         } = payload;
-        if (!groupId || !innerMessageType) {
+        if (!groupId || !innerMessageType || !gossipId) {
+          return;
+        }
+        if (!this.peerGroups.has(groupId)) {
           return;
         }
         if (this.hasSeenGossip(gossipId)) {
@@ -16261,9 +16273,12 @@ var require_dignity_p2p = __commonJS({
         this.markSeenGossip(gossipId);
         await this.dispatchPeerGroupInnerMessage(innerMessageType, innerPayload, {
           groupId,
-          senderId: decrypted.senderId
+          senderId: decrypted.senderId,
+          publisherId
         });
         const group = this.peerGroups.get(groupId);
+        const configuredMaxHop = group ? group.maxHops : this.defaultGossipMaxHops;
+        const maxHop = typeof payloadMaxHop === "number" ? Math.min(payloadMaxHop, configuredMaxHop) : configuredMaxHop;
         if (!group || group.relayEnabled === false || hop >= maxHop) {
           return;
         }
@@ -16279,6 +16294,7 @@ var require_dignity_p2p = __commonJS({
         await this.broadcastMessage("peer-group:gossip", {
           groupId,
           gossipId,
+          publisherId,
           hop: hop + 1,
           maxHop,
           innerMessageType,
@@ -16288,15 +16304,49 @@ var require_dignity_p2p = __commonJS({
           fanoutPeerIds: relayPeers
         });
       }
+      normalizeGossipOperation(operation, publisherId) {
+        if (!operation || !publisherId) {
+          return null;
+        }
+        if (operation.actorId && operation.actorId !== publisherId) {
+          this.emit("warning", {
+            type: "gossip-operation-actor-mismatch",
+            publisherId,
+            actorId: operation.actorId,
+            kind: operation.kind,
+            collection: operation.collectionName,
+            id: operation.id
+          });
+          return null;
+        }
+        const normalized = {
+          ...operation,
+          actorId: publisherId
+        };
+        if (normalized.kind === "create") {
+          normalized.ownerId = publisherId;
+        }
+        return normalized;
+      }
       async dispatchPeerGroupInnerMessage(innerMessageType, innerPayload, context = {}) {
         if (innerMessageType === "operation") {
-          this.applyOperation(innerPayload);
+          const operation = this.normalizeGossipOperation(
+            innerPayload,
+            context.publisherId || context.senderId
+          );
+          if (operation) {
+            this.applyOperation(operation);
+          }
           return;
         }
         if (innerMessageType === "record:snapshot") {
           const { collectionName, record } = innerPayload || {};
           if (collectionName && record) {
-            const applied = this.restoreRecord(collectionName, record);
+            const applied = this.restoreRecord(collectionName, record, {
+              rejectOnHashMismatch: true,
+              rejectOnOwnershipMismatch: true,
+              via: "peer-group"
+            });
             if (applied) {
               this.emit("change", {
                 kind: "snapshot",
@@ -16446,6 +16496,13 @@ var require_dignity_p2p = __commonJS({
       }
       async handleIncomingMessage(message) {
         if (message && message.opId && message.kind) {
+          if (this.securityService.options.enabled) {
+            this.emit("messageignored", {
+              reason: "raw-operation-rejected",
+              hint: "Unsigned raw operations are disabled when security is enabled"
+            });
+            return;
+          }
           this.applyOperation(message);
           return;
         }
@@ -16455,9 +16512,6 @@ var require_dignity_p2p = __commonJS({
             reason: "peer-banned"
           });
           return;
-        }
-        if (message && message.senderId && message.senderPublicKey) {
-          this.trustPeerPublicKey(message.senderId, message.senderPublicKey);
         }
         let decrypted;
         try {
@@ -16475,6 +16529,9 @@ var require_dignity_p2p = __commonJS({
         }
         if (!decrypted || decrypted.ignored) {
           return;
+        }
+        if (message && message.senderId && message.senderPublicKey) {
+          this.trustPeerPublicKey(message.senderId, message.senderPublicKey);
         }
         if (decrypted.messageType === "operation") {
           this.applyOperation(decrypted.payload);
@@ -16499,18 +16556,27 @@ var require_dignity_p2p = __commonJS({
           const payload = decrypted.payload || {};
           const scope = payload.scope || "main";
           const peerId = payload.peerId || decrypted.senderId;
-          if (!peerId) {
+          if (!peerId || peerId !== decrypted.senderId) {
             return;
           }
+          if (!this.discoveryRooms.has(scope)) {
+            return;
+          }
+          const room = this.discoveryRooms.get(scope);
           const presenceMap = this.getPresenceMap(scope);
           const isNewPeerInScope = !presenceMap.has(peerId);
+          const requestedTtl = typeof payload.ttlMs === "number" ? payload.ttlMs : room.ttlMs;
+          const ttlMs = Math.min(requestedTtl, room.ttlMs);
           this.upsertPresence(
             scope,
             peerId,
             payload.metadata || {},
-            payload.ttlMs || this.defaultPresenceTtlMs,
-            payload.announcedAt || this.now()
+            ttlMs,
+            this.now()
           );
+          if (payload.metadata && payload.metadata.publicKey) {
+            this.trustPeerPublicKey(peerId, payload.metadata.publicKey);
+          }
           if (isNewPeerInScope && peerId !== this.nodeId && this.discoveryRooms.has(scope)) {
             if (typeof this.networkAdapter.connectToPeer === "function") {
               Promise.resolve(this.connectToPeer(peerId)).catch((error2) => {
@@ -16527,6 +16593,9 @@ var require_dignity_p2p = __commonJS({
           const payload = decrypted.payload || {};
           const scope = payload.scope || "main";
           const peerId = payload.peerId || decrypted.senderId;
+          if (!peerId || peerId !== decrypted.senderId) {
+            return;
+          }
           const map = this.presenceByScope.get(scope);
           if (map && peerId && map.has(peerId)) {
             map.delete(peerId);
@@ -16583,7 +16652,7 @@ var require_dignity_p2p = __commonJS({
       emitConflict(details) {
         this.emit("conflict", details);
       }
-      restoreRecord(collectionName, record) {
+      restoreRecord(collectionName, record, options = {}) {
         if (!record || !record.id) {
           return false;
         }
@@ -16594,14 +16663,42 @@ var require_dignity_p2p = __commonJS({
         }
         const restoredData = { ...record.data || {} };
         const computedHash = computeContentHash(restoredData);
-        if (record.hash && record.hash !== computedHash) {
+        const rejectOnHashMismatch = options.rejectOnHashMismatch === true;
+        const rejectOnOwnershipMismatch = options.rejectOnOwnershipMismatch === true;
+        if (rejectOnOwnershipMismatch && current && record.ownerId && current.ownerId !== record.ownerId) {
+          this.emit("warning", {
+            type: "ownership-mismatch",
+            collection: collectionName,
+            id: record.id,
+            currentOwnerId: current.ownerId,
+            advertisedOwnerId: record.ownerId,
+            via: options.via || null
+          });
+          return false;
+        }
+        if (!record.hash) {
+          const warning = {
+            type: "content-hash-missing",
+            collection: collectionName,
+            id: record.id,
+            via: options.via || null
+          };
+          this.emit("warning", warning);
+          if (rejectOnHashMismatch) {
+            return false;
+          }
+        } else if (record.hash !== computedHash) {
           this.emit("warning", {
             type: "content-hash-mismatch",
             collection: collectionName,
             id: record.id,
             advertisedHash: record.hash,
-            computedHash
+            computedHash,
+            via: options.via || null
           });
+          if (rejectOnHashMismatch) {
+            return false;
+          }
         }
         collection.set(record.id, {
           id: record.id,
@@ -16643,6 +16740,15 @@ var require_dignity_p2p = __commonJS({
         });
         return record;
       }
+      pruneAppliedOperations() {
+        while (this.appliedOperations.size > this.maxAppliedOperations) {
+          const oldestOpId = this.appliedOperations.keys().next().value;
+          if (!oldestOpId) {
+            break;
+          }
+          this.appliedOperations.delete(oldestOpId);
+        }
+      }
       applyOperation(operation) {
         if (!operation || !operation.opId || this.appliedOperations.has(operation.opId)) {
           return false;
@@ -16664,7 +16770,8 @@ var require_dignity_p2p = __commonJS({
             deletedAt: null,
             version: 1
           });
-          this.appliedOperations.add(operation.opId);
+          this.appliedOperations.set(operation.opId, this.now());
+          this.pruneAppliedOperations();
           this.emit("change", { kind: "create", collection: operation.collectionName, id: operation.id });
           return true;
         }
@@ -16708,7 +16815,8 @@ var require_dignity_p2p = __commonJS({
           }
           current.updatedAt = operation.timestamp;
           current.version += 1;
-          this.appliedOperations.add(operation.opId);
+          this.appliedOperations.set(operation.opId, this.now());
+          this.pruneAppliedOperations();
           this.emit("change", {
             kind: "transfer-ownership",
             collection: operation.collectionName,
@@ -16737,7 +16845,8 @@ var require_dignity_p2p = __commonJS({
           current.deletedAt = operation.timestamp;
           current.updatedAt = operation.timestamp;
           current.version += 1;
-          this.appliedOperations.add(operation.opId);
+          this.appliedOperations.set(operation.opId, this.now());
+          this.pruneAppliedOperations();
           this.emit("change", { kind: "delete", collection: operation.collectionName, id: operation.id });
           return true;
         }
@@ -16767,7 +16876,8 @@ var require_dignity_p2p = __commonJS({
           }
           current.updatedAt = operation.timestamp;
           current.version += 1;
-          this.appliedOperations.add(operation.opId);
+          this.appliedOperations.set(operation.opId, this.now());
+          this.pruneAppliedOperations();
           this.emit("change", { kind: "update", collection: operation.collectionName, id: operation.id });
           return true;
         }
@@ -24511,6 +24621,7 @@ var require_src = __commonJS({
       PEER_GROUP_SCOPE_PREFIX,
       DEFAULT_PEER_GROUP_OPTIONS,
       peerGroupScope,
+      parsePeerGroupScope,
       selectFanoutPeers
     } = require_peer_group();
     module.exports = {
@@ -24533,6 +24644,7 @@ var require_src = __commonJS({
       PEER_GROUP_SCOPE_PREFIX,
       DEFAULT_PEER_GROUP_OPTIONS,
       peerGroupScope,
+      parsePeerGroupScope,
       selectFanoutPeers
     };
   }
@@ -24631,8 +24743,18 @@ function parseRoute() {
     watchToken: params.watch || null,
     resumeToken: params.resume || null,
     checkpoint: params.checkpoint || null,
-    checkpointRef: params.checkpointRef || null
+    checkpointRef: params.checkpointRef || null,
+    seat: params.seat || null
   };
+}
+function bootstrapHostForRoute(route, game, localNodeId, { resumeSeat = null } = {}) {
+  if (route.role === "host" || route.role === "resume" && resumeSeat === "white") {
+    return null;
+  }
+  if (route.role === "resume" && resumeSeat === "black") {
+    return null;
+  }
+  return hostPeerFromRoute(route, game, localNodeId);
 }
 function buildLinks({ gameId, roomKey, hostPeer, joinToken, watchToken, resumeToken, resumeLink }) {
   const base = `${window.location.origin}${window.location.pathname}`;
@@ -24794,7 +24916,7 @@ function sessionResumeHash(session) {
     role,
     resume: session.resumeToken || ""
   });
-  if (session.hostPeer) {
+  if (session.hostPeer && session.role !== "resume") {
     params.set("host", session.hostPeer);
   }
   if (session.checkpointRef) {
@@ -28771,6 +28893,21 @@ function findPlayerKeyPairByPublicKey(publicKeyBundle) {
   }
   return deserializeKeyPair(store[entryKey]);
 }
+function resolveKeyPairForResume({ gameId, seat, checkpointPlayer }) {
+  if (checkpointPlayer?.publicKey) {
+    const byFingerprint = findPlayerKeyPairByPublicKey(checkpointPlayer.publicKey);
+    if (byFingerprint) {
+      return byFingerprint;
+    }
+  }
+  if (gameId && seat) {
+    const bySeat = loadPlayerKeyPair(gameId, seat);
+    if (bySeat) {
+      return bySeat;
+    }
+  }
+  return createFreshKeyPair();
+}
 function exportSeatKeyBackup(gameId, seat) {
   const record = loadStore()[`${gameId}:${seat}`];
   if (!record) {
@@ -28785,7 +28922,7 @@ var import_tweetnacl_util2 = __toESM(require_nacl_util());
 var CHECKPOINT_VERSION = 1;
 var CHECKPOINT_DB = "dignity-chess-checkpoints";
 var CHECKPOINT_STORE = "bundles";
-var MAX_INLINE_CHECKPOINT_CHARS = 1800;
+var MAX_INLINE_CHECKPOINT_CHARS = 8192;
 function stableStringify(value) {
   if (value === null || typeof value !== "object") {
     return JSON.stringify(value);
@@ -58205,7 +58342,7 @@ function ResumePanel({
       onClick: handlePropose
     },
     busy ? "Signing\u2026" : "Propose pause & co-sign checkpoint"
-  ) : null, phase === "proposed" ? /* @__PURE__ */ import_react6.default.createElement("p", { className: "notice" }, "Checkpoint sent to opponent. They must sign the same position to finalize the resume link.") : null, phase === "incoming" ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__actions" }, /* @__PURE__ */ import_react6.default.createElement("p", null, /* @__PURE__ */ import_react6.default.createElement("strong", null, pendingProposal.checkpoint?.proposer?.nickname || "Opponent"), " ", "signed move ", pendingProposal.checkpoint?.moveHistory?.length || 0, " and wants to pause here."), /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__buttons" }, /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", className: "primary", disabled: busy, onClick: handleAccept }, busy ? "Signing\u2026" : "Sign & finalize resume link"), /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", className: "ghost", disabled: busy, onClick: onDeclineProposal }, "Decline"))) : null, phase === "ready" && resumeLink ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__ready" }, /* @__PURE__ */ import_react6.default.createElement("label", null, "Dual-signed resume link"), /* @__PURE__ */ import_react6.default.createElement("input", { readOnly: true, value: resumeLink, onFocus: (event) => event.target.select() }), /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__buttons" }, /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", onClick: copyResumeLink }, copied ? "Copied" : "Copy resume link")), validation?.ok ? /* @__PURE__ */ import_react6.default.createElement("p", { className: "muted" }, "Both signatures verified. Game state travels in the link when short enough; otherwise this browser keeps a checkpoint ref in IndexedDB.") : /* @__PURE__ */ import_react6.default.createElement("p", { className: "error-inline" }, "Checkpoint validation failed: ", validation?.reason)) : null, seatBackup ? /* @__PURE__ */ import_react6.default.createElement("details", { className: "resume-panel__backup" }, /* @__PURE__ */ import_react6.default.createElement("summary", null, "Seat key backup (optional, same device or manual transfer)"), /* @__PURE__ */ import_react6.default.createElement("p", { className: "muted" }, "Resume links restore the board. Your signing keys stay on this device unless you copy this backup."), /* @__PURE__ */ import_react6.default.createElement("textarea", { readOnly: true, rows: 3, value: seatBackup, onFocus: (event) => event.target.select() })) : null);
+  ) : null, phase === "proposed" ? /* @__PURE__ */ import_react6.default.createElement("p", { className: "notice" }, "Checkpoint sent to opponent. They must sign the same position to finalize the resume link.") : null, phase === "incoming" ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__actions" }, /* @__PURE__ */ import_react6.default.createElement("p", null, /* @__PURE__ */ import_react6.default.createElement("strong", null, pendingProposal.checkpoint?.proposer?.nickname || "Opponent"), " ", "signed move ", pendingProposal.checkpoint?.moveHistory?.length || 0, " and wants to pause here."), /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__buttons" }, /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", className: "primary", disabled: busy, onClick: handleAccept }, busy ? "Signing\u2026" : "Sign & finalize resume link"), /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", className: "ghost", disabled: busy, onClick: onDeclineProposal }, "Decline"))) : null, phase === "ready" && resumeLink ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__ready" }, /* @__PURE__ */ import_react6.default.createElement("label", null, "Dual-signed resume link"), /* @__PURE__ */ import_react6.default.createElement("input", { readOnly: true, value: resumeLink, onFocus: (event) => event.target.select() }), /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__buttons" }, /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", onClick: copyResumeLink }, copied ? "Copied" : "Copy resume link")), validation?.ok ? /* @__PURE__ */ import_react6.default.createElement("p", { className: "muted" }, "Both signatures verified. The signed board state is embedded in the link when it fits in the URL; otherwise this browser keeps a local checkpoint ref (not shareable across devices).") : /* @__PURE__ */ import_react6.default.createElement("p", { className: "error-inline" }, "Checkpoint validation failed: ", validation?.reason)) : null, seatBackup ? /* @__PURE__ */ import_react6.default.createElement("details", { className: "resume-panel__backup" }, /* @__PURE__ */ import_react6.default.createElement("summary", null, "Seat key backup (optional, same device or manual transfer)"), /* @__PURE__ */ import_react6.default.createElement("p", { className: "muted" }, "Resume links restore the board. Your signing keys stay on this device unless you copy this backup."), /* @__PURE__ */ import_react6.default.createElement("textarea", { readOnly: true, rows: 3, value: seatBackup, onFocus: (event) => event.target.select() })) : null);
 }
 
 // docs/chess/src/components/GameView.jsx
@@ -58224,7 +58361,10 @@ function GameView({ route, nodeId, nickname, onBack }) {
   const scope = scopeForGame(route.gameId);
   const roomKey = route.roomKey;
   p2pLog("GameView mount", { role: route.role, nodeId, gameId: route.gameId, hostPeer: route.hostPeer });
-  const [routeCheckpoint, setRouteCheckpoint] = (0, import_react7.useState)(null);
+  const [routeCheckpoint, setRouteCheckpoint] = (0, import_react7.useState)(() => route.checkpoint ? deserializeCheckpoint(route.checkpoint) : null);
+  const [checkpointResolved, setCheckpointResolved] = (0, import_react7.useState)(
+    () => !route.checkpoint && !route.checkpointRef
+  );
   const [resumeSeat, setResumeSeat] = (0, import_react7.useState)(null);
   const [keyPair, setKeyPair] = (0, import_react7.useState)(() => {
     if (route.role === "host") {
@@ -58241,33 +58381,50 @@ function GameView({ route, nodeId, nickname, onBack }) {
   const restoredFromCheckpointRef = import_react7.default.useRef(false);
   (0, import_react7.useEffect)(() => {
     let cancelled = false;
-    resolveCheckpointFromRoute(route).then((checkpoint) => {
+    async function resolveCheckpoint() {
+      const checkpoint = route.checkpoint ? deserializeCheckpoint(route.checkpoint) : await resolveCheckpointFromRoute(route);
+      if (cancelled) {
+        return;
+      }
+      setRouteCheckpoint(checkpoint);
+      setCheckpointResolved(true);
+      if (route.role !== "resume" || !checkpoint) {
+        return;
+      }
+      const whiteKeys = findPlayerKeyPairByPublicKey(checkpoint.white?.publicKey);
+      const blackKeys = findPlayerKeyPairByPublicKey(checkpoint.black?.publicKey);
+      if (whiteKeys) {
+        setKeyPair(whiteKeys);
+        setResumeSeat("white");
+        return;
+      }
+      if (blackKeys) {
+        setKeyPair(blackKeys);
+        setResumeSeat("black");
+        return;
+      }
+      const hintedSeat = route.seat === "white" || route.seat === "black" ? route.seat : null;
+      if (hintedSeat) {
+        setKeyPair(resolveKeyPairForResume({
+          gameId: route.gameId,
+          seat: hintedSeat,
+          checkpointPlayer: checkpoint[hintedSeat]
+        }));
+        setResumeSeat(hintedSeat);
+        return;
+      }
+      setResumeSeat(null);
+    }
+    resolveCheckpoint().catch((resolveError) => {
       if (!cancelled) {
-        setRouteCheckpoint(checkpoint);
+        p2pError("checkpoint resolve failed", resolveError);
+        setCheckpointResolved(true);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [route.checkpoint, route.checkpointRef, route.gameId, route.roomKey]);
-  (0, import_react7.useEffect)(() => {
-    if (route.role !== "resume" || !routeCheckpoint) {
-      return;
-    }
-    const whiteKeys = findPlayerKeyPairByPublicKey(routeCheckpoint.white?.publicKey);
-    const blackKeys = findPlayerKeyPairByPublicKey(routeCheckpoint.black?.publicKey);
-    if (whiteKeys) {
-      setKeyPair(whiteKeys);
-      setResumeSeat("white");
-      return;
-    }
-    if (blackKeys) {
-      setKeyPair(blackKeys);
-      setResumeSeat("black");
-      return;
-    }
-    setResumeSeat(null);
-  }, [route.role, routeCheckpoint]);
+  }, [route.role, route.checkpoint, route.checkpointRef, route.gameId, route.roomKey, route.seat]);
   const dignityConfig = (0, import_react7.useMemo)(
     () => createDignityConfig({
       nodeId,
@@ -58316,7 +58473,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
       if (route.role !== "host" && route.role !== "resume" && !hostPeerFromRoute(route, game, node2.nodeId)) {
         return null;
       }
-      const bootstrapHost = hostPeerFromRoute(route, game, node2.nodeId);
+      const bootstrapHost = bootstrapHostForRoute(route, game, node2.nodeId, { resumeSeat });
       return {
         metadata: {
           nickname,
@@ -58472,13 +58629,19 @@ function GameView({ route, nodeId, nickname, onBack }) {
     return instance;
   }, [game?.data?.fen, game?.version, routeCheckpoint?.fen]);
   const myColor = (0, import_react7.useMemo)(() => {
+    if (resumeSeat === "white") {
+      return "w";
+    }
+    if (resumeSeat === "black") {
+      return "b";
+    }
     if (!node2 || !game) {
       return null;
     }
-    if (resumeSeat === "white" || game.data.whitePlayerId === node2.nodeId) {
+    if (game.data.whitePlayerId === node2.nodeId) {
       return "w";
     }
-    if (resumeSeat === "black" || game.data.blackPlayerId === node2.nodeId) {
+    if (game.data.blackPlayerId === node2.nodeId) {
       return "b";
     }
     if (routeCheckpoint && keyPair) {
@@ -58525,7 +58688,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
     }
     return null;
   }, [game, mySeat]);
-  const isSpectator = route.role === "watch" || route.role !== "host" && route.role !== "join" && !myColor;
+  const isSpectator = route.role === "watch" || (route.role === "resume" ? !resumeSeat : route.role !== "host" && route.role !== "join" && !myColor);
   const roleBadge = route.role === "join" ? myColor === "b" ? "Black" : "Joining\u2026" : route.role === "host" ? myColor === "w" ? "White" : "Host" : isSpectator ? "Spectator" : myColor === "w" ? "White" : myColor === "b" ? "Black" : route.role;
   const canMove = Boolean(
     myColor && game?.data?.status === "playing" && game.data.turn === myColor && !isSpectator
@@ -58772,7 +58935,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
       await node2.sendDirectMessage(remoteHostPeer, "resume-rejoin", {
         peerId: node2.nodeId,
         nickname,
-        publicKey: node2.getPublicKey(),
+        publicKey: keyPairToPublicBundle(keyPair),
         checkpointId: routeCheckpoint?.createdAt || null
       });
     }
@@ -59081,6 +59244,12 @@ function GameView({ route, nodeId, nickname, onBack }) {
   }, [canMove, selectedSquare, legalTargets, chess, myColor, applyMove]);
   if (!roomKey) {
     return /* @__PURE__ */ import_react7.default.createElement("p", { className: "error" }, "Missing room key in link.");
+  }
+  if (route.role === "resume" && (route.checkpoint || route.checkpointRef) && !checkpointResolved) {
+    return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Loading signed checkpoint\u2026"), /* @__PURE__ */ import_react7.default.createElement("p", { className: "muted" }, "Restoring game state from the resume link."));
+  }
+  if (route.role === "resume" && checkpointResolved && (route.checkpoint || route.checkpointRef) && !routeCheckpoint) {
+    return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Checkpoint not found"), /* @__PURE__ */ import_react7.default.createElement("p", null, "This resume link references checkpoint data that is not in this browser. Ask a player for a freshly copied dual-signed resume link (the full signed state should travel in the URL)."), /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
   }
   if (route.role === "join" && !remoteHostPeer) {
     return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Invalid opponent link"), /* @__PURE__ */ import_react7.default.createElement("p", null, "This join link is missing the host peer id. Ask the host to copy a fresh opponent link from the Share links panel (links generated after the host connects)."), /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", onClick: onBack }, "Back"));

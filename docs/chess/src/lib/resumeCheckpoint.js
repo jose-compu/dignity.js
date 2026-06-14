@@ -5,7 +5,8 @@ import { keyPairToPublicBundle } from './playerKeys.js';
 const CHECKPOINT_VERSION = 1;
 const CHECKPOINT_DB = 'dignity-chess-checkpoints';
 const CHECKPOINT_STORE = 'bundles';
-const MAX_INLINE_CHECKPOINT_CHARS = 1800;
+/** Typical dual-signed checkpoints are ~2k chars encoded; keep state in the URL for shareable resume links. */
+const MAX_INLINE_CHECKPOINT_CHARS = 8192;
 
 function stableStringify(value) {
   if (value === null || typeof value !== 'object') {

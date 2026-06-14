@@ -7,7 +7,7 @@ import {
   useDiscovery,
 } from '../../../../src/react/index.js';
 import { createDignityConfig, attachPersistence } from '../lib/dignitySetup.js';
-import { buildLinks, randomToken, scopeForGame, withHostPeerInHash, connectToRoomPeer, hostPeerFromRoute } from '../lib/links.js';
+import { buildLinks, randomToken, scopeForGame, withHostPeerInHash, connectToRoomPeer, hostPeerFromRoute, bootstrapHostForRoute } from '../lib/links.js';
 import { joinSpectatorFeed, leaveSpectatorFeed, publishSpectatorSnapshot } from '../lib/spectatorFeed.js';
 import {
   attachNodeDebugListeners,
@@ -24,11 +24,13 @@ import {
   findPlayerKeyPairByPublicKey,
   keyPairToPublicBundle,
   loadPlayerKeyPair,
-  savePlayerKeyRecord
+  savePlayerKeyRecord,
+  resolveKeyPairForResume
 } from '../lib/playerKeys.js';
 import {
   buildResumeLink,
   checkpointSeatForPublicKey,
+  deserializeCheckpoint,
   gamePatchFromCheckpoint,
   isCheckpointFullySigned,
   resolveCheckpointFromRoute,
@@ -75,7 +77,12 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
 
   p2pLog('GameView mount', { role: route.role, nodeId, gameId: route.gameId, hostPeer: route.hostPeer });
 
-  const [routeCheckpoint, setRouteCheckpoint] = useState(null);
+  const [routeCheckpoint, setRouteCheckpoint] = useState(() => (
+    route.checkpoint ? deserializeCheckpoint(route.checkpoint) : null
+  ));
+  const [checkpointResolved, setCheckpointResolved] = useState(
+    () => !route.checkpoint && !route.checkpointRef
+  );
   const [resumeSeat, setResumeSeat] = useState(null);
   const [keyPair, setKeyPair] = useState(() => {
     if (route.role === 'host') {
@@ -93,38 +100,63 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
 
   useEffect(() => {
     let cancelled = false;
-    resolveCheckpointFromRoute(route).then((checkpoint) => {
+
+    async function resolveCheckpoint() {
+      const checkpoint = route.checkpoint
+        ? deserializeCheckpoint(route.checkpoint)
+        : await resolveCheckpointFromRoute(route);
+
+      if (cancelled) {
+        return;
+      }
+
+      setRouteCheckpoint(checkpoint);
+      setCheckpointResolved(true);
+
+      if (route.role !== 'resume' || !checkpoint) {
+        return;
+      }
+
+      const whiteKeys = findPlayerKeyPairByPublicKey(checkpoint.white?.publicKey);
+      const blackKeys = findPlayerKeyPairByPublicKey(checkpoint.black?.publicKey);
+
+      if (whiteKeys) {
+        setKeyPair(whiteKeys);
+        setResumeSeat('white');
+        return;
+      }
+
+      if (blackKeys) {
+        setKeyPair(blackKeys);
+        setResumeSeat('black');
+        return;
+      }
+
+      const hintedSeat = route.seat === 'white' || route.seat === 'black' ? route.seat : null;
+      if (hintedSeat) {
+        setKeyPair(resolveKeyPairForResume({
+          gameId: route.gameId,
+          seat: hintedSeat,
+          checkpointPlayer: checkpoint[hintedSeat]
+        }));
+        setResumeSeat(hintedSeat);
+        return;
+      }
+
+      setResumeSeat(null);
+    }
+
+    resolveCheckpoint().catch((resolveError) => {
       if (!cancelled) {
-        setRouteCheckpoint(checkpoint);
+        p2pError('checkpoint resolve failed', resolveError);
+        setCheckpointResolved(true);
       }
     });
+
     return () => {
       cancelled = true;
     };
-  }, [route.checkpoint, route.checkpointRef, route.gameId, route.roomKey]);
-
-  useEffect(() => {
-    if (route.role !== 'resume' || !routeCheckpoint) {
-      return;
-    }
-
-    const whiteKeys = findPlayerKeyPairByPublicKey(routeCheckpoint.white?.publicKey);
-    const blackKeys = findPlayerKeyPairByPublicKey(routeCheckpoint.black?.publicKey);
-
-    if (whiteKeys) {
-      setKeyPair(whiteKeys);
-      setResumeSeat('white');
-      return;
-    }
-
-    if (blackKeys) {
-      setKeyPair(blackKeys);
-      setResumeSeat('black');
-      return;
-    }
-
-    setResumeSeat(null);
-  }, [route.role, routeCheckpoint]);
+  }, [route.role, route.checkpoint, route.checkpointRef, route.gameId, route.roomKey, route.seat]);
 
   const dignityConfig = useMemo(
     () => createDignityConfig({
@@ -182,7 +214,7 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
         return null;
       }
 
-      const bootstrapHost = hostPeerFromRoute(route, game, node.nodeId);
+      const bootstrapHost = bootstrapHostForRoute(route, game, node.nodeId, { resumeSeat });
 
       return {
         metadata: {
@@ -368,13 +400,19 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
   }, [game?.data?.fen, game?.version, routeCheckpoint?.fen]);
 
   const myColor = useMemo(() => {
+    if (resumeSeat === 'white') {
+      return 'w';
+    }
+    if (resumeSeat === 'black') {
+      return 'b';
+    }
     if (!node || !game) {
       return null;
     }
-    if (resumeSeat === 'white' || game.data.whitePlayerId === node.nodeId) {
+    if (game.data.whitePlayerId === node.nodeId) {
       return 'w';
     }
-    if (resumeSeat === 'black' || game.data.blackPlayerId === node.nodeId) {
+    if (game.data.blackPlayerId === node.nodeId) {
       return 'b';
     }
     if (routeCheckpoint && keyPair) {
@@ -424,7 +462,8 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
     return null;
   }, [game, mySeat]);
 
-  const isSpectator = route.role === 'watch' || (route.role !== 'host' && route.role !== 'join' && !myColor);
+  const isSpectator = route.role === 'watch'
+    || (route.role === 'resume' ? !resumeSeat : route.role !== 'host' && route.role !== 'join' && !myColor);
   const roleBadge = route.role === 'join'
     ? (myColor === 'b' ? 'Black' : 'Joining…')
     : route.role === 'host'
@@ -732,7 +771,7 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
       await node.sendDirectMessage(remoteHostPeer, 'resume-rejoin', {
         peerId: node.nodeId,
         nickname,
-        publicKey: node.getPublicKey(),
+        publicKey: keyPairToPublicBundle(keyPair),
         checkpointId: routeCheckpoint?.createdAt || null
       });
     }
@@ -1094,6 +1133,28 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
 
   if (!roomKey) {
     return <p className="error">Missing room key in link.</p>;
+  }
+
+  if (route.role === 'resume' && (route.checkpoint || route.checkpointRef) && !checkpointResolved) {
+    return (
+      <section className="panel">
+        <h2>Loading signed checkpoint…</h2>
+        <p className="muted">Restoring game state from the resume link.</p>
+      </section>
+    );
+  }
+
+  if (route.role === 'resume' && checkpointResolved && (route.checkpoint || route.checkpointRef) && !routeCheckpoint) {
+    return (
+      <section className="panel error-panel">
+        <h2>Checkpoint not found</h2>
+        <p>
+          This resume link references checkpoint data that is not in this browser. Ask a player for a
+          freshly copied dual-signed resume link (the full signed state should travel in the URL).
+        </p>
+        <button type="button" onClick={onBack}>Back</button>
+      </section>
+    );
   }
 
   if (route.role === 'join' && !remoteHostPeer) {
