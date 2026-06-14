@@ -57971,7 +57971,7 @@ function Board3D({
     scene.background = new Color(1182986);
     scene.fog = new Fog(1182986, 14, 28);
     const camera = new PerspectiveCamera(42, mount.clientWidth / mount.clientHeight, 0.1, 100);
-    camera.position.set(orientation === "w" ? 0 : 0, 8.5, orientation === "w" ? 8.5 : -8.5);
+    camera.position.set(0, 8.5, orientation === "w" ? -8.5 : 8.5);
     const renderer = new WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(mount.clientWidth, mount.clientHeight);

@@ -236,7 +236,8 @@ export default function Board3D({
     scene.fog = new THREE.Fog(0x120d0a, 14, 28);
 
     const camera = new THREE.PerspectiveCamera(42, mount.clientWidth / mount.clientHeight, 0.1, 100);
-    camera.position.set(orientation === 'w' ? 0 : 0, 8.5, orientation === 'w' ? 8.5 : -8.5);
+    // Sit behind the active player's back rank: white at -z, black at +z in board space.
+    camera.position.set(0, 8.5, orientation === 'w' ? -8.5 : 8.5);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
