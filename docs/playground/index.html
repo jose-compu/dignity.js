@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Live dignity.js playground — edit code and run in-memory P2P demos in the browser." />
+    <title>Live playground · dignity.js</title>
+    <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="../favicon.ico" sizes="32x32" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+    <link rel="stylesheet" href="../assets/playground.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="site-header__brand" href="../index.html#overview">
+        <img src="../assets/dignity-logo.svg" alt="" width="344" height="80" />
+        <span class="site-header__version">playground</span>
+      </a>
+      <div class="site-header__links">
+        <a href="../index.html">Docs</a>
+        <a href="../index.html#tutorial">Tutorial</a>
+        <a href="../chess/index.html">3D Chess</a>
+        <a href="https://github.com/jose-compu/dignity.js" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </div>
+    </header>
+
+    <div class="playground-page">
+      <div class="playground-intro">
+        <h1>Live playground</h1>
+        <p>
+          Pick a feature, edit the code on the left, and run it in your browser.
+          Demos use the bundled <code>dignity.esm.js</code> with an in-memory mesh
+          (<code>InMemoryNetworkHub</code>) — no server or PeerJS required.
+        </p>
+      </div>
+
+      <div class="playground-controls">
+        <label for="feature-select">
+          Feature
+          <select id="feature-select" aria-describedby="feature-desc"></select>
+        </label>
+        <p id="feature-desc" class="playground-controls__hint"></p>
+      </div>
+
+      <div class="playground-split">
+        <section class="playground-pane" aria-label="Code editor">
+          <div class="playground-pane__head">
+            <span>Code</span>
+            <div class="playground-pane__actions">
+              <button type="button" class="playground-btn" id="reset-btn">Reset example</button>
+              <button type="button" class="playground-btn playground-btn--primary" id="run-btn">Run ▶</button>
+            </div>
+          </div>
+          <textarea id="code-editor" spellcheck="false" aria-label="Editable JavaScript"></textarea>
+        </section>
+
+        <section class="playground-pane" aria-label="Output">
+          <div class="playground-pane__head">
+            <span>Output</span>
+            <div class="playground-pane__actions">
+              <span class="playground-toolbar__status" id="run-status"></span>
+              <button type="button" class="playground-btn" id="clear-btn">Clear</button>
+            </div>
+          </div>
+          <div id="output" role="log" aria-live="polite"></div>
+        </section>
+      </div>
+    </div>
+
+    <script type="module" src="../assets/playground.js"></script>
+  </body>
+</html>

@@ -84,10 +84,12 @@ async function main() {
   const port = await resolvePort(host);
   const docsUrl = `http://${host}:${port}/`;
   const chessUrl = `http://${host}:${port}/chess/`;
+  const playgroundUrl = `http://${host}:${port}/playground/`;
 
   console.log('\nServing dignity.js docs locally');
-  console.log(`  Docs:  ${docsUrl}`);
-  console.log(`  Chess: ${chessUrl}`);
+  console.log(`  Docs:        ${docsUrl}`);
+  console.log(`  Playground:  ${playgroundUrl}`);
+  console.log(`  Chess:       ${chessUrl}`);
   console.log('\nPress Ctrl+C to stop.\n');
 
   const httpServerBin = path.join(

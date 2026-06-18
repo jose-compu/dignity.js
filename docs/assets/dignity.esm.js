@@ -2444,6 +2444,497 @@ var require_vdf = __commonJS({
   }
 });
 
+// src/security/derive-key-pair.js
+var require_derive_key_pair = __commonJS({
+  "src/security/derive-key-pair.js"(exports, module) {
+    var nacl = require_nacl_fast();
+    var naclUtil = require_nacl_util();
+    var { deriveBroadcastKey, DEFAULT_SECURITY_OPTIONS } = require_message_security_service();
+    var SIGNING_INFO = "dignity-signing-v1";
+    var ENCRYPTION_INFO = "dignity-encryption-v1";
+    var COLD_RECOVERY_INFO = "dignity-cold-recovery-v1";
+    function utf8ToBytes(value) {
+      return naclUtil.decodeUTF8(value);
+    }
+    function concatBytes(...parts) {
+      const total = parts.reduce((sum, part) => sum + part.length, 0);
+      const result = new Uint8Array(total);
+      let offset = 0;
+      for (const part of parts) {
+        result.set(part, offset);
+        offset += part.length;
+      }
+      return result;
+    }
+    function buildColdRecoverySalt(username, pepper = "") {
+      if (!username || typeof username !== "string") {
+        throw new Error("deriveColdRecoverySigningKey requires username");
+      }
+      const segments = ["dignity-cold-recovery-v1"];
+      if (pepper) {
+        segments.push(pepper);
+      }
+      segments.push(username, COLD_RECOVERY_INFO);
+      return utf8ToBytes(segments.join("\0"));
+    }
+    async function deriveColdRecoverySigningKey({
+      username,
+      coldPassword,
+      pepper = "",
+      kdfIterations
+    } = {}) {
+      if (!coldPassword || typeof coldPassword !== "string") {
+        throw new Error("deriveColdRecoverySigningKey requires coldPassword");
+      }
+      const salt = buildColdRecoverySalt(username, pepper);
+      const iterations = typeof kdfIterations === "number" ? kdfIterations : DEFAULT_SECURITY_OPTIONS.kdfIterations;
+      const seed = await deriveBroadcastKey(coldPassword, salt, iterations);
+      const signing = nacl.sign.keyPair.fromSeed(seed);
+      return {
+        signing,
+        recoveryPublicKey: naclUtil.encodeBase64(signing.publicKey)
+      };
+    }
+    function buildIdentitySalt(username, info, pepper = "", generation = 1) {
+      if (!username || typeof username !== "string") {
+        throw new Error("deriveKeyPairFromCredentials requires username");
+      }
+      if (!info || typeof info !== "string") {
+        throw new Error("deriveKeyPairFromCredentials requires info label");
+      }
+      const normalizedGeneration = Number(generation);
+      if (!Number.isInteger(normalizedGeneration) || normalizedGeneration < 1) {
+        throw new Error("deriveKeyPairFromCredentials requires generation >= 1");
+      }
+      const segments = ["dignity-identity-v1"];
+      if (pepper) {
+        segments.push(pepper);
+      }
+      segments.push(username, `gen:${normalizedGeneration}`, info);
+      return utf8ToBytes(segments.join("\0"));
+    }
+    async function deriveIdentitySeed({ password, username, info, pepper, generation, kdfIterations }) {
+      if (!password || typeof password !== "string") {
+        throw new Error("deriveKeyPairFromCredentials requires password");
+      }
+      const salt = buildIdentitySalt(username, info, pepper, generation);
+      const iterations = typeof kdfIterations === "number" ? kdfIterations : DEFAULT_SECURITY_OPTIONS.kdfIterations;
+      return deriveBroadcastKey(password, salt, iterations);
+    }
+    async function deriveKeyPairFromCredentials({
+      username,
+      password,
+      pepper = "",
+      generation = 1,
+      kdfIterations
+    } = {}) {
+      const signingSeed = await deriveIdentitySeed({
+        password,
+        username,
+        info: SIGNING_INFO,
+        pepper,
+        generation,
+        kdfIterations
+      });
+      const encryptionSecret = await deriveIdentitySeed({
+        password,
+        username,
+        info: ENCRYPTION_INFO,
+        pepper,
+        generation,
+        kdfIterations
+      });
+      return {
+        signing: nacl.sign.keyPair.fromSeed(signingSeed),
+        encryption: nacl.box.keyPair.fromSecretKey(encryptionSecret),
+        generation
+      };
+    }
+    function keyPairToPublicBundle(keyPair) {
+      return {
+        signingPublicKey: naclUtil.encodeBase64(keyPair.signing.publicKey),
+        encryptionPublicKey: naclUtil.encodeBase64(keyPair.encryption.publicKey)
+      };
+    }
+    module.exports = {
+      deriveKeyPairFromCredentials,
+      deriveColdRecoverySigningKey,
+      keyPairToPublicBundle,
+      buildIdentitySalt,
+      buildColdRecoverySalt,
+      SIGNING_INFO,
+      ENCRYPTION_INFO,
+      COLD_RECOVERY_INFO,
+      concatBytes
+    };
+  }
+});
+
+// src/security/identity-rotation.js
+var require_identity_rotation = __commonJS({
+  "src/security/identity-rotation.js"(exports, module) {
+    var nacl = require_nacl_fast();
+    var naclUtil = require_nacl_util();
+    var { stableStringify } = require_message_security_service();
+    var {
+      deriveKeyPairFromCredentials,
+      deriveColdRecoverySigningKey,
+      keyPairToPublicBundle
+    } = require_derive_key_pair();
+    var ROTATION_TYPES = /* @__PURE__ */ new Set(["compromise-recovery", "password-change"]);
+    function utf8ToBytes(value) {
+      return naclUtil.decodeUTF8(value);
+    }
+    function normalizePublicKeyBundle(publicKey) {
+      if (!publicKey || !publicKey.signingPublicKey || !publicKey.encryptionPublicKey) {
+        throw new Error("Public key bundle requires signingPublicKey and encryptionPublicKey");
+      }
+      return {
+        signingPublicKey: publicKey.signingPublicKey,
+        encryptionPublicKey: publicKey.encryptionPublicKey
+      };
+    }
+    function buildIdentityRotationPayload({
+      username,
+      fromGeneration,
+      toGeneration,
+      previousPublicKey,
+      nextPublicKey,
+      rotationKind,
+      reason,
+      timestamp
+    }) {
+      if (!username) {
+        throw new Error("Identity rotation requires username");
+      }
+      if (!ROTATION_TYPES.has(rotationKind)) {
+        throw new Error(`Identity rotation kind must be one of: ${[...ROTATION_TYPES].join(", ")}`);
+      }
+      if (toGeneration !== fromGeneration + 1) {
+        throw new Error("Identity rotation must advance generation by exactly 1");
+      }
+      return {
+        version: 1,
+        type: "identity:rotate",
+        username,
+        fromGeneration,
+        toGeneration,
+        previousPublicKey: normalizePublicKeyBundle(previousPublicKey),
+        nextPublicKey: normalizePublicKeyBundle(nextPublicKey),
+        rotationKind,
+        reason: reason || "",
+        timestamp: typeof timestamp === "number" ? timestamp : Date.now()
+      };
+    }
+    function signIdentityRotationPayload(payload, signingSecretKey) {
+      const message = utf8ToBytes(stableStringify(payload));
+      const signature = nacl.sign.detached(message, signingSecretKey);
+      return naclUtil.encodeBase64(signature);
+    }
+    function verifyDetachedSignature(payload, signatureBase64, signingPublicKeyBase64) {
+      const message = utf8ToBytes(stableStringify(payload));
+      const signatureBytes = naclUtil.decodeBase64(signatureBase64);
+      const signingPublicKey = naclUtil.decodeBase64(signingPublicKeyBase64);
+      return nacl.sign.detached.verify(message, signatureBytes, signingPublicKey);
+    }
+    function createIdentityRotation({
+      username,
+      fromGeneration,
+      toGeneration,
+      previousPublicKey,
+      nextKeyPair,
+      rotationKind,
+      reason,
+      timestamp,
+      coldRecoverySigningSecretKey
+    }) {
+      if (!nextKeyPair || !nextKeyPair.signing || !nextKeyPair.signing.secretKey) {
+        throw new Error("Identity rotation requires nextKeyPair with signing secret");
+      }
+      const payload = buildIdentityRotationPayload({
+        username,
+        fromGeneration,
+        toGeneration,
+        previousPublicKey,
+        nextPublicKey: keyPairToPublicBundle(nextKeyPair),
+        rotationKind,
+        reason,
+        timestamp
+      });
+      const rotation = {
+        ...payload,
+        signature: signIdentityRotationPayload(payload, nextKeyPair.signing.secretKey)
+      };
+      if (coldRecoverySigningSecretKey) {
+        rotation.recoverySignature = signIdentityRotationPayload(
+          payload,
+          coldRecoverySigningSecretKey
+        );
+      }
+      return rotation;
+    }
+    function buildColdRecoveryEnrollmentPayload({ username, recoveryPublicKey, timestamp }) {
+      if (!username) {
+        throw new Error("Cold recovery enrollment requires username");
+      }
+      if (!recoveryPublicKey) {
+        throw new Error("Cold recovery enrollment requires recoveryPublicKey");
+      }
+      return {
+        version: 1,
+        type: "identity:cold-enroll",
+        username,
+        recoveryPublicKey,
+        timestamp: typeof timestamp === "number" ? timestamp : Date.now()
+      };
+    }
+    function createColdRecoveryEnrollment({
+      username,
+      coldRecoverySigningSecretKey,
+      recoveryPublicKey,
+      timestamp
+    }) {
+      if (!coldRecoverySigningSecretKey) {
+        throw new Error("Cold recovery enrollment requires cold recovery signing secret");
+      }
+      if (!recoveryPublicKey) {
+        throw new Error("Cold recovery enrollment requires recoveryPublicKey");
+      }
+      const payload = buildColdRecoveryEnrollmentPayload({
+        username,
+        recoveryPublicKey,
+        timestamp
+      });
+      return {
+        ...payload,
+        signature: signIdentityRotationPayload(payload, coldRecoverySigningSecretKey)
+      };
+    }
+    function verifyColdRecoveryEnrollment(enrollment) {
+      if (!enrollment || enrollment.type !== "identity:cold-enroll" || enrollment.version !== 1) {
+        return { ok: false, error: "invalid-enrollment-shape" };
+      }
+      if (!enrollment.signature || !enrollment.recoveryPublicKey) {
+        return { ok: false, error: "missing-enrollment-fields" };
+      }
+      const { signature, ...payload } = enrollment;
+      const verified = verifyDetachedSignature(payload, signature, enrollment.recoveryPublicKey);
+      if (!verified) {
+        return { ok: false, error: "invalid-enrollment-signature" };
+      }
+      return { ok: true, enrollment };
+    }
+    function verifyIdentityRotation(rotation, options = {}) {
+      if (!rotation || rotation.type !== "identity:rotate" || rotation.version !== 1) {
+        return { ok: false, error: "invalid-rotation-shape" };
+      }
+      if (!rotation.signature || !rotation.nextPublicKey || !rotation.previousPublicKey) {
+        return { ok: false, error: "missing-rotation-fields" };
+      }
+      if (rotation.toGeneration !== rotation.fromGeneration + 1) {
+        return { ok: false, error: "invalid-generation-step" };
+      }
+      if (!ROTATION_TYPES.has(rotation.rotationKind)) {
+        return { ok: false, error: "invalid-rotation-kind" };
+      }
+      const { signature, recoverySignature, ...payload } = rotation;
+      const verified = verifyDetachedSignature(payload, signature, rotation.nextPublicKey.signingPublicKey);
+      if (!verified) {
+        return { ok: false, error: "invalid-signature" };
+      }
+      const requiredRecoveryPublicKey = options.requiredRecoveryPublicKey || null;
+      if (requiredRecoveryPublicKey) {
+        if (!recoverySignature) {
+          return { ok: false, error: "missing-recovery-signature" };
+        }
+        const recoveryVerified = verifyDetachedSignature(
+          payload,
+          recoverySignature,
+          requiredRecoveryPublicKey
+        );
+        if (!recoveryVerified) {
+          return { ok: false, error: "invalid-recovery-signature" };
+        }
+      }
+      if (rotation.previousPublicKey.signingPublicKey === rotation.nextPublicKey.signingPublicKey) {
+        return { ok: false, error: "unchanged-signing-key" };
+      }
+      return { ok: true, rotation };
+    }
+    async function resolveColdRecoverySigningSecretKey({
+      username,
+      coldPassword,
+      pepper,
+      kdfIterations
+    }) {
+      if (!coldPassword) {
+        return null;
+      }
+      const coldRecovery = await deriveColdRecoverySigningKey({
+        username,
+        coldPassword,
+        pepper,
+        kdfIterations
+      });
+      return coldRecovery.signing.secretKey;
+    }
+    async function revokeAndRotateIdentity({
+      username,
+      password,
+      coldPassword,
+      currentGeneration = 1,
+      reason = "compromise-recovery",
+      pepper = "",
+      kdfIterations,
+      timestamp
+    } = {}) {
+      const currentKeyPair = await deriveKeyPairFromCredentials({
+        username,
+        password,
+        generation: currentGeneration,
+        pepper,
+        kdfIterations
+      });
+      const nextGeneration = currentGeneration + 1;
+      const nextKeyPair = await deriveKeyPairFromCredentials({
+        username,
+        password,
+        generation: nextGeneration,
+        pepper,
+        kdfIterations
+      });
+      const coldRecoverySigningSecretKey = await resolveColdRecoverySigningSecretKey({
+        username,
+        coldPassword,
+        pepper,
+        kdfIterations
+      });
+      const rotation = createIdentityRotation({
+        username,
+        fromGeneration: currentGeneration,
+        toGeneration: nextGeneration,
+        previousPublicKey: keyPairToPublicBundle(currentKeyPair),
+        nextKeyPair,
+        rotationKind: "compromise-recovery",
+        reason,
+        timestamp,
+        coldRecoverySigningSecretKey
+      });
+      return {
+        rotation,
+        currentKeyPair,
+        nextKeyPair,
+        nextGeneration,
+        coldRecoveryUsed: Boolean(coldRecoverySigningSecretKey)
+      };
+    }
+    async function rotateIdentityPassword({
+      username,
+      currentPassword,
+      newPassword,
+      coldPassword,
+      currentGeneration = 1,
+      reason = "password-change",
+      pepper = "",
+      kdfIterations,
+      timestamp
+    } = {}) {
+      const currentKeyPair = await deriveKeyPairFromCredentials({
+        username,
+        password: currentPassword,
+        generation: currentGeneration,
+        pepper,
+        kdfIterations
+      });
+      const nextGeneration = currentGeneration + 1;
+      const nextKeyPair = await deriveKeyPairFromCredentials({
+        username,
+        password: newPassword,
+        generation: nextGeneration,
+        pepper,
+        kdfIterations
+      });
+      const coldRecoverySigningSecretKey = await resolveColdRecoverySigningSecretKey({
+        username,
+        coldPassword,
+        pepper,
+        kdfIterations
+      });
+      const rotation = createIdentityRotation({
+        username,
+        fromGeneration: currentGeneration,
+        toGeneration: nextGeneration,
+        previousPublicKey: keyPairToPublicBundle(currentKeyPair),
+        nextKeyPair,
+        rotationKind: "password-change",
+        reason,
+        timestamp,
+        coldRecoverySigningSecretKey
+      });
+      return {
+        rotation,
+        currentKeyPair,
+        nextKeyPair,
+        nextGeneration,
+        coldRecoveryUsed: Boolean(coldRecoverySigningSecretKey)
+      };
+    }
+    async function enrollColdRecoveryPassword({
+      username,
+      coldPassword,
+      pepper = "",
+      kdfIterations,
+      timestamp
+    } = {}) {
+      const coldRecovery = await deriveColdRecoverySigningKey({
+        username,
+        coldPassword,
+        pepper,
+        kdfIterations
+      });
+      const enrollment = createColdRecoveryEnrollment({
+        username,
+        coldRecoverySigningSecretKey: coldRecovery.signing.secretKey,
+        recoveryPublicKey: coldRecovery.recoveryPublicKey,
+        timestamp
+      });
+      return {
+        enrollment,
+        recoveryPublicKey: coldRecovery.recoveryPublicKey,
+        coldRecovery
+      };
+    }
+    function shouldApplyIdentityRotation(currentState, rotation, options = {}) {
+      const requiredRecoveryPublicKey = options.enrolledRecoveryPublicKey || currentState && currentState.recoveryPublicKey || null;
+      const verified = verifyIdentityRotation(rotation, { requiredRecoveryPublicKey });
+      if (!verified.ok) {
+        return { apply: false, reason: verified.error };
+      }
+      if (currentState && rotation.toGeneration <= currentState.generation) {
+        return { apply: false, reason: "stale-generation" };
+      }
+      if (currentState && currentState.publicKey && currentState.publicKey.signingPublicKey !== rotation.previousPublicKey.signingPublicKey) {
+        return { apply: false, reason: "previous-key-mismatch" };
+      }
+      return { apply: true, rotation: verified.rotation };
+    }
+    module.exports = {
+      createIdentityRotation,
+      createColdRecoveryEnrollment,
+      verifyIdentityRotation,
+      verifyColdRecoveryEnrollment,
+      revokeAndRotateIdentity,
+      rotateIdentityPassword,
+      enrollColdRecoveryPassword,
+      shouldApplyIdentityRotation,
+      keyPairToPublicBundle,
+      buildIdentityRotationPayload,
+      buildColdRecoveryEnrollmentPayload,
+      signIdentityRotationPayload
+    };
+  }
+});
+
 // src/security/message-security-service.js
 var require_message_security_service = __commonJS({
   "src/security/message-security-service.js"(exports, module) {
@@ -2552,16 +3043,85 @@ var require_message_security_service = __commonJS({
           encryptionPublicKey: naclUtil.encodeBase64(this.encryptionPublicKey)
         };
         this.peerPublicKeys = /* @__PURE__ */ new Map();
+        this.peerIdentityGenerations = /* @__PURE__ */ new Map();
+        this.peerRecoveryPublicKeys = /* @__PURE__ */ new Map();
         for (const [peerId, peerKey] of Object.entries(this.options.trustedPeerKeys || {})) {
           this.peerPublicKeys.set(peerId, normalizePeerPublicKey(peerKey));
+          this.peerIdentityGenerations.set(peerId, 1);
         }
         this.calibratedPowSteps = this.options.powSteps;
       }
       getPublicKey() {
         return { ...this.publicKeyBundle };
       }
-      registerPeerPublicKey(peerId, publicKey) {
-        this.peerPublicKeys.set(peerId, normalizePeerPublicKey(publicKey));
+      registerPeerPublicKey(peerId, publicKey, options = {}) {
+        const normalized = normalizePeerPublicKey(publicKey);
+        const generation = typeof options.generation === "number" ? options.generation : 1;
+        const currentGeneration = this.peerIdentityGenerations.get(peerId) || 0;
+        if (generation < currentGeneration && options.allowDowngrade !== true) {
+          throw new Error(`Refusing older identity generation for peer ${peerId}`);
+        }
+        this.peerPublicKeys.set(peerId, normalized);
+        this.peerIdentityGenerations.set(peerId, Math.max(currentGeneration, generation));
+      }
+      getPeerIdentityGeneration(peerId) {
+        return this.peerIdentityGenerations.get(peerId) || 0;
+      }
+      getPeerIdentityState(peerId) {
+        const publicKey = this.peerPublicKeys.get(peerId);
+        const recoveryPublicKey = this.peerRecoveryPublicKeys.get(peerId) || null;
+        if (!publicKey && !recoveryPublicKey) {
+          return null;
+        }
+        return {
+          publicKey: publicKey ? { ...publicKey } : null,
+          generation: this.getPeerIdentityGeneration(peerId),
+          recoveryPublicKey
+        };
+      }
+      registerPeerRecoveryPublicKey(peerId, recoveryPublicKey) {
+        if (!peerId || !recoveryPublicKey) {
+          throw new Error("registerPeerRecoveryPublicKey requires peerId and recoveryPublicKey");
+        }
+        this.peerRecoveryPublicKeys.set(peerId, recoveryPublicKey);
+      }
+      getPeerRecoveryPublicKey(peerId) {
+        return this.peerRecoveryPublicKeys.get(peerId) || null;
+      }
+      applyColdRecoveryEnrollment(peerId, enrollment) {
+        const { verifyColdRecoveryEnrollment } = require_identity_rotation();
+        const verified = verifyColdRecoveryEnrollment(enrollment);
+        if (!verified.ok) {
+          const error = new Error(`Invalid cold recovery enrollment: ${verified.error}`);
+          error.code = "INVALID_COLD_RECOVERY_ENROLLMENT";
+          throw error;
+        }
+        this.registerPeerRecoveryPublicKey(peerId, enrollment.recoveryPublicKey);
+        return { applied: true, recoveryPublicKey: enrollment.recoveryPublicKey };
+      }
+      applyIdentityRotation(peerId, rotation) {
+        const { shouldApplyIdentityRotation } = require_identity_rotation();
+        const currentState = this.getPeerIdentityState(peerId);
+        const decision = shouldApplyIdentityRotation(currentState, rotation, {
+          enrolledRecoveryPublicKey: this.getPeerRecoveryPublicKey(peerId)
+        });
+        if (!decision.apply) {
+          if (decision.reason && decision.reason !== "stale-generation" && decision.reason !== "previous-key-mismatch") {
+            const error = new Error(`Invalid identity rotation: ${decision.reason}`);
+            error.code = "INVALID_IDENTITY_ROTATION";
+            throw error;
+          }
+          return { applied: false, reason: decision.reason };
+        }
+        this.registerPeerPublicKey(peerId, rotation.nextPublicKey, {
+          generation: rotation.toGeneration
+        });
+        return {
+          applied: true,
+          fromGeneration: rotation.fromGeneration,
+          toGeneration: rotation.toGeneration,
+          rotationKind: rotation.rotationKind
+        };
       }
       resolvePeerPublicKey(peerId, fallbackPublicKey) {
         const trusted = this.peerPublicKeys.get(peerId);
@@ -2953,6 +3513,12 @@ var require_dignity_p2p = __commonJS({
       DEFAULT_APP_PASSWORD
     } = require_message_security_service();
     var {
+      revokeAndRotateIdentity,
+      rotateIdentityPassword,
+      enrollColdRecoveryPassword
+    } = require_identity_rotation();
+    var { deriveKeyPairFromCredentials } = require_derive_key_pair();
+    var {
       DEFAULT_PEER_GROUP_OPTIONS,
       peerGroupScope,
       selectFanoutPeers
@@ -3309,8 +3875,138 @@ var require_dignity_p2p = __commonJS({
           connectToPeers: this.resolveReplicationPeers(collectionName, id, options, { fromRecord: existing })
         });
       }
-      registerPeerPublicKey(peerId, publicKey) {
-        this.securityService.registerPeerPublicKey(peerId, publicKey);
+      registerPeerPublicKey(peerId, publicKey, options = {}) {
+        this.securityService.registerPeerPublicKey(peerId, publicKey, options);
+      }
+      getPeerIdentityGeneration(peerId) {
+        return this.securityService.getPeerIdentityGeneration(peerId);
+      }
+      getPeerIdentityState(peerId) {
+        return this.securityService.getPeerIdentityState(peerId);
+      }
+      applyPeerIdentityRotation(peerId, rotation) {
+        const result = this.securityService.applyIdentityRotation(peerId, rotation);
+        if (result.applied) {
+          this.emit("identityrotated", {
+            peerId,
+            username: rotation.username,
+            fromGeneration: result.fromGeneration,
+            toGeneration: result.toGeneration,
+            rotationKind: result.rotationKind
+          });
+        }
+        return result;
+      }
+      async broadcastIdentityRotation(rotation, options = {}) {
+        return this.broadcastMessage("identity:rotate", rotation, options);
+      }
+      async broadcastColdRecoveryEnrollment(enrollment, options = {}) {
+        return this.broadcastMessage("identity:cold-enroll", enrollment, options);
+      }
+      applyPeerColdRecoveryEnrollment(peerId, enrollment) {
+        const result = this.securityService.applyColdRecoveryEnrollment(peerId, enrollment);
+        if (result.applied) {
+          this.emit("coldrecoveryenrolled", {
+            peerId,
+            username: enrollment.username,
+            recoveryPublicKey: enrollment.recoveryPublicKey
+          });
+        }
+        return result;
+      }
+      async enrollAndBroadcastColdRecovery({
+        username,
+        coldPassword,
+        pepper = "",
+        kdfIterations,
+        broadcastOptions = {}
+      } = {}) {
+        const result = await enrollColdRecoveryPassword({
+          username,
+          coldPassword,
+          pepper,
+          kdfIterations
+        });
+        await this.broadcastColdRecoveryEnrollment(result.enrollment, broadcastOptions);
+        return result;
+      }
+      async revokeAndRotateDerivedIdentity({
+        username,
+        password,
+        coldPassword,
+        currentGeneration = 1,
+        reason = "compromise-recovery",
+        pepper = "",
+        kdfIterations,
+        broadcast = false,
+        broadcastOptions = {}
+      } = {}) {
+        const result = await revokeAndRotateIdentity({
+          username,
+          password,
+          coldPassword,
+          currentGeneration,
+          reason,
+          pepper,
+          kdfIterations
+        });
+        if (broadcast) {
+          await this.broadcastIdentityRotation(result.rotation, broadcastOptions);
+        }
+        return result;
+      }
+      async rotateDerivedIdentityPassword({
+        username,
+        currentPassword,
+        newPassword,
+        coldPassword,
+        currentGeneration = 1,
+        reason = "password-change",
+        pepper = "",
+        kdfIterations,
+        broadcast = false,
+        broadcastOptions = {}
+      } = {}) {
+        const result = await rotateIdentityPassword({
+          username,
+          currentPassword,
+          newPassword,
+          coldPassword,
+          currentGeneration,
+          reason,
+          pepper,
+          kdfIterations
+        });
+        if (broadcast) {
+          await this.broadcastIdentityRotation(result.rotation, broadcastOptions);
+        }
+        return result;
+      }
+      async adoptDerivedIdentityKeyPair(keyPair, { generation = 1 } = {}) {
+        if (!keyPair || !keyPair.signing || !keyPair.encryption) {
+          throw new Error("adoptDerivedIdentityKeyPair requires a derived keyPair");
+        }
+        this.securityService.signingSecretKey = keyPair.signing.secretKey;
+        this.securityService.signingPublicKey = keyPair.signing.publicKey;
+        this.securityService.encryptionSecretKey = keyPair.encryption.secretKey;
+        this.securityService.encryptionPublicKey = keyPair.encryption.publicKey;
+        this.securityService.publicKeyBundle = {
+          signingPublicKey: naclUtil.encodeBase64(keyPair.signing.publicKey),
+          encryptionPublicKey: naclUtil.encodeBase64(keyPair.encryption.publicKey)
+        };
+        this.securityService.options.keyPair = keyPair;
+        this.securityService.options.identityGeneration = generation;
+      }
+      async deriveAndAdoptIdentity({ username, password, generation = 1, pepper = "", kdfIterations } = {}) {
+        const keyPair = await deriveKeyPairFromCredentials({
+          username,
+          password,
+          generation,
+          pepper,
+          kdfIterations
+        });
+        await this.adoptDerivedIdentityKeyPair(keyPair, { generation });
+        return keyPair;
       }
       trustPeerPublicKey(peerId, publicKey) {
         if (!peerId || !publicKey) {
@@ -3854,6 +4550,35 @@ var require_dignity_p2p = __commonJS({
           return;
         }
         if (!decrypted || decrypted.ignored) {
+          return;
+        }
+        if (decrypted.messageType === "identity:rotate") {
+          const peerId = decrypted.senderId || decrypted.payload?.username;
+          if (peerId && decrypted.payload) {
+            const result = this.applyPeerIdentityRotation(peerId, decrypted.payload);
+            if (!result.applied) {
+              this.emit("warning", {
+                type: "identity-rotation-ignored",
+                peerId,
+                reason: result.reason
+              });
+            }
+          }
+          return;
+        }
+        if (decrypted.messageType === "identity:cold-enroll") {
+          const peerId = decrypted.senderId || decrypted.payload?.username;
+          if (peerId && decrypted.payload) {
+            try {
+              this.applyPeerColdRecoveryEnrollment(peerId, decrypted.payload);
+            } catch (error) {
+              this.emit("warning", {
+                type: "cold-recovery-enrollment-rejected",
+                peerId,
+                error
+              });
+            }
+          }
           return;
         }
         if (message && message.senderId && message.senderPublicKey) {
@@ -11717,84 +12442,6 @@ var require_indexeddb_persistence = __commonJS({
   }
 });
 
-// src/security/derive-key-pair.js
-var require_derive_key_pair = __commonJS({
-  "src/security/derive-key-pair.js"(exports, module) {
-    var nacl = require_nacl_fast();
-    var naclUtil = require_nacl_util();
-    var { deriveBroadcastKey, DEFAULT_SECURITY_OPTIONS } = require_message_security_service();
-    var SIGNING_INFO = "dignity-signing-v1";
-    var ENCRYPTION_INFO = "dignity-encryption-v1";
-    function utf8ToBytes(value) {
-      return naclUtil.decodeUTF8(value);
-    }
-    function concatBytes(...parts) {
-      const total = parts.reduce((sum, part) => sum + part.length, 0);
-      const result = new Uint8Array(total);
-      let offset = 0;
-      for (const part of parts) {
-        result.set(part, offset);
-        offset += part.length;
-      }
-      return result;
-    }
-    function buildIdentitySalt(username, info, pepper = "") {
-      if (!username || typeof username !== "string") {
-        throw new Error("deriveKeyPairFromCredentials requires username");
-      }
-      if (!info || typeof info !== "string") {
-        throw new Error("deriveKeyPairFromCredentials requires info label");
-      }
-      const segments = ["dignity-identity-v1"];
-      if (pepper) {
-        segments.push(pepper);
-      }
-      segments.push(username, info);
-      return utf8ToBytes(segments.join("\0"));
-    }
-    async function deriveIdentitySeed({ password, username, info, pepper, kdfIterations }) {
-      if (!password || typeof password !== "string") {
-        throw new Error("deriveKeyPairFromCredentials requires password");
-      }
-      const salt = buildIdentitySalt(username, info, pepper);
-      const iterations = typeof kdfIterations === "number" ? kdfIterations : DEFAULT_SECURITY_OPTIONS.kdfIterations;
-      return deriveBroadcastKey(password, salt, iterations);
-    }
-    async function deriveKeyPairFromCredentials({
-      username,
-      password,
-      pepper = "",
-      kdfIterations
-    } = {}) {
-      const signingSeed = await deriveIdentitySeed({
-        password,
-        username,
-        info: SIGNING_INFO,
-        pepper,
-        kdfIterations
-      });
-      const encryptionSecret = await deriveIdentitySeed({
-        password,
-        username,
-        info: ENCRYPTION_INFO,
-        pepper,
-        kdfIterations
-      });
-      return {
-        signing: nacl.sign.keyPair.fromSeed(signingSeed),
-        encryption: nacl.box.keyPair.fromSecretKey(encryptionSecret)
-      };
-    }
-    module.exports = {
-      deriveKeyPairFromCredentials,
-      buildIdentitySalt,
-      SIGNING_INFO,
-      ENCRYPTION_INFO,
-      concatBytes
-    };
-  }
-});
-
 // src/index.js
 var require_index = __commonJS({
   "src/index.js"(exports, module) {
@@ -11823,7 +12470,16 @@ var require_index = __commonJS({
       DEFAULT_SECURITY_OPTIONS,
       DEFAULT_APP_PASSWORD
     } = require_message_security_service();
-    var { deriveKeyPairFromCredentials } = require_derive_key_pair();
+    var { deriveKeyPairFromCredentials, keyPairToPublicBundle, deriveColdRecoverySigningKey } = require_derive_key_pair();
+    var {
+      createIdentityRotation,
+      verifyIdentityRotation,
+      revokeAndRotateIdentity,
+      rotateIdentityPassword,
+      enrollColdRecoveryPassword,
+      verifyColdRecoveryEnrollment,
+      shouldApplyIdentityRotation
+    } = require_identity_rotation();
     var parsePeerJsServerUrl = require_parse_peerjs_url();
     var {
       PEER_GROUP_SCOPE_PREFIX,
@@ -11851,6 +12507,15 @@ var require_index = __commonJS({
       DEFAULT_SECURITY_OPTIONS,
       DEFAULT_APP_PASSWORD,
       deriveKeyPairFromCredentials,
+      deriveColdRecoverySigningKey,
+      keyPairToPublicBundle,
+      createIdentityRotation,
+      verifyIdentityRotation,
+      revokeAndRotateIdentity,
+      rotateIdentityPassword,
+      enrollColdRecoveryPassword,
+      verifyColdRecoveryEnrollment,
+      shouldApplyIdentityRotation,
       parsePeerJsServerUrl,
       PEER_GROUP_SCOPE_PREFIX,
       DEFAULT_PEER_GROUP_OPTIONS,

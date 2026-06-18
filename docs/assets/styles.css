@@ -89,6 +89,22 @@ pre code.hljs {
   padding: 16px 18px;
 }
 
+.playground-cta {
+  display: inline-block;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  text-decoration: none;
+}
+
+.playground-cta:hover {
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+}
+
 /* Header */
 .site-header {
   position: sticky;

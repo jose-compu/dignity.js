@@ -21,6 +21,7 @@
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
         <a href="https://github.com/jose-compu/dignity.js" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="./playground/index.html">Playground</a>
         <a href="./chess/index.html">3D Chess</a>
         <a href="./openapi-like.json">API JSON</a>
       </div>
@@ -36,6 +37,7 @@
             <a href="#installation">Installation</a>
             <a href="#tutorial">Tutorial</a>
             <a href="#quick-start">Quick start</a>
+            <a href="./playground/index.html">Live playground</a>
             <a href="#browser">Browser usage</a>
           </nav>
         </div>
@@ -292,6 +294,17 @@ await bob.stop();</code></pre>
               <strong>In-memory adapter</strong>
               <code>InMemoryNetworkAdapter</code> is for tests and local demos. Production browser apps use <code>createPeerJSNetworkAdapter</code> (see the <a href="./chess/index.html">3D Chess demo</a>).
             </div>
+          </section>
+
+          <section id="playground" class="section">
+            <h2>Live playground</h2>
+            <p>
+              Try dignity.js features in the browser: pick a scenario, edit the code on the left,
+              and see output on the right. Uses the bundled ESM build with an in-memory mesh — no install required.
+            </p>
+            <p>
+              <a class="playground-cta" href="./playground/index.html">Open live playground →</a>
+            </p>
           </section>
 
           <section id="browser" class="section">
@@ -931,6 +944,11 @@ const pool = createDefaultSignalingPool({
                     <td><code>examples/decentralized-chess-lite.js</code></td>
                     <td>Replicated move history with compact board model</td>
                     <td><code>npm run example:chess</code></td>
+                  </tr>
+                  <tr>
+                    <td><a href="./playground/index.html"><code>docs/playground/</code></a></td>
+                    <td>Live browser playground — editable in-memory demos per feature</td>
+                    <td><code>npm run docs:serve</code></td>
                   </tr>
                   <tr>
                     <td><a href="./chess/index.html"><code>docs/chess/</code></a></td>
