@@ -45,7 +45,15 @@ function updateHighlight() {
 
   const source = els.editor.value;
   els.highlightCode.textContent = source.endsWith('\n') ? source : `${source}\n`;
-  hljs.highlightElement(els.highlightCode);
+
+  if (typeof hljs.highlight === 'function') {
+    const { value } = hljs.highlight(source, { language: 'javascript' });
+    els.highlightCode.innerHTML = value;
+    els.highlightCode.classList.add('hljs', 'language-javascript');
+  } else {
+    hljs.highlightElement(els.highlightCode);
+  }
+
   syncEditorScroll();
 }
 

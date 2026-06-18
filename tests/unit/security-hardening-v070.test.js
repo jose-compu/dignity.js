@@ -5,7 +5,7 @@ const {
 } = require('../../src');
 const { fastTestSecurity, fastWaitFor } = require('../helpers/fast-security');
 
-describe('security hardening v0.7.0', () => {
+describe('security hardening v0.7.1', () => {
   let hub;
   const security = fastTestSecurity({ appPassword: 'hardening-v070' });
 
