@@ -6,12 +6,16 @@ const els = {
   featureSelect: document.getElementById('feature-select'),
   featureDesc: document.getElementById('feature-desc'),
   editor: document.getElementById('code-editor'),
+  highlightCode: document.getElementById('code-highlight'),
+  highlightPre: document.querySelector('.playground-editor-highlight'),
   runBtn: document.getElementById('run-btn'),
   resetBtn: document.getElementById('reset-btn'),
   clearBtn: document.getElementById('clear-btn'),
   output: document.getElementById('output'),
   status: document.getElementById('run-status')
 };
+
+let highlightTimer = null;
 
 let activeCleanup = null;
 let running = false;
@@ -26,10 +30,40 @@ function populateFeatureSelect() {
   ).join('');
 }
 
+function syncEditorScroll() {
+  if (!els.highlightPre) {
+    return;
+  }
+  els.highlightPre.scrollTop = els.editor.scrollTop;
+  els.highlightPre.scrollLeft = els.editor.scrollLeft;
+}
+
+function updateHighlight() {
+  if (!els.highlightCode || typeof hljs === 'undefined') {
+    return;
+  }
+
+  const source = els.editor.value;
+  els.highlightCode.textContent = source.endsWith('\n') ? source : `${source}\n`;
+  hljs.highlightElement(els.highlightCode);
+  syncEditorScroll();
+}
+
+function scheduleHighlight() {
+  if (highlightTimer) {
+    cancelAnimationFrame(highlightTimer);
+  }
+  highlightTimer = requestAnimationFrame(() => {
+    highlightTimer = null;
+    updateHighlight();
+  });
+}
+
 function loadDemo(demo, { pushHash = true } = {}) {
   els.featureSelect.value = demo.id;
   els.featureDesc.textContent = demo.description;
   els.editor.value = demo.code;
+  scheduleHighlight();
   if (pushHash) {
     history.replaceState(null, '', `#${demo.id}`);
   }
@@ -151,7 +185,10 @@ async function runCode() {
   }
 }
 
-function initEditorTabs() {
+function initEditor() {
+  els.editor.addEventListener('input', scheduleHighlight);
+  els.editor.addEventListener('scroll', syncEditorScroll);
+
   els.editor.addEventListener('keydown', (event) => {
     if (event.key !== 'Tab') {
       return;
@@ -161,6 +198,7 @@ function initEditorTabs() {
     const next = `${value.slice(0, selectionStart)}  ${value.slice(selectionEnd)}`;
     els.editor.value = next;
     els.editor.selectionStart = els.editor.selectionEnd = selectionStart + 2;
+    scheduleHighlight();
   });
 }
 
@@ -172,7 +210,8 @@ function initFromHash() {
 
 populateFeatureSelect();
 initFromHash();
-initEditorTabs();
+initEditor();
+updateHighlight();
 
 els.featureSelect.addEventListener('change', () => {
   loadDemo(getDemoById(els.featureSelect.value));

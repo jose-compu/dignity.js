@@ -8,6 +8,8 @@
     <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="../favicon.ico" sizes="32x32" />
     <link rel="stylesheet" href="../assets/styles.css" />
+    <link rel="stylesheet" href="../assets/highlight/github.min.css" media="(prefers-color-scheme: light)" />
+    <link rel="stylesheet" href="../assets/highlight/github-dark.min.css" media="(prefers-color-scheme: dark)" />
     <link rel="stylesheet" href="../assets/playground.css" />
   </head>
   <body>
@@ -51,7 +53,10 @@
               <button type="button" class="playground-btn playground-btn--primary" id="run-btn">Run ▶</button>
             </div>
           </div>
-          <textarea id="code-editor" spellcheck="false" aria-label="Editable JavaScript"></textarea>
+          <div class="playground-editor-wrap">
+            <pre class="playground-editor-highlight" aria-hidden="true"><code id="code-highlight" class="language-javascript"></code></pre>
+            <textarea id="code-editor" spellcheck="false" aria-label="Editable JavaScript"></textarea>
+          </div>
         </section>
 
         <section class="playground-pane" aria-label="Output">
@@ -67,6 +72,7 @@
       </div>
     </div>
 
+    <script src="../assets/highlight/highlight.min.js"></script>
     <script type="module" src="../assets/playground.js"></script>
   </body>
 </html>
