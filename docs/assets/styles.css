@@ -14,7 +14,7 @@
   --green: #1a7f37;
   --green-bg: #dafbe1;
   --sidebar-width: 280px;
-  --header-height: 56px;
+  --header-height: 64px;
   --content-max: 920px;
   --radius: 8px;
   --shadow: 0 1px 3px rgba(27, 31, 36, 0.08);
@@ -135,7 +135,7 @@ pre code.hljs {
 }
 
 .site-header__brand img {
-  height: 40px;
+  height: 54px;
   width: auto;
 }
 
