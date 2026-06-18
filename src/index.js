@@ -28,8 +28,20 @@ const VDF = require('./security/vdf');
 const SlothPermutation = require('./security/sloth-vdf');
 const {
   MessageSecurityService,
-  DEFAULT_SECURITY_OPTIONS
+  DEFAULT_SECURITY_OPTIONS,
+  DEFAULT_APP_PASSWORD
 } = require('./security/message-security-service');
+const { deriveKeyPairFromCredentials, keyPairToPublicBundle, deriveColdRecoverySigningKey } = require('./security/derive-key-pair');
+const {
+  createIdentityRotation,
+  verifyIdentityRotation,
+  revokeAndRotateIdentity,
+  rotateIdentityPassword,
+  enrollColdRecoveryPassword,
+  verifyColdRecoveryEnrollment,
+  shouldApplyIdentityRotation
+} = require('./security/identity-rotation');
+const parsePeerJsServerUrl = require('./signaling/parse-peerjs-url');
 const {
   PEER_GROUP_SCOPE_PREFIX,
   DEFAULT_PEER_GROUP_OPTIONS,
@@ -55,6 +67,18 @@ module.exports = {
   SlothPermutation,
   MessageSecurityService,
   DEFAULT_SECURITY_OPTIONS,
+  DEFAULT_APP_PASSWORD,
+  deriveKeyPairFromCredentials,
+  deriveColdRecoverySigningKey,
+  keyPairToPublicBundle,
+  createIdentityRotation,
+  verifyIdentityRotation,
+  revokeAndRotateIdentity,
+  rotateIdentityPassword,
+  enrollColdRecoveryPassword,
+  verifyColdRecoveryEnrollment,
+  shouldApplyIdentityRotation,
+  parsePeerJsServerUrl,
   PEER_GROUP_SCOPE_PREFIX,
   DEFAULT_PEER_GROUP_OPTIONS,
   peerGroupScope,

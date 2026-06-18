@@ -166,6 +166,100 @@ bob.registerPeerPublicKey('alice', alice.getPublicKey());
 await alice.sendDirectMessage('bob', 'dm', { text: 'private payload' });
 ```
 
+## Credential-Derived Identity Keys
+
+Regenerate the same signing and encryption keys from a public username plus private password (instead of persisting random keys in `localStorage`):
+
+```js
+const { deriveKeyPairFromCredentials, DignityP2P } = require('dignity.js');
+
+const keyPair = await deriveKeyPairFromCredentials({
+  username: 'alice',
+  password: 'user-chosen-secret'
+});
+
+const alice = new DignityP2P({
+  nodeId: 'alice',
+  networkAdapter,
+  security: {
+    appPassword: 'shared-out-of-band-password',
+    keyPair
+  }
+});
+```
+
+`appPassword` is for broadcast encryption and is separate from the identity password. Password strength affects offline brute-force resistance; compromising the identity password exposes signing keys retroactively.
+
+### Compromise recovery (key #2, #3, …)
+
+Bump `generation` after suspected private-key exposure. The rotation is signed with the **next** generation key (proves password knowledge); a stolen gen-1 private key alone cannot authorize gen-2.
+
+```js
+const { revokeAndRotateIdentity } = require('dignity.js');
+
+// User suspects session on a public PC — rotate gen 1 → gen 2
+const { rotation, nextKeyPair, nextGeneration } = await revokeAndRotateIdentity({
+  username: 'alice',
+  password: 'user-chosen-secret',
+  currentGeneration: 1,
+  reason: 'left browser open on public PC'
+});
+
+await node.adoptDerivedIdentityKeyPair(nextKeyPair, { generation: nextGeneration });
+await node.broadcastIdentityRotation(rotation, { broadcastScope: 'identity:alice' });
+```
+
+Peers verify the signed `identity:rotate` message and upgrade trusted public keys; older generations are rejected.
+
+### Password change
+
+```js
+const { rotateIdentityPassword } = require('dignity.js');
+
+const { rotation, nextKeyPair, nextGeneration } = await rotateIdentityPassword({
+  username: 'alice',
+  currentPassword: 'old-secret',
+  newPassword: 'new-secret',
+  currentGeneration: 2
+});
+
+await node.adoptDerivedIdentityKeyPair(nextKeyPair, { generation: nextGeneration });
+await node.broadcastIdentityRotation(rotation);
+```
+
+The succession is signed with keys derived from the **new** password. Attackers who only know the old password cannot forge the rotation.
+
+### Cold recovery password (anti-lockout)
+
+Store a **secondary cold password** offline (password manager, paper, bank vault). After enrollment, every identity rotation requires a **co-signature** from this cold key. An attacker who steals only the **primary** password cannot rotate your identity and lock you out.
+
+```js
+const { enrollColdRecoveryPassword } = require('dignity.js');
+
+// One-time setup — broadcast so peers require cold co-sign on future rotations
+const { enrollment } = await enrollColdRecoveryPassword({
+  username: 'alice',
+  coldPassword: 'separate-vault-secret-never-on-public-pc'
+});
+await node.broadcastColdRecoveryEnrollment(enrollment);
+
+// Later: compromise recovery needs BOTH passwords
+const { rotation, nextKeyPair, nextGeneration } = await revokeAndRotateIdentity({
+  username: 'alice',
+  password: 'primary-secret',
+  coldPassword: 'separate-vault-secret-never-on-public-pc',
+  currentGeneration: 1
+});
+```
+
+| Secret | Use daily? | Can rotate identity alone? |
+|--------|------------|----------------------------|
+| Primary password | Yes | No (after cold enroll) |
+| Cold password | No — vault only | Required co-sign for rotation |
+| Stolen gen-N private key | — | No |
+
+Cold password is **stable** across primary password changes and generation bumps (separate KDF domain). If both primary and cold are compromised, rotate both.
+
 ## Optimistic Concurrency
 
 Updates carry a monotonic `version`. Remote peers reject stale operations when `baseVersion` does not match.
@@ -198,7 +292,7 @@ Hash details:
 - The algorithm is `sha512`, matching `tweetnacl.hash` in both browser and Node builds.
 - The digest covers only `record.data`, not `id`, `ownerId`, timestamps, collaborators, or version.
 - Data is canonicalized with `stableStringify`, so object key order does not affect the hash.
-- Snapshot restore recomputes the digest locally and emits a `warning` with type `content-hash-mismatch` if a remote advertised hash does not match the received `data`.
+- Snapshot restore recomputes the digest locally; direct mesh and PeerGroup gossip snapshots are rejected on hash mismatch (warning `content-hash-mismatch`).
 - Deleted tombstones returned by `list(collection, { includeDeleted: true })` intentionally omit `hash`.
 
 ## IndexedDB Persistence
@@ -335,6 +429,8 @@ The joiner applies the snapshot via `restoreRecord`, then subsequent move update
 | --- | --- | --- |
 | `npm test` | Run the full Jest suite with coverage. | Standard local validation before opening a PR or publishing. |
 | `npm run test:unit` | Run the unit-test subset only. | Useful for faster local iteration. |
+| `npm run test:stress-peer-group` | Run the in-memory PeerGroup scale test. | Opt-in; set `RUN_STRESS_TESTS=1` (100 subscribers). |
+| `npm run stress:peer-group` | CLI stress harness with JSON metrics. | Example: `node scripts/stress-peer-group.js --subscribers 1000 --json`. |
 | `npm run test:cloudflare-live` | Run the live Cloudflare signaling integration test. | Opt-in; set `RUN_CLOUDFLARE_LIVE_TESTS=1`. |
 | `npm run test:pow-calibrate` | Run the Sloth VDF timing calibration test without coverage. | Opt-in; set `RUN_POW_CALIBRATE=1`. |
 | `npm run build` | Build the published package bundles into `dist/`. | Run after changing library source files. |

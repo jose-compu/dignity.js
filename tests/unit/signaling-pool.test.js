@@ -34,6 +34,17 @@ describe('SignalingPool', () => {
     expect(connected.id).toBe('secondary');
   });
 
+  test('prefers lower priority number when multiple providers connect', async () => {
+    const highPriority = createProvider({ id: 'high', priority: 0 });
+    const lowPriority = createProvider({ id: 'low', priority: 5 });
+
+    const pool = new SignalingPool([lowPriority, highPriority]);
+    const connected = await pool.connect();
+
+    expect(connected.id).toBe('high');
+    expect(pool.activeProvider.id).toBe('high');
+  });
+
   test('fails over when active provider send fails', async () => {
     const unstable = createProvider({ id: 'unstable', priority: 0, failSend: true });
     const backup = createProvider({ id: 'backup', priority: 1 });

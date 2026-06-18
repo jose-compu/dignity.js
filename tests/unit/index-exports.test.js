@@ -7,6 +7,9 @@ describe('public API exports', () => {
     expect(api.WebSocketSignalingProvider).toBeDefined();
     expect(api.PeerJSSignalingProvider).toBeDefined();
     expect(api.MessageSecurityService).toBeDefined();
+    expect(api.deriveKeyPairFromCredentials).toBeDefined();
+    expect(api.parsePeerJsServerUrl).toBeDefined();
+    expect(api.DEFAULT_APP_PASSWORD).toBeDefined();
     expect(api.VDF).toBeDefined();
     expect(api.SlothPermutation).toBeDefined();
     expect(api.IndexedDBPersistence).toBeDefined();
