@@ -144,8 +144,10 @@ const bob = new DignityP2P({ nodeId: 'bob', networkAdapter: new InMemoryNetworkA
 helpers.track(alice, bob);
 
 let received = null;
-bob.on('directmessage', (event) => {
-  received = event.payload;
+bob.on('message', (event) => {
+  if (event.senderId === 'alice' && event.type === 'chat') {
+    received = event.payload;
+  }
 });
 
 await alice.start();
@@ -321,11 +323,13 @@ const rotationResult = await revokeAndRotateIdentity({
 await alice.start();
 await bob.start();
 
+await alice.adoptDerivedIdentityKeyPair(gen1, { generation: 1 });
 bob.registerPeerPublicKey('alice', keyPairToPublicBundle(gen1), { generation: 1 });
 log('bob gen before:', bob.getPeerIdentityGeneration('alice'));
 
-await alice.adoptDerivedIdentityKeyPair(rotationResult.nextKeyPair, { generation: 2 });
+// Broadcast while alice still signs with gen-1 keys; then adopt gen-2 locally.
 await alice.broadcastIdentityRotation(rotationResult.rotation, { broadcastScope: 'identity:alice' });
+await alice.adoptDerivedIdentityKeyPair(rotationResult.nextKeyPair, { generation: 2 });
 await helpers.sleep(50);
 
 log('bob gen after:', bob.getPeerIdentityGeneration('alice'));
