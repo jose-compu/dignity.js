@@ -1,7 +1,17 @@
 const nacl = require('tweetnacl');
 const naclUtil = require('tweetnacl-util');
 const EventEmitter = require('../utils/event-emitter');
-const { MessageSecurityService, stableStringify } = require('../security/message-security-service');
+const {
+  MessageSecurityService,
+  stableStringify,
+  DEFAULT_APP_PASSWORD
+} = require('../security/message-security-service');
+const {
+  revokeAndRotateIdentity,
+  rotateIdentityPassword,
+  enrollColdRecoveryPassword
+} = require('../security/identity-rotation');
+const { deriveKeyPairFromCredentials } = require('../security/derive-key-pair');
 const {
   DEFAULT_PEER_GROUP_OPTIONS,
   peerGroupScope,
@@ -91,6 +101,13 @@ class DignityP2P extends EventEmitter {
     this.gossipIdTtlMs = security && typeof security.gossipIdTtlMs === 'number'
       ? security.gossipIdTtlMs
       : 5 * 60 * 1000;
+    this.maxSeenGossipIds = security && typeof security.maxSeenGossipIds === 'number'
+      ? security.maxSeenGossipIds
+      : 100000;
+    this.gossipPublishMinIntervalMs = security && typeof security.gossipPublishMinIntervalMs === 'number'
+      ? security.gossipPublishMinIntervalMs
+      : 0;
+    this.lastGossipPublishAt = new Map(); // groupId -> timestamp
     this.maxAppliedOperations = security && typeof security.maxAppliedOperations === 'number'
       ? security.maxAppliedOperations
       : 50000;
@@ -103,6 +120,14 @@ class DignityP2P extends EventEmitter {
   async start() {
     this.networkAdapter.onMessage(this.boundMessageHandler);
     await this.networkAdapter.start(this.nodeId);
+
+    const appPassword = this.securityService.options.appPassword;
+    if (!appPassword || appPassword === DEFAULT_APP_PASSWORD) {
+      this.emit('warning', {
+        type: 'default-app-password',
+        message: 'Using the default appPassword is insecure; set a strong shared secret in production.'
+      });
+    }
   }
 
   async stop() {
@@ -461,8 +486,154 @@ class DignityP2P extends EventEmitter {
     });
   }
 
-  registerPeerPublicKey(peerId, publicKey) {
-    this.securityService.registerPeerPublicKey(peerId, publicKey);
+  registerPeerPublicKey(peerId, publicKey, options = {}) {
+    this.securityService.registerPeerPublicKey(peerId, publicKey, options);
+  }
+
+  getPeerIdentityGeneration(peerId) {
+    return this.securityService.getPeerIdentityGeneration(peerId);
+  }
+
+  getPeerIdentityState(peerId) {
+    return this.securityService.getPeerIdentityState(peerId);
+  }
+
+  applyPeerIdentityRotation(peerId, rotation) {
+    const result = this.securityService.applyIdentityRotation(peerId, rotation);
+    if (result.applied) {
+      this.emit('identityrotated', {
+        peerId,
+        username: rotation.username,
+        fromGeneration: result.fromGeneration,
+        toGeneration: result.toGeneration,
+        rotationKind: result.rotationKind
+      });
+    }
+    return result;
+  }
+
+  async broadcastIdentityRotation(rotation, options = {}) {
+    return this.broadcastMessage('identity:rotate', rotation, options);
+  }
+
+  async broadcastColdRecoveryEnrollment(enrollment, options = {}) {
+    return this.broadcastMessage('identity:cold-enroll', enrollment, options);
+  }
+
+  applyPeerColdRecoveryEnrollment(peerId, enrollment) {
+    const result = this.securityService.applyColdRecoveryEnrollment(peerId, enrollment);
+    if (result.applied) {
+      this.emit('coldrecoveryenrolled', {
+        peerId,
+        username: enrollment.username,
+        recoveryPublicKey: enrollment.recoveryPublicKey
+      });
+    }
+    return result;
+  }
+
+  async enrollAndBroadcastColdRecovery({
+    username,
+    coldPassword,
+    pepper = '',
+    kdfIterations,
+    broadcastOptions = {}
+  } = {}) {
+    const result = await enrollColdRecoveryPassword({
+      username,
+      coldPassword,
+      pepper,
+      kdfIterations
+    });
+    await this.broadcastColdRecoveryEnrollment(result.enrollment, broadcastOptions);
+    return result;
+  }
+
+  async revokeAndRotateDerivedIdentity({
+    username,
+    password,
+    coldPassword,
+    currentGeneration = 1,
+    reason = 'compromise-recovery',
+    pepper = '',
+    kdfIterations,
+    broadcast = false,
+    broadcastOptions = {}
+  } = {}) {
+    const result = await revokeAndRotateIdentity({
+      username,
+      password,
+      coldPassword,
+      currentGeneration,
+      reason,
+      pepper,
+      kdfIterations
+    });
+
+    if (broadcast) {
+      await this.broadcastIdentityRotation(result.rotation, broadcastOptions);
+    }
+
+    return result;
+  }
+
+  async rotateDerivedIdentityPassword({
+    username,
+    currentPassword,
+    newPassword,
+    coldPassword,
+    currentGeneration = 1,
+    reason = 'password-change',
+    pepper = '',
+    kdfIterations,
+    broadcast = false,
+    broadcastOptions = {}
+  } = {}) {
+    const result = await rotateIdentityPassword({
+      username,
+      currentPassword,
+      newPassword,
+      coldPassword,
+      currentGeneration,
+      reason,
+      pepper,
+      kdfIterations
+    });
+
+    if (broadcast) {
+      await this.broadcastIdentityRotation(result.rotation, broadcastOptions);
+    }
+
+    return result;
+  }
+
+  async adoptDerivedIdentityKeyPair(keyPair, { generation = 1 } = {}) {
+    if (!keyPair || !keyPair.signing || !keyPair.encryption) {
+      throw new Error('adoptDerivedIdentityKeyPair requires a derived keyPair');
+    }
+
+    this.securityService.signingSecretKey = keyPair.signing.secretKey;
+    this.securityService.signingPublicKey = keyPair.signing.publicKey;
+    this.securityService.encryptionSecretKey = keyPair.encryption.secretKey;
+    this.securityService.encryptionPublicKey = keyPair.encryption.publicKey;
+    this.securityService.publicKeyBundle = {
+      signingPublicKey: naclUtil.encodeBase64(keyPair.signing.publicKey),
+      encryptionPublicKey: naclUtil.encodeBase64(keyPair.encryption.publicKey)
+    };
+    this.securityService.options.keyPair = keyPair;
+    this.securityService.options.identityGeneration = generation;
+  }
+
+  async deriveAndAdoptIdentity({ username, password, generation = 1, pepper = '', kdfIterations } = {}) {
+    const keyPair = await deriveKeyPairFromCredentials({
+      username,
+      password,
+      generation,
+      pepper,
+      kdfIterations
+    });
+    await this.adoptDerivedIdentityKeyPair(keyPair, { generation });
+    return keyPair;
   }
 
   trustPeerPublicKey(peerId, publicKey) {
@@ -624,6 +795,14 @@ class DignityP2P extends EventEmitter {
         this.seenGossipIds.delete(gossipId);
       }
     }
+
+    while (this.seenGossipIds.size > this.maxSeenGossipIds) {
+      const oldestGossipId = this.seenGossipIds.keys().next().value;
+      if (!oldestGossipId) {
+        break;
+      }
+      this.seenGossipIds.delete(oldestGossipId);
+    }
   }
 
   hasSeenGossip(gossipId) {
@@ -641,6 +820,7 @@ class DignityP2P extends EventEmitter {
     }
 
     this.seenGossipIds.set(gossipId, this.now() + this.gossipIdTtlMs);
+    this.pruneSeenGossip();
   }
 
   listConnectedPeerIds() {
@@ -734,6 +914,16 @@ class DignityP2P extends EventEmitter {
       throw new Error(`PeerGroup ${groupId} has not been joined`);
     }
 
+    if (this.gossipPublishMinIntervalMs > 0) {
+      const lastPublishAt = this.lastGossipPublishAt.get(groupId) || 0;
+      const elapsed = this.now() - lastPublishAt;
+      if (elapsed < this.gossipPublishMinIntervalMs) {
+        const error = new Error(`Gossip publish rate limit exceeded for group ${groupId}`);
+        error.code = 'GOSSIP_RATE_LIMIT';
+        throw error;
+      }
+    }
+
     const fanout = typeof options.fanout === 'number'
       ? options.fanout
       : (group ? group.fanout : this.defaultPeerGroupFanout);
@@ -750,6 +940,7 @@ class DignityP2P extends EventEmitter {
 
     const gossipId = options.gossipId || this.idGenerator();
     this.markSeenGossip(gossipId);
+    this.lastGossipPublishAt.set(groupId, this.now());
 
     await this.broadcastMessage('peer-group:gossip', {
       groupId,
@@ -1117,6 +1308,37 @@ class DignityP2P extends EventEmitter {
       return;
     }
 
+    if (decrypted.messageType === 'identity:rotate') {
+      const peerId = decrypted.senderId || decrypted.payload?.username;
+      if (peerId && decrypted.payload) {
+        const result = this.applyPeerIdentityRotation(peerId, decrypted.payload);
+        if (!result.applied) {
+          this.emit('warning', {
+            type: 'identity-rotation-ignored',
+            peerId,
+            reason: result.reason
+          });
+        }
+      }
+      return;
+    }
+
+    if (decrypted.messageType === 'identity:cold-enroll') {
+      const peerId = decrypted.senderId || decrypted.payload?.username;
+      if (peerId && decrypted.payload) {
+        try {
+          this.applyPeerColdRecoveryEnrollment(peerId, decrypted.payload);
+        } catch (error) {
+          this.emit('warning', {
+            type: 'cold-recovery-enrollment-rejected',
+            peerId,
+            error
+          });
+        }
+      }
+      return;
+    }
+
     if (message && message.senderId && message.senderPublicKey) {
       this.trustPeerPublicKey(message.senderId, message.senderPublicKey);
     }
@@ -1131,7 +1353,10 @@ class DignityP2P extends EventEmitter {
       const { collectionName, record } = payload;
 
       if (collectionName && record) {
-        const applied = this.restoreRecord(collectionName, record);
+        const applied = this.restoreRecord(collectionName, record, {
+          rejectOnHashMismatch: true,
+          via: 'direct-mesh'
+        });
         if (applied) {
           this.emit('change', {
             kind: 'snapshot',

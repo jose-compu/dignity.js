@@ -38,7 +38,7 @@ export default function LinkPanel({
   const joinExpired = Boolean(game?.data?.joinTokenUsed);
   const resumeHint = resumeLinkOverride
     ? 'Resume link includes a dual-signed checkpoint when both players co-sign in the panel below.'
-    : 'Use “Propose pause & co-sign checkpoint” to generate a signed resume link.';
+    : 'Use "Propose pause & co-sign checkpoint" to generate a signed resume link.';
 
   useEffect(() => {
     if (prominent && (joinExpired || isPlayer)) {

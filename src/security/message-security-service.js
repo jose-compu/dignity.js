@@ -2,13 +2,15 @@ const nacl = require('tweetnacl');
 const naclUtil = require('tweetnacl-util');
 const VDF = require('./vdf');
 
+const DEFAULT_APP_PASSWORD = 'change-this-app-password';
+
 const DEFAULT_SECURITY_OPTIONS = {
   enabled: true,
   signingEnabled: true,
   encryptionEnabled: true,
   powEnabled: true,
   powTargetMs: 1000,
-  appPassword: 'change-this-app-password',
+  appPassword: DEFAULT_APP_PASSWORD,
   broadcastPasswords: {},
   resolveBroadcastPassword: null,
   powSteps: 22,
@@ -123,8 +125,11 @@ class MessageSecurityService {
     };
 
     this.peerPublicKeys = new Map();
+    this.peerIdentityGenerations = new Map(); // peerId -> generation number
+    this.peerRecoveryPublicKeys = new Map(); // peerId -> cold recovery signing pubkey (base64)
     for (const [peerId, peerKey] of Object.entries(this.options.trustedPeerKeys || {})) {
       this.peerPublicKeys.set(peerId, normalizePeerPublicKey(peerKey));
+      this.peerIdentityGenerations.set(peerId, 1);
     }
 
     this.calibratedPowSteps = this.options.powSteps;
@@ -134,8 +139,92 @@ class MessageSecurityService {
     return { ...this.publicKeyBundle };
   }
 
-  registerPeerPublicKey(peerId, publicKey) {
-    this.peerPublicKeys.set(peerId, normalizePeerPublicKey(publicKey));
+  registerPeerPublicKey(peerId, publicKey, options = {}) {
+    const normalized = normalizePeerPublicKey(publicKey);
+    const generation = typeof options.generation === 'number' ? options.generation : 1;
+    const currentGeneration = this.peerIdentityGenerations.get(peerId) || 0;
+
+    if (generation < currentGeneration && options.allowDowngrade !== true) {
+      throw new Error(`Refusing older identity generation for peer ${peerId}`);
+    }
+
+    this.peerPublicKeys.set(peerId, normalized);
+    this.peerIdentityGenerations.set(peerId, Math.max(currentGeneration, generation));
+  }
+
+  getPeerIdentityGeneration(peerId) {
+    return this.peerIdentityGenerations.get(peerId) || 0;
+  }
+
+  getPeerIdentityState(peerId) {
+    const publicKey = this.peerPublicKeys.get(peerId);
+    const recoveryPublicKey = this.peerRecoveryPublicKeys.get(peerId) || null;
+
+    if (!publicKey && !recoveryPublicKey) {
+      return null;
+    }
+
+    return {
+      publicKey: publicKey ? { ...publicKey } : null,
+      generation: this.getPeerIdentityGeneration(peerId),
+      recoveryPublicKey
+    };
+  }
+
+  registerPeerRecoveryPublicKey(peerId, recoveryPublicKey) {
+    if (!peerId || !recoveryPublicKey) {
+      throw new Error('registerPeerRecoveryPublicKey requires peerId and recoveryPublicKey');
+    }
+    this.peerRecoveryPublicKeys.set(peerId, recoveryPublicKey);
+  }
+
+  getPeerRecoveryPublicKey(peerId) {
+    return this.peerRecoveryPublicKeys.get(peerId) || null;
+  }
+
+  applyColdRecoveryEnrollment(peerId, enrollment) {
+    const { verifyColdRecoveryEnrollment } = require('./identity-rotation');
+    const verified = verifyColdRecoveryEnrollment(enrollment);
+    if (!verified.ok) {
+      const error = new Error(`Invalid cold recovery enrollment: ${verified.error}`);
+      error.code = 'INVALID_COLD_RECOVERY_ENROLLMENT';
+      throw error;
+    }
+
+    this.registerPeerRecoveryPublicKey(peerId, enrollment.recoveryPublicKey);
+    return { applied: true, recoveryPublicKey: enrollment.recoveryPublicKey };
+  }
+
+  applyIdentityRotation(peerId, rotation) {
+    const { shouldApplyIdentityRotation } = require('./identity-rotation');
+
+    const currentState = this.getPeerIdentityState(peerId);
+    const decision = shouldApplyIdentityRotation(currentState, rotation, {
+      enrolledRecoveryPublicKey: this.getPeerRecoveryPublicKey(peerId)
+    });
+    if (!decision.apply) {
+      if (
+        decision.reason
+        && decision.reason !== 'stale-generation'
+        && decision.reason !== 'previous-key-mismatch'
+      ) {
+        const error = new Error(`Invalid identity rotation: ${decision.reason}`);
+        error.code = 'INVALID_IDENTITY_ROTATION';
+        throw error;
+      }
+      return { applied: false, reason: decision.reason };
+    }
+
+    this.registerPeerPublicKey(peerId, rotation.nextPublicKey, {
+      generation: rotation.toGeneration
+    });
+
+    return {
+      applied: true,
+      fromGeneration: rotation.fromGeneration,
+      toGeneration: rotation.toGeneration,
+      rotationKind: rotation.rotationKind
+    };
   }
 
   resolvePeerPublicKey(peerId, fallbackPublicKey) {
@@ -523,5 +612,6 @@ module.exports = {
   stableStringify,
   deriveBroadcastKey,
   legacyBroadcastKey,
-  DEFAULT_SECURITY_OPTIONS
+  DEFAULT_SECURITY_OPTIONS,
+  DEFAULT_APP_PASSWORD
 };

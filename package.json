@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "P2P object API for decentralized JavaScript applications",
   "homepage": "https://jose-compu.github.io/dignity.js/",
   "repository": {
@@ -42,6 +42,8 @@
     "test": "jest --coverage",
     "test:unit": "jest tests/unit --runInBand",
     "test:peer-group": "jest tests/unit/peer-group-gossip.test.js tests/unit/peer-group-helpers.test.js tests/integration/peer-group-gossip-e2e.test.js --runInBand --coverage=false",
+    "test:stress-peer-group": "RUN_STRESS_TESTS=1 jest tests/stress/peer-group-scale.test.js --runInBand --coverage=false",
+    "stress:peer-group": "node scripts/stress-peer-group.js",
     "test:cloudflare-live": "RUN_CLOUDFLARE_LIVE_TESTS=1 jest tests/integration/cloudflare-signaling-live.test.js --runInBand",
     "test:pow-calibrate": "RUN_POW_CALIBRATE=1 jest tests/unit/sloth-vdf-timing.test.js --runInBand --coverage=false",
     "build": "node scripts/build.js",
@@ -51,7 +53,7 @@
     "docs:dev": "node scripts/serve-docs.js",
     "docs:serve": "node scripts/serve-docs.js",
     "docs:stop": "node scripts/stop-docs.js",
-    "docs:check": "node -e \"const fs=require('fs');['docs/index.html','docs/favicon.ico','docs/chess/index.html','docs/chess/favicon.ico','docs/assets/favicon.svg','docs/chess/assets/chess-app.js','docs/assets/highlight/highlight.min.js','docs/assets/highlight/github.min.css','docs/assets/highlight/github-dark.min.css'].forEach(p=>fs.accessSync(p));\"",
+    "docs:check": "node -e \"const fs=require('fs');['docs/index.html','docs/favicon.ico','docs/playground/index.html','docs/assets/playground.js','docs/assets/playground-demos.js','docs/assets/playground.css','docs/chess/index.html','docs/chess/favicon.ico','docs/assets/favicon.svg','docs/chess/assets/chess-app.js','docs/assets/dignity.esm.js','docs/assets/highlight/highlight.min.js','docs/assets/highlight/github.min.css','docs/assets/highlight/github-dark.min.css'].forEach(p=>fs.accessSync(p));\"",
     "example:tictactoe": "node examples/decentralized-tictactoe.js",
     "example:chess": "node examples/decentralized-chess-lite.js",
     "prepublishOnly": "npm test && npm run build"
@@ -63,7 +65,7 @@
     "rest",
     "objects"
   ],
-  "license": "Apache 2.0",
+  "license": "Apache-2.0",
   "peerDependencies": {
     "react": ">=18"
   },
