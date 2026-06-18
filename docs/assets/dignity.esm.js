@@ -2450,13 +2450,14 @@ var require_message_security_service = __commonJS({
     var nacl = require_nacl_fast();
     var naclUtil = require_nacl_util();
     var VDF = require_vdf();
+    var DEFAULT_APP_PASSWORD = "change-this-app-password";
     var DEFAULT_SECURITY_OPTIONS = {
       enabled: true,
       signingEnabled: true,
       encryptionEnabled: true,
       powEnabled: true,
       powTargetMs: 1e3,
-      appPassword: "change-this-app-password",
+      appPassword: DEFAULT_APP_PASSWORD,
       broadcastPasswords: {},
       resolveBroadcastPassword: null,
       powSteps: 22,
@@ -2875,7 +2876,8 @@ var require_message_security_service = __commonJS({
       stableStringify,
       deriveBroadcastKey,
       legacyBroadcastKey,
-      DEFAULT_SECURITY_OPTIONS
+      DEFAULT_SECURITY_OPTIONS,
+      DEFAULT_APP_PASSWORD
     };
   }
 });
@@ -2945,7 +2947,11 @@ var require_dignity_p2p = __commonJS({
     var nacl = require_nacl_fast();
     var naclUtil = require_nacl_util();
     var EventEmitter = require_event_emitter();
-    var { MessageSecurityService, stableStringify } = require_message_security_service();
+    var {
+      MessageSecurityService,
+      stableStringify,
+      DEFAULT_APP_PASSWORD
+    } = require_message_security_service();
     var {
       DEFAULT_PEER_GROUP_OPTIONS,
       peerGroupScope,
@@ -2990,6 +2996,9 @@ var require_dignity_p2p = __commonJS({
         this.defaultGossipMaxHops = security && typeof security.gossipMaxHops === "number" ? security.gossipMaxHops : DEFAULT_PEER_GROUP_OPTIONS.maxHops;
         this.globalMaxOpenConnections = security && typeof security.globalMaxOpenConnections === "number" ? security.globalMaxOpenConnections : 32;
         this.gossipIdTtlMs = security && typeof security.gossipIdTtlMs === "number" ? security.gossipIdTtlMs : 5 * 60 * 1e3;
+        this.maxSeenGossipIds = security && typeof security.maxSeenGossipIds === "number" ? security.maxSeenGossipIds : 1e5;
+        this.gossipPublishMinIntervalMs = security && typeof security.gossipPublishMinIntervalMs === "number" ? security.gossipPublishMinIntervalMs : 0;
+        this.lastGossipPublishAt = /* @__PURE__ */ new Map();
         this.maxAppliedOperations = security && typeof security.maxAppliedOperations === "number" ? security.maxAppliedOperations : 5e4;
         this.state = /* @__PURE__ */ new Map();
         this.appliedOperations = /* @__PURE__ */ new Map();
@@ -2998,6 +3007,13 @@ var require_dignity_p2p = __commonJS({
       async start() {
         this.networkAdapter.onMessage(this.boundMessageHandler);
         await this.networkAdapter.start(this.nodeId);
+        const appPassword = this.securityService.options.appPassword;
+        if (!appPassword || appPassword === DEFAULT_APP_PASSWORD) {
+          this.emit("warning", {
+            type: "default-app-password",
+            message: "Using the default appPassword is insecure; set a strong shared secret in production."
+          });
+        }
       }
       async stop() {
         const joinedGroups = Array.from(this.peerGroups.keys());
@@ -3416,6 +3432,13 @@ var require_dignity_p2p = __commonJS({
             this.seenGossipIds.delete(gossipId);
           }
         }
+        while (this.seenGossipIds.size > this.maxSeenGossipIds) {
+          const oldestGossipId = this.seenGossipIds.keys().next().value;
+          if (!oldestGossipId) {
+            break;
+          }
+          this.seenGossipIds.delete(oldestGossipId);
+        }
       }
       hasSeenGossip(gossipId) {
         if (!gossipId) {
@@ -3429,6 +3452,7 @@ var require_dignity_p2p = __commonJS({
           return;
         }
         this.seenGossipIds.set(gossipId, this.now() + this.gossipIdTtlMs);
+        this.pruneSeenGossip();
       }
       listConnectedPeerIds() {
         if (typeof this.networkAdapter.listOpenPeerIds === "function") {
@@ -3506,6 +3530,15 @@ var require_dignity_p2p = __commonJS({
         if (!group && options.allowUnjoined !== true) {
           throw new Error(`PeerGroup ${groupId} has not been joined`);
         }
+        if (this.gossipPublishMinIntervalMs > 0) {
+          const lastPublishAt = this.lastGossipPublishAt.get(groupId) || 0;
+          const elapsed = this.now() - lastPublishAt;
+          if (elapsed < this.gossipPublishMinIntervalMs) {
+            const error = new Error(`Gossip publish rate limit exceeded for group ${groupId}`);
+            error.code = "GOSSIP_RATE_LIMIT";
+            throw error;
+          }
+        }
         const fanout = typeof options.fanout === "number" ? options.fanout : group ? group.fanout : this.defaultPeerGroupFanout;
         const maxActivePeers = group ? group.maxActivePeers : this.defaultPeerGroupMaxActivePeers;
         const maxHop = typeof options.maxHops === "number" ? options.maxHops : group ? group.maxHops : this.defaultGossipMaxHops;
@@ -3516,6 +3549,7 @@ var require_dignity_p2p = __commonJS({
         }
         const gossipId = options.gossipId || this.idGenerator();
         this.markSeenGossip(gossipId);
+        this.lastGossipPublishAt.set(groupId, this.now());
         await this.broadcastMessage("peer-group:gossip", {
           groupId,
           gossipId,
@@ -3833,7 +3867,10 @@ var require_dignity_p2p = __commonJS({
           const payload = decrypted.payload || {};
           const { collectionName, record } = payload;
           if (collectionName && record) {
-            const applied = this.restoreRecord(collectionName, record);
+            const applied = this.restoreRecord(collectionName, record, {
+              rejectOnHashMismatch: true,
+              via: "direct-mesh"
+            });
             if (applied) {
               this.emit("change", {
                 kind: "snapshot",
@@ -11680,6 +11717,84 @@ var require_indexeddb_persistence = __commonJS({
   }
 });
 
+// src/security/derive-key-pair.js
+var require_derive_key_pair = __commonJS({
+  "src/security/derive-key-pair.js"(exports, module) {
+    var nacl = require_nacl_fast();
+    var naclUtil = require_nacl_util();
+    var { deriveBroadcastKey, DEFAULT_SECURITY_OPTIONS } = require_message_security_service();
+    var SIGNING_INFO = "dignity-signing-v1";
+    var ENCRYPTION_INFO = "dignity-encryption-v1";
+    function utf8ToBytes(value) {
+      return naclUtil.decodeUTF8(value);
+    }
+    function concatBytes(...parts) {
+      const total = parts.reduce((sum, part) => sum + part.length, 0);
+      const result = new Uint8Array(total);
+      let offset = 0;
+      for (const part of parts) {
+        result.set(part, offset);
+        offset += part.length;
+      }
+      return result;
+    }
+    function buildIdentitySalt(username, info, pepper = "") {
+      if (!username || typeof username !== "string") {
+        throw new Error("deriveKeyPairFromCredentials requires username");
+      }
+      if (!info || typeof info !== "string") {
+        throw new Error("deriveKeyPairFromCredentials requires info label");
+      }
+      const segments = ["dignity-identity-v1"];
+      if (pepper) {
+        segments.push(pepper);
+      }
+      segments.push(username, info);
+      return utf8ToBytes(segments.join("\0"));
+    }
+    async function deriveIdentitySeed({ password, username, info, pepper, kdfIterations }) {
+      if (!password || typeof password !== "string") {
+        throw new Error("deriveKeyPairFromCredentials requires password");
+      }
+      const salt = buildIdentitySalt(username, info, pepper);
+      const iterations = typeof kdfIterations === "number" ? kdfIterations : DEFAULT_SECURITY_OPTIONS.kdfIterations;
+      return deriveBroadcastKey(password, salt, iterations);
+    }
+    async function deriveKeyPairFromCredentials({
+      username,
+      password,
+      pepper = "",
+      kdfIterations
+    } = {}) {
+      const signingSeed = await deriveIdentitySeed({
+        password,
+        username,
+        info: SIGNING_INFO,
+        pepper,
+        kdfIterations
+      });
+      const encryptionSecret = await deriveIdentitySeed({
+        password,
+        username,
+        info: ENCRYPTION_INFO,
+        pepper,
+        kdfIterations
+      });
+      return {
+        signing: nacl.sign.keyPair.fromSeed(signingSeed),
+        encryption: nacl.box.keyPair.fromSecretKey(encryptionSecret)
+      };
+    }
+    module.exports = {
+      deriveKeyPairFromCredentials,
+      buildIdentitySalt,
+      SIGNING_INFO,
+      ENCRYPTION_INFO,
+      concatBytes
+    };
+  }
+});
+
 // src/index.js
 var require_index = __commonJS({
   "src/index.js"(exports, module) {
@@ -11705,8 +11820,11 @@ var require_index = __commonJS({
     var SlothPermutation = require_sloth_vdf();
     var {
       MessageSecurityService,
-      DEFAULT_SECURITY_OPTIONS
+      DEFAULT_SECURITY_OPTIONS,
+      DEFAULT_APP_PASSWORD
     } = require_message_security_service();
+    var { deriveKeyPairFromCredentials } = require_derive_key_pair();
+    var parsePeerJsServerUrl = require_parse_peerjs_url();
     var {
       PEER_GROUP_SCOPE_PREFIX,
       DEFAULT_PEER_GROUP_OPTIONS,
@@ -11731,6 +11849,9 @@ var require_index = __commonJS({
       SlothPermutation,
       MessageSecurityService,
       DEFAULT_SECURITY_OPTIONS,
+      DEFAULT_APP_PASSWORD,
+      deriveKeyPairFromCredentials,
+      parsePeerJsServerUrl,
       PEER_GROUP_SCOPE_PREFIX,
       DEFAULT_PEER_GROUP_OPTIONS,
       peerGroupScope,
