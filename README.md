@@ -474,6 +474,14 @@ npm run docs:dev
 
 If 4173 is busy, `docs:dev` auto-picks the next free port (4174, 4175, …) and prints the URLs.
 
+## Contributing
+
+New contributors can start with [CONTRIBUTING.md](./CONTRIBUTING.md) for local
+setup, validation commands, docs preview steps, and the PR checklist.
+
+Looking for a scoped first task? Browse issues labeled
+[good first issue](https://github.com/jose-compu/dignity.js/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+
 ## Docs and Examples
 
 - **Documentation:** [jose-compu.github.io/dignity.js](https://jose-compu.github.io/dignity.js/)
