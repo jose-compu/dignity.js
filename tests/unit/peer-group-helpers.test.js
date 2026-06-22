@@ -22,7 +22,7 @@ describe('peer-group helpers', () => {
     expect(DEFAULT_PEER_GROUP_OPTIONS).toEqual({
       fanout: 3,
       maxActivePeers: 8,
-      maxHops: 6,
+      maxHops: 64,
       relayEnabled: true
     });
     expect(PEER_GROUP_SCOPE_PREFIX).toBe('gossip:');

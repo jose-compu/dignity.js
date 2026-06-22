@@ -11,7 +11,7 @@ export async function joinSpectatorFeed(node, gameId, options = {}) {
   return node.joinPeerGroup(groupId, {
     fanout: 3,
     maxActivePeers: 6,
-    maxHops: 6,
+    maxHops: 64,
     ...options,
     metadata: {
       role: 'spectator',

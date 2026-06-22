@@ -3,7 +3,7 @@ const PEER_GROUP_SCOPE_PREFIX = 'gossip:';
 const DEFAULT_PEER_GROUP_OPTIONS = {
   fanout: 3,
   maxActivePeers: 8,
-  maxHops: 6,
+  maxHops: 64,
   relayEnabled: true
 };
 
