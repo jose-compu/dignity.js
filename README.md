@@ -6,7 +6,7 @@
 [![npm version](https://img.shields.io/npm/v/dignity.js?color=cb3837&label=npm)](https://www.npmjs.com/package/dignity.js)
 [![npm downloads](https://img.shields.io/npm/dm/dignity.js?color=blue)](https://www.npmjs.com/package/dignity.js)
 [![CI](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml/badge.svg)](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-213%2B%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-291%2B%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-92%25-brightgreen)
 ![license](https://img.shields.io/badge/license-Apache%202.0-black)
 
@@ -33,6 +33,10 @@ REST-like P2P object API for decentralized JavaScript applications.
 - Auto `connectToPeers` on create/update/delete replication (owner + collaborators)
 - Optional IndexedDB persistence for browser reload survival
 - Optional React hooks via `dignity.js/react`
+- **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
+- **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **`DignityQueryReplica`** — read-only materialized views with hash-chain verification
+- Credential-derived keys, identity rotation, and cold-recovery co-sign (v0.7+)
 - Browser-first: published npm package includes IIFE, ESM, and CJS builds
 
 ## Install
@@ -133,12 +137,15 @@ For high-fanout object updates (millions of subscribers per published object), u
 await node.joinPeerGroup('feed:alice', {
   bootstrapPeerIds: ['publisher-peer-id'],
   fanout: 3,
-  maxActivePeers: 8
+  maxActivePeers: 8,
+  maxHops: 64   // default since v0.8.0
 });
 
 await node.publishRecordToPeerGroup('feed:alice', 'posts', 'post-1');
 await node.leavePeerGroup('feed:alice');
 ```
+
+Inner gossip message types: `operation`, `record:snapshot`, `domain:event`, `domain:checkpoint`, and app-defined payloads (via `peergroupmessage` events).
 
 Small collaborations (chess players, document co-editing) should keep using direct `connectToPeers` mesh. Large read-only audiences (chess spectators, public timelines) should use PeerGroup gossip. See the [docs PeerGroup section](https://jose-compu.github.io/dignity.js/#peer-groups).
 
@@ -174,7 +181,11 @@ replica.read('posts', 'p1');
 replica.verifyChain(); // hash-chain consistency
 ```
 
-Default `maxHops` is **64** (was 6), sufficient for epidemic spread at fanout 3 without per-group tuning.
+Default `maxHops` is **64** (was 6 in v0.7.x), sufficient for epidemic spread at fanout 3 without per-group tuning.
+
+**Publisher options:** `role: 'publisher'`, `tiered: true`, `liveCap` (default 5000), `domainEvents: true`, `peerGroupId` on CRUD to auto-publish events.
+
+**Subscriber / replica options:** `role: 'subscriber'`, `tierMode: 'auto' | 'live' | 'bulk'`, `commandCapable: false` on read-only nodes, `publisherId` to filter events.
 
 ## Room / Team Discovery
 

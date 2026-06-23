@@ -2,7 +2,7 @@
 
 This tutorial walks you through dignity.js from zero to a working multi-peer app. No prior P2P experience required.
 
-**Time:** ~30 minutes  
+**Time:** ~35 minutes  
 **Version:** 0.8.0  
 **Full docs:** [docs site](https://jose-compu.github.io/dignity.js/) · [README](./README.md)
 
@@ -228,11 +228,79 @@ await spectator.joinPeerGroup('spectate:chess:game-42', {
 await white.publishRecordToPeerGroup('spectate:chess:game-42', 'chess-matches', 'game-42');
 ```
 
+```js
+// Spectator joins a read-only feed (default maxHops is 64 in v0.8+)
+await spectator.joinPeerGroup('spectate:chess:game-42', {
+  bootstrapPeerIds: ['white-host'],
+  fanout: 3
+});
+
+// Host publishes board state to spectators
+await white.publishRecordToPeerGroup('spectate:chess:game-42', 'chess-matches', 'game-42');
+```
+
 See the [PeerGroup docs](https://jose-compu.github.io/dignity.js/#peer-groups) for details.
 
 ---
 
-## Lesson 8 — Persist across reloads (browser)
+## Lesson 8 — Big feeds with CQRS (v0.8+)
+
+When one publisher has **thousands of followers**, use **tiers** and **domain events** instead of pushing full record snapshots to everyone.
+
+| Piece | Role |
+|-------|------|
+| **Publisher** | Writes with `create` / `update` / `remove`; events auto-publish to the group |
+| **Live tier** | First ~5 000 subscribers get real-time updates |
+| **Bulk tier** | Everyone else gets batched updates |
+| **Query replica** | Read-only node that builds a local view from events |
+
+```js
+const { DignityP2P, DignityQueryReplica, InMemoryNetworkHub, InMemoryNetworkAdapter } = require('dignity.js');
+
+const hub = new InMemoryNetworkHub();
+const security = { appPassword: 'feed-secret', powEnabled: false, signingEnabled: false };
+
+const publisher = new DignityP2P({ nodeId: 'alice', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+const reader = new DignityP2P({ nodeId: 'bob', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+
+await publisher.start();
+await reader.start();
+
+// Alice is the publisher (command path)
+await publisher.joinPeerGroup('feed:alice', {
+  role: 'publisher',
+  tiered: true,
+  domainEvents: true
+});
+
+// Bob is a read-only follower (query path)
+const replica = new DignityQueryReplica(reader, {
+  groupId: 'feed:alice',
+  collections: ['posts'],
+  publisherId: 'alice'
+});
+await replica.start({ bootstrapPeerIds: ['alice'] });
+
+await publisher.create('posts', { text: 'Hello followers' }, {
+  id: 'p1',
+  peerGroupId: 'feed:alice'   // ties the write to the gossip group
+});
+
+console.log(replica.read('posts', 'p1'));  // local read, no call to Alice
+console.log(replica.verifyChain().ok);       // hash chain OK
+```
+
+**Key ideas:**
+
+- `peerGroupId` on `create` / `update` / `remove` — emit a signed domain event to that group
+- `DignityQueryReplica` — `read` / `list` from a local materialized view
+- `tiered: true` + `liveCap` — split live vs bulk subscribers when the audience grows
+
+Try it in the browser: [live playground → CQRS demo](https://jose-compu.github.io/dignity.js/playground/).
+
+---
+
+## Lesson 9 — Persist across reloads (browser)
 
 ```js
 const { IndexedDBPersistence } = require('dignity.js');
@@ -269,12 +337,23 @@ node.listPeers(scope);
 await node.leaveDiscovery(scope);
 
 // PeerGroup gossip (v0.6+)
-await node.joinPeerGroup(groupId, { bootstrapPeerIds, fanout: 3 });
+await node.joinPeerGroup(groupId, { bootstrapPeerIds, fanout: 3, role: 'publisher' });
 await node.publishRecordToPeerGroup(groupId, collection, id);
 await node.leavePeerGroup(groupId);
 
+// CQRS tiers + domain events (v0.8+)
+await node.joinPeerGroup(groupId, { role: 'publisher', tiered: true, domainEvents: true });
+await node.create(collection, data, { id, peerGroupId: groupId });
+await node.publishPeerGroupBulk(groupId, 'domain:event', event);  // bulk tier only
+
+const replica = new DignityQueryReplica(node, { groupId, collections: ['posts'], publisherId: 'alice' });
+await replica.start({ bootstrapPeerIds: ['alice'] });
+replica.read(collection, id);
+replica.verifyChain();
+
 // Events
 node.on('change', handler);
+node.on('domainevent', handler);
 node.on('conflict', handler);
 node.on('warning', handler);
 ```
@@ -285,7 +364,8 @@ node.on('warning', handler);
 
 | Resource | What it covers |
 |----------|----------------|
-| [docs/index.html](./docs/index.html) | Full API reference |
+| [docs/index.html](./docs/index.html) | Full API reference (incl. CQRS section) |
+| [docs/playground/](./docs/playground/) | Live in-browser demos, including CQRS replica |
 | [examples/decentralized-tictactoe.js](./examples/decentralized-tictactoe.js) | Small multiplayer game |
 | [docs/chess/](./docs/chess/) | Full 3D chess + spectators |
 | [README.md](./README.md) | Security model, React hooks, signaling |
@@ -297,6 +377,7 @@ node.on('warning', handler);
 3. **Using in-memory adapter in production** — switch to PeerJS for real browsers.
 4. **Leaving default password** — set a strong `appPassword`; never ship `change-this-app-password`.
 5. **Updating without checking ownership** — only owner/collaborators can `update`.
+6. **Forgetting `peerGroupId` on writes** — domain events only auto-publish when the write is linked to a joined publisher group (v0.8+).
 
 ---
 
