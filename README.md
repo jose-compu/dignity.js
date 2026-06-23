@@ -10,7 +10,7 @@
 ![coverage](https://img.shields.io/badge/coverage-92%25-brightgreen)
 ![license](https://img.shields.io/badge/license-Apache%202.0-black)
 
-REST-like P2P object API for decentralized JavaScript applications.
+The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 
 `dignity.js` lets many browsers synchronize shared objects with ownership rules and built-in anti-abuse + privacy controls.
 
