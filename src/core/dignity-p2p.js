@@ -15,8 +15,24 @@ const { deriveKeyPairFromCredentials } = require('../security/derive-key-pair');
 const {
   DEFAULT_PEER_GROUP_OPTIONS,
   peerGroupScope,
+  parsePeerGroupScope,
   selectFanoutPeers
 } = require('../gossip/peer-group');
+const {
+  operationToDomainEvent,
+  signDomainEvent,
+  verifyDomainEvent,
+  applyDomainEventToView,
+  createEmptyView,
+  buildCheckpoint
+} = require('../cqrs/domain-events');
+const {
+  DEFAULT_LIVE_CAP,
+  DEFAULT_BULK_INTERVAL_MS,
+  assignPeerGroupTier,
+  filterPeersByTier
+} = require('../cqrs/peer-group-tiers');
+const { electBulkRelays } = require('../cqrs/bulk-relay');
 
 function computeContentHash(data) {
   const canonical = stableStringify(data || {});
@@ -111,6 +127,10 @@ class DignityP2P extends EventEmitter {
     this.maxAppliedOperations = security && typeof security.maxAppliedOperations === 'number'
       ? security.maxAppliedOperations
       : 50000;
+    this.domainEventLogs = new Map(); // groupId -> event[]
+    this.lastEventHashByGroup = new Map(); // groupId -> hash
+    this.bulkRelayByGroup = new Map(); // groupId -> peerId[]
+    this.replicaViews = new Map(); // groupId -> view Map
 
     this.state = new Map(); // collection -> Map(id -> record)
     this.appliedOperations = new Map(); // opId -> appliedAt
@@ -281,6 +301,7 @@ class DignityP2P extends EventEmitter {
     };
 
     this.applyOperation(operation);
+    await this.maybePublishDomainEvent(operation, options);
     await this.broadcastMessage('operation', operation, {
       broadcastScope: options.broadcastScope || this.resolveBroadcastScope({
         messageType: 'operation',
@@ -374,6 +395,7 @@ class DignityP2P extends EventEmitter {
     }
 
     this.applyOperation(operation);
+    await this.maybePublishDomainEvent(operation, options);
     await this.broadcastMessage('operation', operation, {
       broadcastScope: options.broadcastScope || this.resolveBroadcastScope({
         messageType: 'operation',
@@ -439,6 +461,7 @@ class DignityP2P extends EventEmitter {
     };
 
     this.applyOperation(operation);
+    await this.maybePublishDomainEvent(operation, options);
     await this.broadcastMessage('operation', operation, {
       broadcastScope: options.broadcastScope || this.resolveBroadcastScope({
         messageType: 'operation',
@@ -476,6 +499,7 @@ class DignityP2P extends EventEmitter {
     };
 
     this.applyOperation(operation);
+    await this.maybePublishDomainEvent(operation, options);
     await this.broadcastMessage('operation', operation, {
       broadcastScope: options.broadcastScope || this.resolveBroadcastScope({
         messageType: 'operation',
@@ -830,9 +854,19 @@ class DignityP2P extends EventEmitter {
     return [];
   }
 
-  selectPeerGroupFanout(groupId, count, excludePeerIds = []) {
+  selectPeerGroupFanout(groupId, count, excludePeerIds = [], fanoutOptions = {}) {
     const scope = this.peerGroupScopeFor(groupId);
-    const peers = this.listPeers(scope, { includeSelf: false });
+    const group = this.peerGroups.get(groupId);
+    let peers = this.listPeers(scope, { includeSelf: false });
+
+    if (group && group.tiered && fanoutOptions.tier) {
+      peers = filterPeersByTier(peers, fanoutOptions.tier);
+    }
+
+    if (fanoutOptions.bulkRelayOnly) {
+      peers = peers.filter((peer) => peer.metadata?.bulkRelay === true);
+    }
+
     return selectFanoutPeers({
       peers,
       count,
@@ -869,18 +903,56 @@ class DignityP2P extends EventEmitter {
     }
 
     const scope = this.peerGroupScopeFor(groupId);
+    const role = options.role || options.metadata?.role || 'subscriber';
+    const tierMode = options.tierMode || 'auto';
+    const tiered = options.tiered === true
+      || options.tierMode !== undefined
+      || options.role !== undefined
+      || typeof options.liveCap === 'number';
+    const liveCap = typeof options.liveCap === 'number' ? options.liveCap : DEFAULT_LIVE_CAP;
+    const existingMembers = this.listPeerGroupMembers(groupId, { includeSelf: false });
+    const existingSubscriberCount = existingMembers.filter((member) => {
+      const memberRole = member.metadata?.peerGroupRole || member.metadata?.role;
+      return memberRole !== 'publisher';
+    }).length;
+    let assignedTier = tiered
+      ? assignPeerGroupTier({
+        joinIndex: existingSubscriberCount,
+        liveCap,
+        requestedTier: tierMode === 'auto' ? null : tierMode,
+        role
+      })
+      : null;
+    const publisherId = options.publisherId || (role === 'publisher' ? this.nodeId : null);
+
     const config = {
       fanout: typeof options.fanout === 'number' ? options.fanout : this.defaultPeerGroupFanout,
       maxActivePeers: typeof options.maxActivePeers === 'number'
         ? options.maxActivePeers
         : this.defaultPeerGroupMaxActivePeers,
       maxHops: typeof options.maxHops === 'number' ? options.maxHops : this.defaultGossipMaxHops,
-      relayEnabled: options.relayEnabled !== false
+      relayEnabled: options.relayEnabled !== false,
+      tiered,
+      tierMode,
+      liveCap,
+      bulkIntervalMs: typeof options.bulkIntervalMs === 'number'
+        ? options.bulkIntervalMs
+        : DEFAULT_BULK_INTERVAL_MS,
+      domainEvents: options.domainEvents !== false,
+      autoPublishDomainEvents: options.autoPublishDomainEvents !== false,
+      role,
+      publisherId,
+      commandCapable: options.commandCapable !== false,
+      peerGroupTier: assignedTier
     };
 
     await this.joinDiscovery(scope, {
       metadata: {
         peerGroup: groupId,
+        ...(assignedTier ? { peerGroupTier: assignedTier } : {}),
+        peerGroupRole: role,
+        ...(publisherId ? { publisherId } : {}),
+        bulkRelay: false,
         ...(options.metadata || {})
       },
       bootstrapPeerIds: options.bootstrapPeerIds,
@@ -889,8 +961,72 @@ class DignityP2P extends EventEmitter {
     });
 
     this.peerGroups.set(groupId, config);
-    this.emit('peergroupjoined', { groupId, config });
+    if (!this.domainEventLogs.has(groupId)) {
+      this.domainEventLogs.set(groupId, []);
+    }
+    if (!this.replicaViews.has(groupId)) {
+      this.replicaViews.set(groupId, createEmptyView());
+    }
+
+    this.refreshBulkRelays(groupId);
+    if (tiered && tierMode === 'auto' && role === 'subscriber') {
+      assignedTier = this.recalculateOwnPeerGroupTier(groupId) || assignedTier;
+      config.peerGroupTier = assignedTier;
+    }
+    this.emit('peergroupjoined', { groupId, config, tier: assignedTier });
     return config;
+  }
+
+  recalculateOwnPeerGroupTier(groupId) {
+    const group = this.peerGroups.get(groupId);
+    if (!group || !group.tiered || group.role !== 'subscriber') {
+      return group ? group.peerGroupTier : null;
+    }
+
+    if (group.tierMode !== 'auto') {
+      return group.peerGroupTier;
+    }
+
+    const scope = this.peerGroupScopeFor(groupId);
+    const members = this.listPeerGroupMembers(groupId, { includeSelf: true });
+    const subscribers = members
+      .filter((member) => {
+        const memberRole = member.metadata?.peerGroupRole || member.metadata?.role;
+        return memberRole !== 'publisher';
+      })
+      .map((member) => member.peerId)
+      .sort();
+
+    const joinIndex = subscribers.indexOf(this.nodeId);
+    if (joinIndex < 0) {
+      return group.peerGroupTier;
+    }
+
+    const newTier = assignPeerGroupTier({
+      joinIndex,
+      liveCap: group.liveCap,
+      requestedTier: null,
+      role: 'subscriber'
+    });
+
+    if (newTier === group.peerGroupTier) {
+      return newTier;
+    }
+
+    group.peerGroupTier = newTier;
+    const room = this.discoveryRooms.get(scope);
+    if (room) {
+      room.metadata = {
+        ...(room.metadata || {}),
+        peerGroupTier: newTier
+      };
+      this.upsertPresence(scope, this.nodeId, room.metadata, room.ttlMs, this.now());
+      this.announcePresence(scope).catch((error) => {
+        this.emit('warning', { type: 'tier-announce-failed', groupId, error });
+      });
+    }
+
+    return newTier;
   }
 
   async leavePeerGroup(groupId) {
@@ -901,6 +1037,7 @@ class DignityP2P extends EventEmitter {
     const scope = this.peerGroupScopeFor(groupId);
     await this.leaveDiscovery(scope);
     this.peerGroups.delete(groupId);
+    this.bulkRelayByGroup.delete(groupId);
     this.emit('peergroupleft', { groupId });
   }
 
@@ -932,7 +1069,12 @@ class DignityP2P extends EventEmitter {
       ? options.maxHops
       : (group ? group.maxHops : this.defaultGossipMaxHops);
 
-    const fanoutPeerIds = this.selectPeerGroupFanout(groupId, fanout, [this.nodeId]);
+    const fanoutOptions = {};
+    if (group && group.tiered && options.tier !== 'bulk') {
+      fanoutOptions.tier = options.tier || 'live';
+    }
+
+    const fanoutPeerIds = this.selectPeerGroupFanout(groupId, fanout, [this.nodeId], fanoutOptions);
     if (fanoutPeerIds.length > 0) {
       await this.ensureConnectedToPeers(fanoutPeerIds.slice(0, maxActivePeers));
       await this.enforceConnectionBudget();
@@ -956,6 +1098,248 @@ class DignityP2P extends EventEmitter {
     });
 
     return { gossipId, fanoutPeerIds };
+  }
+
+  async publishPeerGroupBulk(groupId, innerMessageType, innerPayload, options = {}) {
+    const group = this.peerGroups.get(groupId);
+    if (!group && options.allowUnjoined !== true) {
+      throw new Error(`PeerGroup ${groupId} has not been joined`);
+    }
+
+    if (group && group.role !== 'publisher') {
+      throw new Error(`Only publisher can bulk-publish to PeerGroup ${groupId}`);
+    }
+
+    const fanout = typeof options.fanout === 'number'
+      ? options.fanout
+      : (group ? group.fanout : this.defaultPeerGroupFanout);
+    const maxActivePeers = group ? group.maxActivePeers : this.defaultPeerGroupMaxActivePeers;
+    const maxHop = typeof options.maxHops === 'number'
+      ? options.maxHops
+      : (group ? group.maxHops : this.defaultGossipMaxHops);
+
+    const fanoutPeerIds = this.selectPeerGroupFanout(
+      groupId,
+      fanout,
+      [this.nodeId],
+      { tier: 'bulk', bulkRelayOnly: group?.tiered === true }
+    );
+
+    if (fanoutPeerIds.length > 0) {
+      await this.ensureConnectedToPeers(fanoutPeerIds.slice(0, maxActivePeers));
+      await this.enforceConnectionBudget();
+    }
+
+    const gossipId = options.gossipId || this.idGenerator();
+    this.markSeenGossip(gossipId);
+
+    await this.broadcastMessage('peer-group:gossip', {
+      groupId,
+      gossipId,
+      publisherId: this.nodeId,
+      hop: 0,
+      maxHop,
+      deliveryTier: 'bulk',
+      innerMessageType,
+      innerPayload
+    }, {
+      broadcastScope: this.peerGroupScopeFor(groupId),
+      fanoutPeerIds
+    });
+
+    return { gossipId, fanoutPeerIds };
+  }
+
+  async publishPeerGroupCheckpoint(groupId, options = {}) {
+    const group = this.peerGroups.get(groupId);
+    if (!group) {
+      throw new Error(`PeerGroup ${groupId} has not been joined`);
+    }
+
+    const events = this.domainEventLogs.get(groupId) || [];
+    const checkpoint = buildCheckpoint(groupId, events, {
+      publisherId: options.publisherId || group.publisherId || this.nodeId
+    });
+
+    await this.publishPeerGroupBulk(groupId, 'domain:checkpoint', checkpoint, options);
+    this.emit('checkpointpublished', { groupId, checkpoint });
+    return checkpoint;
+  }
+
+  resolvePublisherGroupIds(options = {}) {
+    if (options.peerGroupId) {
+      return [options.peerGroupId];
+    }
+
+    const groups = [];
+    for (const [groupId, config] of this.peerGroups.entries()) {
+      if (config.domainEvents && config.autoPublishDomainEvents && config.role === 'publisher') {
+        groups.push(groupId);
+      }
+    }
+    return groups;
+  }
+
+  async maybePublishDomainEvent(operation, options = {}) {
+    const groupIds = this.resolvePublisherGroupIds(options);
+    if (groupIds.length === 0) {
+      return;
+    }
+
+    for (const groupId of groupIds) {
+      await this.publishDomainEventForOperation(groupId, operation);
+    }
+  }
+
+  async publishDomainEventForOperation(groupId, operation) {
+    const group = this.peerGroups.get(groupId);
+    if (!group || !group.domainEvents) {
+      return null;
+    }
+
+    if (group.role !== 'publisher') {
+      throw new Error(`Only publisher can emit domain events for PeerGroup ${groupId}`);
+    }
+
+    const prevHash = this.lastEventHashByGroup.get(groupId) || null;
+    let event = operationToDomainEvent(operation, {
+      publisherId: this.nodeId,
+      groupId,
+      prevHash,
+      eventIdGenerator: () => this.idGenerator()
+    });
+
+    if (this.securityService.options.signingEnabled && this.securityService.signingSecretKey) {
+      event = signDomainEvent(event, this.securityService.signingSecretKey);
+    }
+
+    const log = this.domainEventLogs.get(groupId) || [];
+    log.push(event);
+    this.domainEventLogs.set(groupId, log);
+    this.lastEventHashByGroup.set(groupId, event.eventHash);
+
+    this.emit('domainevent', event);
+
+    if (group.autoPublishDomainEvents) {
+      await this.publishToPeerGroup(groupId, 'domain:event', event, { tier: 'live' });
+      if (group.tiered) {
+        await this.publishPeerGroupBulk(groupId, 'domain:event', event);
+      }
+    }
+
+    return event;
+  }
+
+  refreshBulkRelays(groupId) {
+    const group = this.peerGroups.get(groupId);
+    if (!group || !group.tiered) {
+      return [];
+    }
+
+    const peers = this.listPeerGroupMembers(groupId, { includeSelf: false });
+    const relays = electBulkRelays(peers);
+    const previous = this.bulkRelayByGroup.get(groupId) || [];
+    this.bulkRelayByGroup.set(groupId, relays);
+
+    const changed = previous.length !== relays.length
+      || previous.some((id, index) => id !== relays[index]);
+
+    if (changed) {
+      this.emit('bulkrelaychanged', { groupId, relays, previous });
+    }
+
+    return relays;
+  }
+
+  ingestRemoteDomainEvent(event, context = {}) {
+    const groupId = event.groupId || context.groupId;
+    if (!groupId) {
+      return false;
+    }
+
+    const group = this.peerGroups.get(groupId);
+    if (!group) {
+      return false;
+    }
+
+    const publisherId = event.publisherId || context.publisherId;
+    if (group.publisherId && publisherId !== group.publisherId) {
+      this.emit('warning', {
+        type: 'domain-event-rejected',
+        groupId,
+        reason: 'publisher-mismatch',
+        eventId: event.eventId,
+        expectedPublisher: group.publisherId,
+        actualPublisher: publisherId
+      });
+      return false;
+    }
+
+    let signingPublicKey = null;
+    if (this.securityService.options.signingEnabled && publisherId) {
+      const peerKey = this.securityService.resolvePeerPublicKey(publisherId, null);
+      signingPublicKey = peerKey ? peerKey.signingPublicKey : null;
+      if (!signingPublicKey) {
+        this.emit('warning', {
+          type: 'domain-event-rejected',
+          groupId,
+          reason: 'missing-publisher-key',
+          eventId: event.eventId,
+          publisherId
+        });
+        return false;
+      }
+    }
+
+    const verified = verifyDomainEvent(event, { signingPublicKey });
+    if (!verified.ok) {
+      this.emit('warning', {
+        type: 'domain-event-rejected',
+        groupId,
+        reason: verified.reason,
+        eventId: event.eventId
+      });
+      return false;
+    }
+
+    if (this.securityService.options.signingEnabled && verified.unsigned) {
+      this.emit('warning', {
+        type: 'domain-event-rejected',
+        groupId,
+        reason: 'unsigned-event',
+        eventId: event.eventId
+      });
+      return false;
+    }
+
+    const log = this.domainEventLogs.get(groupId) || [];
+    if (log.some((entry) => entry.eventId === event.eventId)) {
+      return false;
+    }
+
+    const expectedPrev = log.length > 0 ? log[log.length - 1].eventHash : null;
+    if (event.prevHash !== expectedPrev) {
+      this.emit('chainbroken', {
+        groupId,
+        expectedPrev,
+        actualPrev: event.prevHash,
+        eventId: event.eventId
+      });
+      return false;
+    }
+
+    log.push(event);
+    this.domainEventLogs.set(groupId, log);
+    this.lastEventHashByGroup.set(groupId, event.eventHash);
+
+    if (!group.commandCapable) {
+      const view = this.replicaViews.get(groupId) || createEmptyView();
+      applyDomainEventToView(view, event);
+      this.replicaViews.set(groupId, view);
+    }
+
+    this.emit('domainevent', event);
+    return true;
   }
 
   async publishRecordToPeerGroup(groupId, collectionName, id, options = {}) {
@@ -1004,6 +1388,12 @@ class DignityP2P extends EventEmitter {
     });
 
     const group = this.peerGroups.get(groupId);
+    const deliveryTier = payload.deliveryTier || 'live';
+
+    if (group && group.tiered && group.peerGroupTier === 'bulk' && deliveryTier !== 'bulk') {
+      return;
+    }
+
     const configuredMaxHop = group ? group.maxHops : this.defaultGossipMaxHops;
     const maxHop = typeof payloadMaxHop === 'number'
       ? Math.min(payloadMaxHop, configuredMaxHop)
@@ -1013,10 +1403,18 @@ class DignityP2P extends EventEmitter {
       return;
     }
 
+    const relayOptions = {};
+    if (group.tiered) {
+      relayOptions.tier = deliveryTier === 'bulk' ? 'bulk' : 'live';
+      if (deliveryTier === 'bulk') {
+        relayOptions.bulkRelayOnly = true;
+      }
+    }
+
     const relayPeers = this.selectPeerGroupFanout(groupId, group.fanout, [
       decrypted.senderId,
       this.nodeId
-    ]);
+    ], relayOptions);
 
     if (relayPeers.length === 0) {
       return;
@@ -1031,6 +1429,7 @@ class DignityP2P extends EventEmitter {
       publisherId,
       hop: hop + 1,
       maxHop,
+      deliveryTier,
       innerMessageType,
       innerPayload
     }, {
@@ -1077,6 +1476,21 @@ class DignityP2P extends EventEmitter {
       if (operation) {
         this.applyOperation(operation);
       }
+      return;
+    }
+
+    if (innerMessageType === 'domain:event') {
+      this.ingestRemoteDomainEvent(innerPayload, context);
+      return;
+    }
+
+    if (innerMessageType === 'domain:checkpoint') {
+      this.emit('peergroupmessage', {
+        groupId: context.groupId,
+        senderId: context.senderId,
+        type: 'domain:checkpoint',
+        payload: innerPayload
+      });
       return;
     }
 
@@ -1130,6 +1544,14 @@ class DignityP2P extends EventEmitter {
     map.set(peerId, next);
 
     this.trustPeerFromMetadata(peerId, next.metadata);
+
+    const groupId = parsePeerGroupScope(scope);
+    if (groupId && this.peerGroups.has(groupId)) {
+      this.refreshBulkRelays(groupId);
+      if (peerId !== this.nodeId) {
+        this.recalculateOwnPeerGroupTier(groupId);
+      }
+    }
 
     if (!existing) {
       this.emit('peerdiscovered', { scope, peerId, metadata: next.metadata });

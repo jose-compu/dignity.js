@@ -19,6 +19,10 @@ describe('public API exports', () => {
     expect(api.parsePeerGroupScope).toBeDefined();
     expect(api.DEFAULT_PEER_GROUP_OPTIONS).toBeDefined();
     expect(api.selectFanoutPeers).toBeDefined();
+    expect(api.DignityQueryReplica).toBeDefined();
+    expect(api.DOMAIN_EVENT_SCHEMA_VERSION).toBe(1);
+    expect(api.DEFAULT_LIVE_CAP).toBe(5000);
+    expect(api.DEFAULT_PEER_GROUP_OPTIONS.maxHops).toBe(64);
   });
 
   test('exports sane default configs', () => {

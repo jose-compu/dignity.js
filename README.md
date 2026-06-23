@@ -142,6 +142,40 @@ await node.leavePeerGroup('feed:alice');
 
 Small collaborations (chess players, document co-editing) should keep using direct `connectToPeers` mesh. Large read-only audiences (chess spectators, public timelines) should use PeerGroup gossip. See the [docs PeerGroup section](https://jose-compu.github.io/dignity.js/#peer-groups).
 
+### CQRS tiers, domain events, and query replicas (v0.8+)
+
+For audiences above ~5 000 subscribers per publisher, use the command/query split:
+
+- **Command path** — publisher writes locally; signed domain events auto-publish on `create` / `update` / `remove`.
+- **Live tier** — first `liveCap` subscribers (default 5 000) receive real-time gossip.
+- **Bulk tier** — overflow subscribers receive batched updates via bulk relays.
+- **Query path** — `DignityQueryReplica` maintains local materialized views from the event stream.
+
+```js
+const { DignityP2P, DignityQueryReplica } = require('dignity.js');
+
+// Publisher
+await publisher.joinPeerGroup('feed:alice', {
+  role: 'publisher',
+  tiered: true,
+  liveCap: 5000,
+  domainEvents: true
+});
+await publisher.create('posts', { text: 'hello' }, { id: 'p1', peerGroupId: 'feed:alice' });
+
+// Read-only replica (no command capability)
+const replica = new DignityQueryReplica(reader, {
+  groupId: 'feed:alice',
+  collections: ['posts'],
+  publisherId: 'alice'
+});
+await replica.start({ bootstrapPeerIds: ['alice'] });
+replica.read('posts', 'p1');
+replica.verifyChain(); // hash-chain consistency
+```
+
+Default `maxHops` is **64** (was 6), sufficient for epidemic spread at fanout 3 without per-group tuning.
+
 ## Room / Team Discovery
 
 Use scoped discovery to find active peers in a room (for example `main`, `team:red`, `raid-42`).

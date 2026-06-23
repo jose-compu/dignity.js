@@ -49,6 +49,24 @@ const {
   parsePeerGroupScope,
   selectFanoutPeers
 } = require('./gossip/peer-group');
+const {
+  DOMAIN_EVENT_SCHEMA_VERSION,
+  operationToDomainEvent,
+  signDomainEvent,
+  verifyDomainEvent,
+  verifyEventChain,
+  buildCheckpoint,
+  createEmptyView,
+  applyDomainEventToView
+} = require('./cqrs/domain-events');
+const {
+  DEFAULT_LIVE_CAP,
+  DEFAULT_BULK_INTERVAL_MS,
+  assignPeerGroupTier,
+  filterPeersByTier
+} = require('./cqrs/peer-group-tiers');
+const { electBulkRelays, DEFAULT_BULK_RELAY_COUNT } = require('./cqrs/bulk-relay');
+const DignityQueryReplica = require('./cqrs/query-replica');
 
 module.exports = {
   DignityP2P,
@@ -83,5 +101,20 @@ module.exports = {
   DEFAULT_PEER_GROUP_OPTIONS,
   peerGroupScope,
   parsePeerGroupScope,
-  selectFanoutPeers
+  selectFanoutPeers,
+  DOMAIN_EVENT_SCHEMA_VERSION,
+  operationToDomainEvent,
+  signDomainEvent,
+  verifyDomainEvent,
+  verifyEventChain,
+  buildCheckpoint,
+  createEmptyView,
+  applyDomainEventToView,
+  DEFAULT_LIVE_CAP,
+  DEFAULT_BULK_INTERVAL_MS,
+  assignPeerGroupTier,
+  filterPeersByTier,
+  electBulkRelays,
+  DEFAULT_BULK_RELAY_COUNT,
+  DignityQueryReplica
 };

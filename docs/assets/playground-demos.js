@@ -338,5 +338,61 @@ log('keys upgraded:', bob.getPeerIdentityState('alice')?.publicKey?.signingPubli
 
 await alice.stop();
 await bob.stop();`
+  },
+  {
+    id: 'cqrs-replica',
+    title: 'CQRS — publisher + query replica',
+    description: 'Domain events from a tiered PeerGroup hydrate a read-only DignityQueryReplica.',
+    code: `const { DignityP2P, DignityQueryReplica, InMemoryNetworkHub, InMemoryNetworkAdapter } = dignity;
+
+const hub = new InMemoryNetworkHub();
+const security = helpers.fastSecurity();
+
+const publisher = new DignityP2P({
+  nodeId: 'publisher',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+const reader = new DignityP2P({
+  nodeId: 'reader',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+
+helpers.track(publisher, reader);
+await publisher.start();
+await reader.start();
+
+await publisher.joinPeerGroup('feed:demo', {
+  role: 'publisher',
+  tiered: true,
+  liveCap: 100,
+  domainEvents: true,
+  fanout: 2,
+  maxActivePeers: 4
+});
+
+const replica = new DignityQueryReplica(reader, {
+  groupId: 'feed:demo',
+  collections: ['posts'],
+  publisherId: 'publisher'
+});
+await replica.start({ bootstrapPeerIds: ['publisher'] });
+await helpers.sleep(40);
+
+await publisher.create('posts', { text: 'CQRS demo post' }, {
+  id: 'p1',
+  peerGroupId: 'feed:demo'
+});
+await helpers.sleep(60);
+
+const record = replica.read('posts', 'p1');
+log('replica read:', JSON.stringify(record?.data));
+log('chain ok:', replica.verifyChain().ok);
+log('stats:', JSON.stringify(replica.getViewStats()));
+
+await replica.stop();
+await publisher.stop();
+await reader.stop();`
   }
 ];

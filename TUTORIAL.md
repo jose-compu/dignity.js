@@ -3,7 +3,7 @@
 This tutorial walks you through dignity.js from zero to a working multi-peer app. No prior P2P experience required.
 
 **Time:** ~30 minutes  
-**Version:** 0.7.1  
+**Version:** 0.8.0  
 **Full docs:** [docs site](https://jose-compu.github.io/dignity.js/) · [README](./README.md)
 
 ---

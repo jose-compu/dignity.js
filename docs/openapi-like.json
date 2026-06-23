@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "REST-like object API over peer-to-peer replication",
   "resources": {
     "collections/{collection}/{id}": {
@@ -60,18 +60,31 @@
       "broadcastMessage": "custom app messages; options.connectToPeers"
     },
     "peerGroups": {
-      "joinPeerGroup": "join scalable gossip group (multiplexed); options.fanout, maxActivePeers, bootstrapPeerIds",
+      "joinPeerGroup": "join scalable gossip group; options: fanout, maxActivePeers, maxHops (default 64), role, tiered, liveCap, tierMode, domainEvents, publisherId",
       "leavePeerGroup": "leave gossip group and scoped presence",
       "listPeerGroupMembers": "list presence in gossip:{groupId} scope",
-      "publishToPeerGroup": "epidemic publish with bounded fanout; inner types: operation, record:snapshot, custom",
+      "publishToPeerGroup": "epidemic publish to live tier when tiered; inner types: operation, record:snapshot, domain:event, custom",
+      "publishPeerGroupBulk": "bulk-tier publish (publisher only); batched domain events and checkpoints",
+      "publishPeerGroupCheckpoint": "publish domain-event chain checkpoint to bulk tier",
       "publishRecordToPeerGroup": "publish normalized record snapshot into gossip group",
+      "getPeerGroupConfig": "returns joined group config including tier and domainEvents flags",
       "getPeerGroupStats": "{ joinedGroups, seenGossipCount, openConnectionCount, globalMaxOpenConnections }"
+    },
+    "cqrs": {
+      "DignityQueryReplica": "read-only materialized view from domain events; methods: start, stop, read, list, verifyChain, getViewStats",
+      "domainEvents": "operationToDomainEvent, verifyDomainEvent, verifyEventChain, DOMAIN_EVENT_SCHEMA_VERSION",
+      "tiers": "assignPeerGroupTier, DEFAULT_LIVE_CAP (5000), filterPeersByTier",
+      "bulkRelay": "electBulkRelays, DEFAULT_BULK_RELAY_COUNT"
     }
   },
   "events": {
     "change": "object create/update/delete/snapshot applied",
     "conflict": "local or remote version mismatch",
-    "warning": "orphan-operation, peer-connect-failed, presence failures, content-hash-mismatch",
+    "warning": "orphan-operation, peer-connect-failed, presence failures, content-hash-mismatch, domain-event-rejected",
+    "domainevent": "signed domain event applied or emitted locally",
+    "chainbroken": "domain event hash chain verification failed",
+    "bulkrelaychanged": "bulk relay peer set changed for a tiered group",
+    "checkpointpublished": "publisher published domain-event checkpoint",
     "peerdiscovered": "peer joined discovery scope",
     "peerleft": "peer left or timed out",
     "message": "custom decrypted message received"

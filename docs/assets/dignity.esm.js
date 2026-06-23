@@ -3449,7 +3449,7 @@ var require_peer_group = __commonJS({
     var DEFAULT_PEER_GROUP_OPTIONS = {
       fanout: 3,
       maxActivePeers: 8,
-      maxHops: 6,
+      maxHops: 64,
       relayEnabled: true
     };
     function peerGroupScope(groupId) {
@@ -3501,6 +3501,327 @@ var require_peer_group = __commonJS({
   }
 });
 
+// src/cqrs/domain-events.js
+var require_domain_events = __commonJS({
+  "src/cqrs/domain-events.js"(exports, module) {
+    var nacl = require_nacl_fast();
+    var naclUtil = require_nacl_util();
+    var { stableStringify } = require_message_security_service();
+    var DOMAIN_EVENT_SCHEMA_VERSION = 1;
+    var OPERATION_KIND_TO_EVENT_KIND = {
+      create: "record:created",
+      update: "record:updated",
+      delete: "record:removed",
+      "transfer-ownership": "ownership:transferred"
+    };
+    function computeContentHash(data) {
+      const canonical = stableStringify(data || {});
+      const bytes = naclUtil.decodeUTF8(canonical);
+      const hash = nacl.hash(bytes);
+      const hex = Array.from(hash, (b) => b.toString(16).padStart(2, "0")).join("");
+      return `sha512:${hex}`;
+    }
+    function canonicalEventBody(event) {
+      return stableStringify({
+        schemaVersion: event.schemaVersion,
+        eventId: event.eventId,
+        groupId: event.groupId,
+        publisherId: event.publisherId,
+        kind: event.kind,
+        collectionName: event.collectionName,
+        id: event.id,
+        payload: event.payload,
+        timestamp: event.timestamp,
+        baseVersion: event.baseVersion,
+        prevHash: event.prevHash || null,
+        newOwnerId: event.newOwnerId || null
+      });
+    }
+    function computeEventHash(event) {
+      const canonical = canonicalEventBody(event);
+      const bytes = naclUtil.decodeUTF8(canonical);
+      const hash = nacl.hash(bytes);
+      const hex = Array.from(hash, (b) => b.toString(16).padStart(2, "0")).join("");
+      return `sha512:${hex}`;
+    }
+    function operationToDomainEvent(operation, { publisherId, groupId, prevHash, eventIdGenerator }) {
+      if (!operation || !publisherId || !groupId) {
+        throw new Error("operationToDomainEvent requires operation, publisherId, and groupId");
+      }
+      const kind = OPERATION_KIND_TO_EVENT_KIND[operation.kind];
+      if (!kind) {
+        throw new Error(`Unsupported operation kind for domain event: ${operation.kind}`);
+      }
+      const event = {
+        schemaVersion: DOMAIN_EVENT_SCHEMA_VERSION,
+        eventId: eventIdGenerator ? eventIdGenerator() : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        groupId,
+        publisherId,
+        kind,
+        collectionName: operation.collectionName,
+        id: operation.id,
+        payload: operation.payload || {},
+        timestamp: operation.timestamp,
+        baseVersion: operation.baseVersion || null,
+        prevHash: prevHash || null,
+        newOwnerId: operation.newOwnerId || null,
+        eventHash: null,
+        signature: null
+      };
+      event.eventHash = computeEventHash(event);
+      return event;
+    }
+    function signDomainEvent(event, signingSecretKey) {
+      if (!signingSecretKey) {
+        return { ...event };
+      }
+      const unsigned = { ...event, signature: null };
+      const eventHash = computeEventHash(unsigned);
+      const signature = nacl.sign.detached(
+        naclUtil.decodeUTF8(eventHash),
+        signingSecretKey
+      );
+      return {
+        ...unsigned,
+        eventHash,
+        signature: naclUtil.encodeBase64(signature)
+      };
+    }
+    function verifyDomainEventSignature(event, signingPublicKey) {
+      if (!event || !event.eventHash) {
+        return { ok: false, reason: "missing-event-hash" };
+      }
+      const recomputed = computeEventHash({ ...event, signature: null });
+      if (recomputed !== event.eventHash) {
+        return { ok: false, reason: "event-hash-mismatch" };
+      }
+      if (!event.signature) {
+        return { ok: true, unsigned: true };
+      }
+      if (!signingPublicKey) {
+        return { ok: false, reason: "missing-public-key" };
+      }
+      const keyBytes = typeof signingPublicKey === "string" ? naclUtil.decodeBase64(signingPublicKey) : signingPublicKey;
+      const valid = nacl.sign.detached.verify(
+        naclUtil.decodeUTF8(event.eventHash),
+        naclUtil.decodeBase64(event.signature),
+        keyBytes
+      );
+      return valid ? { ok: true } : { ok: false, reason: "invalid-signature" };
+    }
+    function verifyDomainEvent(event, { signingPublicKey, supportedVersions } = {}) {
+      if (!event || typeof event !== "object") {
+        return { ok: false, reason: "invalid-event" };
+      }
+      const versions = supportedVersions || [DOMAIN_EVENT_SCHEMA_VERSION];
+      if (!versions.includes(event.schemaVersion)) {
+        return { ok: false, reason: "unsupported-schema-version", schemaVersion: event.schemaVersion };
+      }
+      if (!event.eventId || !event.groupId || !event.publisherId || !event.kind) {
+        return { ok: false, reason: "missing-required-fields" };
+      }
+      return verifyDomainEventSignature(event, signingPublicKey);
+    }
+    function createEmptyView(collections = []) {
+      const view = /* @__PURE__ */ new Map();
+      for (const name of collections) {
+        view.set(name, /* @__PURE__ */ new Map());
+      }
+      return view;
+    }
+    function ensureCollectionView(view, collectionName) {
+      if (!view.has(collectionName)) {
+        view.set(collectionName, /* @__PURE__ */ new Map());
+      }
+      return view.get(collectionName);
+    }
+    function applyDomainEventToView(view, event, { collectionsFilter } = {}) {
+      if (!event || !event.collectionName) {
+        return { applied: false, reason: "invalid-event" };
+      }
+      if (Array.isArray(collectionsFilter) && collectionsFilter.length > 0 && !collectionsFilter.includes(event.collectionName)) {
+        return { applied: false, reason: "collection-filtered" };
+      }
+      const collection = ensureCollectionView(view, event.collectionName);
+      if (event.kind === "record:created") {
+        if (collection.has(event.id)) {
+          return { applied: false, reason: "already-exists" };
+        }
+        collection.set(event.id, {
+          id: event.id,
+          ownerId: event.publisherId,
+          data: { ...event.payload || {} },
+          hash: computeContentHash(event.payload || {}),
+          createdAt: event.timestamp,
+          updatedAt: event.timestamp,
+          deletedAt: null,
+          version: 1
+        });
+        return { applied: true, kind: event.kind };
+      }
+      const current = collection.get(event.id);
+      if (!current || current.deletedAt) {
+        if (event.kind === "record:removed") {
+          return { applied: false, reason: "not-found" };
+        }
+        return { applied: false, reason: "missing-record" };
+      }
+      if (event.kind === "record:updated") {
+        if (typeof event.baseVersion === "number" && current.version !== event.baseVersion) {
+          return { applied: false, reason: "version-conflict", currentVersion: current.version };
+        }
+        current.data = { ...current.data, ...event.payload || {} };
+        current.hash = computeContentHash(current.data);
+        current.updatedAt = event.timestamp;
+        current.version += 1;
+        return { applied: true, kind: event.kind };
+      }
+      if (event.kind === "record:removed") {
+        if (typeof event.baseVersion === "number" && current.version !== event.baseVersion) {
+          return { applied: false, reason: "version-conflict", currentVersion: current.version };
+        }
+        current.deletedAt = event.timestamp;
+        current.version += 1;
+        return { applied: true, kind: event.kind };
+      }
+      if (event.kind === "ownership:transferred") {
+        if (typeof event.baseVersion === "number" && current.version !== event.baseVersion) {
+          return { applied: false, reason: "version-conflict", currentVersion: current.version };
+        }
+        current.ownerId = event.newOwnerId;
+        current.updatedAt = event.timestamp;
+        current.version += 1;
+        return { applied: true, kind: event.kind };
+      }
+      return { applied: false, reason: "unknown-kind" };
+    }
+    function verifyEventChain(events, { genesisHash = null } = {}) {
+      if (!Array.isArray(events) || events.length === 0) {
+        return { ok: true, length: 0 };
+      }
+      let expectedPrev = genesisHash;
+      for (let index = 0; index < events.length; index += 1) {
+        const event = events[index];
+        const prevHash = event.prevHash || null;
+        if (prevHash !== expectedPrev) {
+          return {
+            ok: false,
+            reason: "chain-break",
+            index,
+            expectedPrev,
+            actualPrev: prevHash
+          };
+        }
+        const hashCheck = verifyDomainEventSignature(event, null);
+        if (!hashCheck.ok) {
+          return { ok: false, reason: hashCheck.reason, index };
+        }
+        expectedPrev = event.eventHash;
+      }
+      return { ok: true, length: events.length, lastHash: expectedPrev };
+    }
+    function buildCheckpoint(groupId, events, { publisherId } = {}) {
+      const chain = verifyEventChain(events);
+      return {
+        schemaVersion: DOMAIN_EVENT_SCHEMA_VERSION,
+        groupId,
+        publisherId: publisherId || null,
+        lastEventHash: chain.lastHash || null,
+        recordCount: events.length,
+        timestamp: Date.now()
+      };
+    }
+    module.exports = {
+      DOMAIN_EVENT_SCHEMA_VERSION,
+      OPERATION_KIND_TO_EVENT_KIND,
+      computeEventHash,
+      operationToDomainEvent,
+      signDomainEvent,
+      verifyDomainEvent,
+      verifyDomainEventSignature,
+      createEmptyView,
+      applyDomainEventToView,
+      verifyEventChain,
+      buildCheckpoint
+    };
+  }
+});
+
+// src/cqrs/peer-group-tiers.js
+var require_peer_group_tiers = __commonJS({
+  "src/cqrs/peer-group-tiers.js"(exports, module) {
+    var DEFAULT_LIVE_CAP = 5e3;
+    var DEFAULT_BULK_INTERVAL_MS = 3e4;
+    function assignPeerGroupTier({ joinIndex, liveCap = DEFAULT_LIVE_CAP, requestedTier, role }) {
+      if (role === "publisher") {
+        return "live";
+      }
+      if (requestedTier === "live" || requestedTier === "bulk") {
+        if (requestedTier === "live" && joinIndex >= liveCap) {
+          return "bulk";
+        }
+        return requestedTier;
+      }
+      return joinIndex < liveCap ? "live" : "bulk";
+    }
+    function getPeerTier(peer) {
+      return peer?.metadata?.peerGroupTier || peer?.peerGroupTier || null;
+    }
+    function filterPeersByTier(peers, tier) {
+      if (!tier) {
+        return peers;
+      }
+      return peers.filter((peer) => getPeerTier(peer) === tier);
+    }
+    function countLivePeers(peers) {
+      return peers.filter((peer) => getPeerTier(peer) === "live").length;
+    }
+    function countBulkPeers(peers) {
+      return peers.filter((peer) => getPeerTier(peer) === "bulk").length;
+    }
+    module.exports = {
+      DEFAULT_LIVE_CAP,
+      DEFAULT_BULK_INTERVAL_MS,
+      assignPeerGroupTier,
+      getPeerTier,
+      filterPeersByTier,
+      countLivePeers,
+      countBulkPeers
+    };
+  }
+});
+
+// src/cqrs/bulk-relay.js
+var require_bulk_relay = __commonJS({
+  "src/cqrs/bulk-relay.js"(exports, module) {
+    var { getPeerTier } = require_peer_group_tiers();
+    var DEFAULT_BULK_RELAY_COUNT = 3;
+    function electBulkRelays(peers, { count = DEFAULT_BULK_RELAY_COUNT } = {}) {
+      const bulkPeers = peers.filter((peer) => getPeerTier(peer) === "bulk").map((peer) => peer.peerId || peer).filter(Boolean).sort();
+      return bulkPeers.slice(0, Math.max(0, count));
+    }
+    function isBulkRelay(metadata) {
+      return metadata?.bulkRelay === true;
+    }
+    function applyBulkRelayFlags(peers, relayPeerIds) {
+      const relaySet = new Set(relayPeerIds);
+      return peers.map((peer) => ({
+        ...peer,
+        metadata: {
+          ...peer.metadata || {},
+          bulkRelay: relaySet.has(peer.peerId)
+        }
+      }));
+    }
+    module.exports = {
+      DEFAULT_BULK_RELAY_COUNT,
+      electBulkRelays,
+      isBulkRelay,
+      applyBulkRelayFlags
+    };
+  }
+});
+
 // src/core/dignity-p2p.js
 var require_dignity_p2p = __commonJS({
   "src/core/dignity-p2p.js"(exports, module) {
@@ -3521,8 +3842,24 @@ var require_dignity_p2p = __commonJS({
     var {
       DEFAULT_PEER_GROUP_OPTIONS,
       peerGroupScope,
+      parsePeerGroupScope,
       selectFanoutPeers
     } = require_peer_group();
+    var {
+      operationToDomainEvent,
+      signDomainEvent,
+      verifyDomainEvent,
+      applyDomainEventToView,
+      createEmptyView,
+      buildCheckpoint
+    } = require_domain_events();
+    var {
+      DEFAULT_LIVE_CAP,
+      DEFAULT_BULK_INTERVAL_MS,
+      assignPeerGroupTier,
+      filterPeersByTier
+    } = require_peer_group_tiers();
+    var { electBulkRelays } = require_bulk_relay();
     function computeContentHash(data) {
       const canonical = stableStringify(data || {});
       const bytes = naclUtil.decodeUTF8(canonical);
@@ -3566,6 +3903,10 @@ var require_dignity_p2p = __commonJS({
         this.gossipPublishMinIntervalMs = security && typeof security.gossipPublishMinIntervalMs === "number" ? security.gossipPublishMinIntervalMs : 0;
         this.lastGossipPublishAt = /* @__PURE__ */ new Map();
         this.maxAppliedOperations = security && typeof security.maxAppliedOperations === "number" ? security.maxAppliedOperations : 5e4;
+        this.domainEventLogs = /* @__PURE__ */ new Map();
+        this.lastEventHashByGroup = /* @__PURE__ */ new Map();
+        this.bulkRelayByGroup = /* @__PURE__ */ new Map();
+        this.replicaViews = /* @__PURE__ */ new Map();
         this.state = /* @__PURE__ */ new Map();
         this.appliedOperations = /* @__PURE__ */ new Map();
         this.boundMessageHandler = this.handleIncomingMessage.bind(this);
@@ -3704,6 +4045,7 @@ var require_dignity_p2p = __commonJS({
           payload: { ...data || {} }
         };
         this.applyOperation(operation);
+        await this.maybePublishDomainEvent(operation, options);
         await this.broadcastMessage("operation", operation, {
           broadcastScope: options.broadcastScope || this.resolveBroadcastScope({
             messageType: "operation",
@@ -3781,6 +4123,7 @@ var require_dignity_p2p = __commonJS({
           operation.collaboratorIds = this.normalizeCollaboratorIds(options.collaborators);
         }
         this.applyOperation(operation);
+        await this.maybePublishDomainEvent(operation, options);
         await this.broadcastMessage("operation", operation, {
           broadcastScope: options.broadcastScope || this.resolveBroadcastScope({
             messageType: "operation",
@@ -3835,6 +4178,7 @@ var require_dignity_p2p = __commonJS({
           keepPreviousOwnerAsCollaborator: options.keepAsCollaborator !== false
         };
         this.applyOperation(operation);
+        await this.maybePublishDomainEvent(operation, options);
         await this.broadcastMessage("operation", operation, {
           broadcastScope: options.broadcastScope || this.resolveBroadcastScope({
             messageType: "operation",
@@ -3866,6 +4210,7 @@ var require_dignity_p2p = __commonJS({
           baseVersion: existing.version
         };
         this.applyOperation(operation);
+        await this.maybePublishDomainEvent(operation, options);
         await this.broadcastMessage("operation", operation, {
           broadcastScope: options.broadcastScope || this.resolveBroadcastScope({
             messageType: "operation",
@@ -4156,9 +4501,16 @@ var require_dignity_p2p = __commonJS({
         }
         return [];
       }
-      selectPeerGroupFanout(groupId, count, excludePeerIds = []) {
+      selectPeerGroupFanout(groupId, count, excludePeerIds = [], fanoutOptions = {}) {
         const scope = this.peerGroupScopeFor(groupId);
-        const peers = this.listPeers(scope, { includeSelf: false });
+        const group = this.peerGroups.get(groupId);
+        let peers = this.listPeers(scope, { includeSelf: false });
+        if (group && group.tiered && fanoutOptions.tier) {
+          peers = filterPeersByTier(peers, fanoutOptions.tier);
+        }
+        if (fanoutOptions.bulkRelayOnly) {
+          peers = peers.filter((peer) => peer.metadata?.bulkRelay === true);
+        }
         return selectFanoutPeers({
           peers,
           count,
@@ -4190,15 +4542,45 @@ var require_dignity_p2p = __commonJS({
           throw new Error("joinPeerGroup requires groupId");
         }
         const scope = this.peerGroupScopeFor(groupId);
+        const role = options.role || options.metadata?.role || "subscriber";
+        const tierMode = options.tierMode || "auto";
+        const tiered = options.tiered === true || options.tierMode !== void 0 || options.role !== void 0 || typeof options.liveCap === "number";
+        const liveCap = typeof options.liveCap === "number" ? options.liveCap : DEFAULT_LIVE_CAP;
+        const existingMembers = this.listPeerGroupMembers(groupId, { includeSelf: false });
+        const existingSubscriberCount = existingMembers.filter((member) => {
+          const memberRole = member.metadata?.peerGroupRole || member.metadata?.role;
+          return memberRole !== "publisher";
+        }).length;
+        let assignedTier = tiered ? assignPeerGroupTier({
+          joinIndex: existingSubscriberCount,
+          liveCap,
+          requestedTier: tierMode === "auto" ? null : tierMode,
+          role
+        }) : null;
+        const publisherId = options.publisherId || (role === "publisher" ? this.nodeId : null);
         const config = {
           fanout: typeof options.fanout === "number" ? options.fanout : this.defaultPeerGroupFanout,
           maxActivePeers: typeof options.maxActivePeers === "number" ? options.maxActivePeers : this.defaultPeerGroupMaxActivePeers,
           maxHops: typeof options.maxHops === "number" ? options.maxHops : this.defaultGossipMaxHops,
-          relayEnabled: options.relayEnabled !== false
+          relayEnabled: options.relayEnabled !== false,
+          tiered,
+          tierMode,
+          liveCap,
+          bulkIntervalMs: typeof options.bulkIntervalMs === "number" ? options.bulkIntervalMs : DEFAULT_BULK_INTERVAL_MS,
+          domainEvents: options.domainEvents !== false,
+          autoPublishDomainEvents: options.autoPublishDomainEvents !== false,
+          role,
+          publisherId,
+          commandCapable: options.commandCapable !== false,
+          peerGroupTier: assignedTier
         };
         await this.joinDiscovery(scope, {
           metadata: {
             peerGroup: groupId,
+            ...assignedTier ? { peerGroupTier: assignedTier } : {},
+            peerGroupRole: role,
+            ...publisherId ? { publisherId } : {},
+            bulkRelay: false,
             ...options.metadata || {}
           },
           bootstrapPeerIds: options.bootstrapPeerIds,
@@ -4206,8 +4588,60 @@ var require_dignity_p2p = __commonJS({
           ttlMs: options.ttlMs
         });
         this.peerGroups.set(groupId, config);
-        this.emit("peergroupjoined", { groupId, config });
+        if (!this.domainEventLogs.has(groupId)) {
+          this.domainEventLogs.set(groupId, []);
+        }
+        if (!this.replicaViews.has(groupId)) {
+          this.replicaViews.set(groupId, createEmptyView());
+        }
+        this.refreshBulkRelays(groupId);
+        if (tiered && tierMode === "auto" && role === "subscriber") {
+          assignedTier = this.recalculateOwnPeerGroupTier(groupId) || assignedTier;
+          config.peerGroupTier = assignedTier;
+        }
+        this.emit("peergroupjoined", { groupId, config, tier: assignedTier });
         return config;
+      }
+      recalculateOwnPeerGroupTier(groupId) {
+        const group = this.peerGroups.get(groupId);
+        if (!group || !group.tiered || group.role !== "subscriber") {
+          return group ? group.peerGroupTier : null;
+        }
+        if (group.tierMode !== "auto") {
+          return group.peerGroupTier;
+        }
+        const scope = this.peerGroupScopeFor(groupId);
+        const members = this.listPeerGroupMembers(groupId, { includeSelf: true });
+        const subscribers = members.filter((member) => {
+          const memberRole = member.metadata?.peerGroupRole || member.metadata?.role;
+          return memberRole !== "publisher";
+        }).map((member) => member.peerId).sort();
+        const joinIndex = subscribers.indexOf(this.nodeId);
+        if (joinIndex < 0) {
+          return group.peerGroupTier;
+        }
+        const newTier = assignPeerGroupTier({
+          joinIndex,
+          liveCap: group.liveCap,
+          requestedTier: null,
+          role: "subscriber"
+        });
+        if (newTier === group.peerGroupTier) {
+          return newTier;
+        }
+        group.peerGroupTier = newTier;
+        const room = this.discoveryRooms.get(scope);
+        if (room) {
+          room.metadata = {
+            ...room.metadata || {},
+            peerGroupTier: newTier
+          };
+          this.upsertPresence(scope, this.nodeId, room.metadata, room.ttlMs, this.now());
+          this.announcePresence(scope).catch((error) => {
+            this.emit("warning", { type: "tier-announce-failed", groupId, error });
+          });
+        }
+        return newTier;
       }
       async leavePeerGroup(groupId) {
         if (!groupId) {
@@ -4216,6 +4650,7 @@ var require_dignity_p2p = __commonJS({
         const scope = this.peerGroupScopeFor(groupId);
         await this.leaveDiscovery(scope);
         this.peerGroups.delete(groupId);
+        this.bulkRelayByGroup.delete(groupId);
         this.emit("peergroupleft", { groupId });
       }
       async publishToPeerGroup(groupId, innerMessageType, innerPayload, options = {}) {
@@ -4238,7 +4673,11 @@ var require_dignity_p2p = __commonJS({
         const fanout = typeof options.fanout === "number" ? options.fanout : group ? group.fanout : this.defaultPeerGroupFanout;
         const maxActivePeers = group ? group.maxActivePeers : this.defaultPeerGroupMaxActivePeers;
         const maxHop = typeof options.maxHops === "number" ? options.maxHops : group ? group.maxHops : this.defaultGossipMaxHops;
-        const fanoutPeerIds = this.selectPeerGroupFanout(groupId, fanout, [this.nodeId]);
+        const fanoutOptions = {};
+        if (group && group.tiered && options.tier !== "bulk") {
+          fanoutOptions.tier = options.tier || "live";
+        }
+        const fanoutPeerIds = this.selectPeerGroupFanout(groupId, fanout, [this.nodeId], fanoutOptions);
         if (fanoutPeerIds.length > 0) {
           await this.ensureConnectedToPeers(fanoutPeerIds.slice(0, maxActivePeers));
           await this.enforceConnectionBudget();
@@ -4259,6 +4698,204 @@ var require_dignity_p2p = __commonJS({
           fanoutPeerIds
         });
         return { gossipId, fanoutPeerIds };
+      }
+      async publishPeerGroupBulk(groupId, innerMessageType, innerPayload, options = {}) {
+        const group = this.peerGroups.get(groupId);
+        if (!group && options.allowUnjoined !== true) {
+          throw new Error(`PeerGroup ${groupId} has not been joined`);
+        }
+        if (group && group.role !== "publisher") {
+          throw new Error(`Only publisher can bulk-publish to PeerGroup ${groupId}`);
+        }
+        const fanout = typeof options.fanout === "number" ? options.fanout : group ? group.fanout : this.defaultPeerGroupFanout;
+        const maxActivePeers = group ? group.maxActivePeers : this.defaultPeerGroupMaxActivePeers;
+        const maxHop = typeof options.maxHops === "number" ? options.maxHops : group ? group.maxHops : this.defaultGossipMaxHops;
+        const fanoutPeerIds = this.selectPeerGroupFanout(
+          groupId,
+          fanout,
+          [this.nodeId],
+          { tier: "bulk", bulkRelayOnly: group?.tiered === true }
+        );
+        if (fanoutPeerIds.length > 0) {
+          await this.ensureConnectedToPeers(fanoutPeerIds.slice(0, maxActivePeers));
+          await this.enforceConnectionBudget();
+        }
+        const gossipId = options.gossipId || this.idGenerator();
+        this.markSeenGossip(gossipId);
+        await this.broadcastMessage("peer-group:gossip", {
+          groupId,
+          gossipId,
+          publisherId: this.nodeId,
+          hop: 0,
+          maxHop,
+          deliveryTier: "bulk",
+          innerMessageType,
+          innerPayload
+        }, {
+          broadcastScope: this.peerGroupScopeFor(groupId),
+          fanoutPeerIds
+        });
+        return { gossipId, fanoutPeerIds };
+      }
+      async publishPeerGroupCheckpoint(groupId, options = {}) {
+        const group = this.peerGroups.get(groupId);
+        if (!group) {
+          throw new Error(`PeerGroup ${groupId} has not been joined`);
+        }
+        const events = this.domainEventLogs.get(groupId) || [];
+        const checkpoint = buildCheckpoint(groupId, events, {
+          publisherId: options.publisherId || group.publisherId || this.nodeId
+        });
+        await this.publishPeerGroupBulk(groupId, "domain:checkpoint", checkpoint, options);
+        this.emit("checkpointpublished", { groupId, checkpoint });
+        return checkpoint;
+      }
+      resolvePublisherGroupIds(options = {}) {
+        if (options.peerGroupId) {
+          return [options.peerGroupId];
+        }
+        const groups = [];
+        for (const [groupId, config] of this.peerGroups.entries()) {
+          if (config.domainEvents && config.autoPublishDomainEvents && config.role === "publisher") {
+            groups.push(groupId);
+          }
+        }
+        return groups;
+      }
+      async maybePublishDomainEvent(operation, options = {}) {
+        const groupIds = this.resolvePublisherGroupIds(options);
+        if (groupIds.length === 0) {
+          return;
+        }
+        for (const groupId of groupIds) {
+          await this.publishDomainEventForOperation(groupId, operation);
+        }
+      }
+      async publishDomainEventForOperation(groupId, operation) {
+        const group = this.peerGroups.get(groupId);
+        if (!group || !group.domainEvents) {
+          return null;
+        }
+        if (group.role !== "publisher") {
+          throw new Error(`Only publisher can emit domain events for PeerGroup ${groupId}`);
+        }
+        const prevHash = this.lastEventHashByGroup.get(groupId) || null;
+        let event = operationToDomainEvent(operation, {
+          publisherId: this.nodeId,
+          groupId,
+          prevHash,
+          eventIdGenerator: () => this.idGenerator()
+        });
+        if (this.securityService.options.signingEnabled && this.securityService.signingSecretKey) {
+          event = signDomainEvent(event, this.securityService.signingSecretKey);
+        }
+        const log = this.domainEventLogs.get(groupId) || [];
+        log.push(event);
+        this.domainEventLogs.set(groupId, log);
+        this.lastEventHashByGroup.set(groupId, event.eventHash);
+        this.emit("domainevent", event);
+        if (group.autoPublishDomainEvents) {
+          await this.publishToPeerGroup(groupId, "domain:event", event, { tier: "live" });
+          if (group.tiered) {
+            await this.publishPeerGroupBulk(groupId, "domain:event", event);
+          }
+        }
+        return event;
+      }
+      refreshBulkRelays(groupId) {
+        const group = this.peerGroups.get(groupId);
+        if (!group || !group.tiered) {
+          return [];
+        }
+        const peers = this.listPeerGroupMembers(groupId, { includeSelf: false });
+        const relays = electBulkRelays(peers);
+        const previous = this.bulkRelayByGroup.get(groupId) || [];
+        this.bulkRelayByGroup.set(groupId, relays);
+        const changed = previous.length !== relays.length || previous.some((id, index) => id !== relays[index]);
+        if (changed) {
+          this.emit("bulkrelaychanged", { groupId, relays, previous });
+        }
+        return relays;
+      }
+      ingestRemoteDomainEvent(event, context = {}) {
+        const groupId = event.groupId || context.groupId;
+        if (!groupId) {
+          return false;
+        }
+        const group = this.peerGroups.get(groupId);
+        if (!group) {
+          return false;
+        }
+        const publisherId = event.publisherId || context.publisherId;
+        if (group.publisherId && publisherId !== group.publisherId) {
+          this.emit("warning", {
+            type: "domain-event-rejected",
+            groupId,
+            reason: "publisher-mismatch",
+            eventId: event.eventId,
+            expectedPublisher: group.publisherId,
+            actualPublisher: publisherId
+          });
+          return false;
+        }
+        let signingPublicKey = null;
+        if (this.securityService.options.signingEnabled && publisherId) {
+          const peerKey = this.securityService.resolvePeerPublicKey(publisherId, null);
+          signingPublicKey = peerKey ? peerKey.signingPublicKey : null;
+          if (!signingPublicKey) {
+            this.emit("warning", {
+              type: "domain-event-rejected",
+              groupId,
+              reason: "missing-publisher-key",
+              eventId: event.eventId,
+              publisherId
+            });
+            return false;
+          }
+        }
+        const verified = verifyDomainEvent(event, { signingPublicKey });
+        if (!verified.ok) {
+          this.emit("warning", {
+            type: "domain-event-rejected",
+            groupId,
+            reason: verified.reason,
+            eventId: event.eventId
+          });
+          return false;
+        }
+        if (this.securityService.options.signingEnabled && verified.unsigned) {
+          this.emit("warning", {
+            type: "domain-event-rejected",
+            groupId,
+            reason: "unsigned-event",
+            eventId: event.eventId
+          });
+          return false;
+        }
+        const log = this.domainEventLogs.get(groupId) || [];
+        if (log.some((entry) => entry.eventId === event.eventId)) {
+          return false;
+        }
+        const expectedPrev = log.length > 0 ? log[log.length - 1].eventHash : null;
+        if (event.prevHash !== expectedPrev) {
+          this.emit("chainbroken", {
+            groupId,
+            expectedPrev,
+            actualPrev: event.prevHash,
+            eventId: event.eventId
+          });
+          return false;
+        }
+        log.push(event);
+        this.domainEventLogs.set(groupId, log);
+        this.lastEventHashByGroup.set(groupId, event.eventHash);
+        if (!group.commandCapable) {
+          const view = this.replicaViews.get(groupId) || createEmptyView();
+          applyDomainEventToView(view, event);
+          this.replicaViews.set(groupId, view);
+        }
+        this.emit("domainevent", event);
+        return true;
       }
       async publishRecordToPeerGroup(groupId, collectionName, id, options = {}) {
         const collection = this.getCollection(collectionName);
@@ -4299,15 +4936,26 @@ var require_dignity_p2p = __commonJS({
           publisherId
         });
         const group = this.peerGroups.get(groupId);
+        const deliveryTier = payload.deliveryTier || "live";
+        if (group && group.tiered && group.peerGroupTier === "bulk" && deliveryTier !== "bulk") {
+          return;
+        }
         const configuredMaxHop = group ? group.maxHops : this.defaultGossipMaxHops;
         const maxHop = typeof payloadMaxHop === "number" ? Math.min(payloadMaxHop, configuredMaxHop) : configuredMaxHop;
         if (!group || group.relayEnabled === false || hop >= maxHop) {
           return;
         }
+        const relayOptions = {};
+        if (group.tiered) {
+          relayOptions.tier = deliveryTier === "bulk" ? "bulk" : "live";
+          if (deliveryTier === "bulk") {
+            relayOptions.bulkRelayOnly = true;
+          }
+        }
         const relayPeers = this.selectPeerGroupFanout(groupId, group.fanout, [
           decrypted.senderId,
           this.nodeId
-        ]);
+        ], relayOptions);
         if (relayPeers.length === 0) {
           return;
         }
@@ -4319,6 +4967,7 @@ var require_dignity_p2p = __commonJS({
           publisherId,
           hop: hop + 1,
           maxHop,
+          deliveryTier,
           innerMessageType,
           innerPayload
         }, {
@@ -4359,6 +5008,19 @@ var require_dignity_p2p = __commonJS({
           if (operation) {
             this.applyOperation(operation);
           }
+          return;
+        }
+        if (innerMessageType === "domain:event") {
+          this.ingestRemoteDomainEvent(innerPayload, context);
+          return;
+        }
+        if (innerMessageType === "domain:checkpoint") {
+          this.emit("peergroupmessage", {
+            groupId: context.groupId,
+            senderId: context.senderId,
+            type: "domain:checkpoint",
+            payload: innerPayload
+          });
           return;
         }
         if (innerMessageType === "record:snapshot") {
@@ -4406,6 +5068,13 @@ var require_dignity_p2p = __commonJS({
         };
         map.set(peerId, next);
         this.trustPeerFromMetadata(peerId, next.metadata);
+        const groupId = parsePeerGroupScope(scope);
+        if (groupId && this.peerGroups.has(groupId)) {
+          this.refreshBulkRelays(groupId);
+          if (peerId !== this.nodeId) {
+            this.recalculateOwnPeerGroupTier(groupId);
+          }
+        }
         if (!existing) {
           this.emit("peerdiscovered", { scope, peerId, metadata: next.metadata });
         }
@@ -12442,6 +13111,195 @@ var require_indexeddb_persistence = __commonJS({
   }
 });
 
+// src/cqrs/query-replica.js
+var require_query_replica = __commonJS({
+  "src/cqrs/query-replica.js"(exports, module) {
+    var EventEmitter = require_event_emitter();
+    var {
+      createEmptyView,
+      applyDomainEventToView,
+      verifyEventChain,
+      verifyDomainEvent,
+      DOMAIN_EVENT_SCHEMA_VERSION
+    } = require_domain_events();
+    var DignityQueryReplica = class extends EventEmitter {
+      constructor(dignityP2P, { groupId, collections = [], tierMode = "auto", publisherId = null } = {}) {
+        super();
+        if (!dignityP2P) {
+          throw new Error("DignityQueryReplica requires dignityP2P");
+        }
+        if (!groupId) {
+          throw new Error("DignityQueryReplica requires groupId");
+        }
+        this.dignity = dignityP2P;
+        this.groupId = groupId;
+        this.collections = [...collections];
+        this.tierMode = tierMode;
+        this.publisherId = publisherId;
+        this.view = createEmptyView(this.collections);
+        this.eventLog = [];
+        this.started = false;
+        this.boundDomainHandler = this.handleDomainEvent.bind(this);
+        this.boundPeerGroupHandler = this.handlePeerGroupMessage.bind(this);
+      }
+      async start(options = {}) {
+        if (this.started) {
+          return this;
+        }
+        await this.dignity.joinPeerGroup(this.groupId, {
+          tierMode: this.tierMode,
+          role: "subscriber",
+          commandCapable: false,
+          domainEvents: true,
+          publisherId: this.publisherId,
+          liveCap: options.liveCap,
+          bulkIntervalMs: options.bulkIntervalMs,
+          bootstrapPeerIds: options.bootstrapPeerIds,
+          metadata: { role: "subscriber", replica: true }
+        });
+        this.dignity.on("domainevent", this.boundDomainHandler);
+        this.dignity.on("peergroupmessage", this.boundPeerGroupHandler);
+        this.started = true;
+        this.emit("started", { groupId: this.groupId });
+        return this;
+      }
+      async stop() {
+        if (!this.started) {
+          return;
+        }
+        this.dignity.off("domainevent", this.boundDomainHandler);
+        this.dignity.off("peergroupmessage", this.boundPeerGroupHandler);
+        await this.dignity.leavePeerGroup(this.groupId);
+        this.started = false;
+        this.emit("stopped", { groupId: this.groupId });
+      }
+      handleDomainEvent(event) {
+        if (!event || event.groupId !== this.groupId) {
+          return;
+        }
+        if (this.publisherId && event.publisherId !== this.publisherId) {
+          return;
+        }
+        this.ingestEvent(event);
+      }
+      handlePeerGroupMessage(message) {
+        if (!message || message.groupId !== this.groupId) {
+          return;
+        }
+        if (message.type === "domain:checkpoint") {
+          this.emit("checkpoint", message.payload);
+        }
+      }
+      ingestEvent(event, { skipChainCheck = false } = {}) {
+        const verified = verifyDomainEvent(event, {
+          supportedVersions: [DOMAIN_EVENT_SCHEMA_VERSION]
+        });
+        if (!verified.ok) {
+          this.emit("warning", { type: "domain-event-rejected", reason: verified.reason, event });
+          return false;
+        }
+        if (!skipChainCheck && this.eventLog.length > 0) {
+          const lastHash = this.eventLog[this.eventLog.length - 1].eventHash;
+          if (event.prevHash !== lastHash) {
+            this.emit("chainbroken", {
+              groupId: this.groupId,
+              expectedPrev: lastHash,
+              actualPrev: event.prevHash,
+              eventId: event.eventId
+            });
+            return false;
+          }
+        } else if (!skipChainCheck && this.eventLog.length === 0 && event.prevHash) {
+          this.emit("chainbroken", {
+            groupId: this.groupId,
+            expectedPrev: null,
+            actualPrev: event.prevHash,
+            eventId: event.eventId
+          });
+          return false;
+        }
+        const duplicate = this.eventLog.some((entry) => entry.eventId === event.eventId);
+        if (duplicate) {
+          return false;
+        }
+        const result = applyDomainEventToView(this.view, event, {
+          collectionsFilter: this.collections.length > 0 ? this.collections : null
+        });
+        if (result.applied || result.reason === "collection-filtered") {
+          this.eventLog.push({ ...event });
+          this.emit("change", { event, result });
+          return true;
+        }
+        this.emit("warning", { type: "domain-event-not-applied", reason: result.reason, event });
+        return false;
+      }
+      read(collectionName, id) {
+        const collection = this.view.get(collectionName);
+        if (!collection) {
+          return null;
+        }
+        const record = collection.get(id);
+        if (!record || record.deletedAt) {
+          return null;
+        }
+        return { ...record, data: { ...record.data } };
+      }
+      list(collectionName, options = {}) {
+        const collection = this.view.get(collectionName);
+        if (!collection) {
+          return [];
+        }
+        const includeDeleted = options.includeDeleted || false;
+        const records = [];
+        for (const record of collection.values()) {
+          if (record.deletedAt && !includeDeleted) {
+            continue;
+          }
+          if (record.deletedAt && includeDeleted) {
+            records.push({
+              id: record.id,
+              ownerId: record.ownerId,
+              deletedAt: record.deletedAt,
+              version: record.version
+            });
+            continue;
+          }
+          records.push({ ...record, data: { ...record.data } });
+        }
+        return records;
+      }
+      verifyChain() {
+        const result = verifyEventChain(this.eventLog);
+        if (!result.ok) {
+          this.emit("chainbroken", { groupId: this.groupId, ...result });
+        }
+        return result;
+      }
+      getViewStats() {
+        const stats = {
+          groupId: this.groupId,
+          eventCount: this.eventLog.length,
+          collections: {}
+        };
+        for (const [name, collection] of this.view.entries()) {
+          let active = 0;
+          let deleted = 0;
+          for (const record of collection.values()) {
+            if (record.deletedAt) {
+              deleted += 1;
+            } else {
+              active += 1;
+            }
+          }
+          stats.collections[name] = { active, deleted };
+        }
+        return stats;
+      }
+    };
+    module.exports = DignityQueryReplica;
+  }
+});
+
 // src/index.js
 var require_index = __commonJS({
   "src/index.js"(exports, module) {
@@ -12488,6 +13346,24 @@ var require_index = __commonJS({
       parsePeerGroupScope,
       selectFanoutPeers
     } = require_peer_group();
+    var {
+      DOMAIN_EVENT_SCHEMA_VERSION,
+      operationToDomainEvent,
+      signDomainEvent,
+      verifyDomainEvent,
+      verifyEventChain,
+      buildCheckpoint,
+      createEmptyView,
+      applyDomainEventToView
+    } = require_domain_events();
+    var {
+      DEFAULT_LIVE_CAP,
+      DEFAULT_BULK_INTERVAL_MS,
+      assignPeerGroupTier,
+      filterPeersByTier
+    } = require_peer_group_tiers();
+    var { electBulkRelays, DEFAULT_BULK_RELAY_COUNT } = require_bulk_relay();
+    var DignityQueryReplica = require_query_replica();
     module.exports = {
       DignityP2P,
       createDefaultSignalingPool,
@@ -12521,7 +13397,22 @@ var require_index = __commonJS({
       DEFAULT_PEER_GROUP_OPTIONS,
       peerGroupScope,
       parsePeerGroupScope,
-      selectFanoutPeers
+      selectFanoutPeers,
+      DOMAIN_EVENT_SCHEMA_VERSION,
+      operationToDomainEvent,
+      signDomainEvent,
+      verifyDomainEvent,
+      verifyEventChain,
+      buildCheckpoint,
+      createEmptyView,
+      applyDomainEventToView,
+      DEFAULT_LIVE_CAP,
+      DEFAULT_BULK_INTERVAL_MS,
+      assignPeerGroupTier,
+      filterPeersByTier,
+      electBulkRelays,
+      DEFAULT_BULK_RELAY_COUNT,
+      DignityQueryReplica
     };
   }
 });

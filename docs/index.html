@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="dignity.js v0.7.1 — REST-like P2P object API for decentralized JavaScript applications." />
+    <meta name="description" content="dignity.js v0.8.0 — REST-like P2P object API for decentralized JavaScript applications." />
     <title>dignity.js · Documentation</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.ico" sizes="32x32" />
@@ -16,7 +16,7 @@
       <a class="site-header__brand" href="#overview">
         <img src="./assets/dignity-logo.svg" alt="" width="344" height="80" />
         <!-- <span>dignity.js</span> -->
-        <span class="site-header__version">v0.7.1</span>
+        <span class="site-header__version">v0.8.0</span>
       </a>
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
@@ -47,6 +47,7 @@
             <a href="#object-api">Object API</a>
             <a href="#discovery">Room discovery</a>
             <a href="#peer-groups">PeerGroup gossip</a>
+            <a href="#cqrs-tiers">CQRS tiers</a>
             <a href="#messaging">Direct messaging</a>
             <a href="#concurrency">Concurrency</a>
             <a href="#content-hashes">Content hashes</a>
@@ -95,6 +96,10 @@
               <article class="card">
                 <h3>Content hashes</h3>
                 <p><code>record.hash</code> — <code>sha512:</code> digests over canonical <code>data</code> via <code>stableStringify</code>.</p>
+              </article>
+              <article class="card">
+                <h3>CQRS PeerGroups (v0.8+)</h3>
+                <p>Live + bulk tiers, signed domain events, and <code>DignityQueryReplica</code> read views for massive audiences.</p>
               </article>
             </div>
           </section>
@@ -480,7 +485,7 @@ await node.leaveDiscovery('team:red');</code></pre>
   bootstrapPeerIds: [hostPeerId],
   fanout: 3,
   maxActivePeers: 8,
-  maxHops: 6,
+  maxHops: 64,
   metadata: { role: 'spectator' }
 });
 
@@ -522,6 +527,14 @@ node.getPeerGroupStats();
                     <td>Late-joiner catch-up</td>
                   </tr>
                   <tr>
+                    <td><code>domain:event</code></td>
+                    <td>Signed, versioned write event (auto-published on CRUD when <code>domainEvents: true</code>)</td>
+                  </tr>
+                  <tr>
+                    <td><code>domain:checkpoint</code></td>
+                    <td>Bulk-tier catch-up anchor (<code>lastEventHash</code>, <code>recordCount</code>)</td>
+                  </tr>
+                  <tr>
                     <td>App-defined</td>
                     <td>Custom payloads via <code>publishToPeerGroup</code> (emits <code>peergroupmessage</code>)</td>
                   </tr>
@@ -538,6 +551,46 @@ node.getPeerGroupStats();
               <li><code>gossipId</code> dedup cache prevents replay loops across relays.</li>
               <li>Set <code>relayEnabled: false</code> on a group to receive updates without re-forwarding.</li>
             </ul>
+
+            <h3 id="cqrs-tiers">CQRS tiers &amp; query replicas (v0.8+)</h3>
+            <p>
+              For audiences above ~5&nbsp;000 subscribers <em>per publisher</em>, use the command/query split:
+              publishers write locally and emit signed domain events; subscribers maintain read-only materialized views.
+            </p>
+            <ul>
+              <li><strong>Live tier</strong> — first <code>liveCap</code> subscribers (default 5&nbsp;000) receive real-time gossip via <code>publishToPeerGroup</code>.</li>
+              <li><strong>Bulk tier</strong> — overflow subscribers receive batched updates via <code>publishPeerGroupBulk</code> and elected bulk relays.</li>
+              <li><strong>Domain events</strong> — every <code>create</code> / <code>update</code> / <code>remove</code> on a publisher group auto-emits <code>domain:event</code> with hash-chain linking.</li>
+              <li><strong>Query replica</strong> — <code>DignityQueryReplica</code> hydrates local <code>read</code> / <code>list</code> views without contacting the owner.</li>
+            </ul>
+            <div class="code-block">
+              <pre><code class="language-javascript">const { DignityP2P, DignityQueryReplica } = dignity;
+
+// Publisher (command path)
+await publisher.joinPeerGroup('feed:alice', {
+  role: 'publisher',
+  tiered: true,
+  liveCap: 5000,
+  domainEvents: true
+});
+await publisher.create('posts', { text: 'hello' }, {
+  id: 'p1',
+  peerGroupId: 'feed:alice'   // auto-publishes domain:event
+});
+
+// Read-only replica (query path)
+const replica = new DignityQueryReplica(reader, {
+  groupId: 'feed:alice',
+  collections: ['posts'],
+  publisherId: 'alice'
+});
+await replica.start({ bootstrapPeerIds: ['alice'] });
+replica.read('posts', 'p1');
+replica.verifyChain();  // hash-chain consistency</code></pre>
+            </div>
+            <p>
+              Try the <a href="./playground/index.html">live playground</a> demo <em>CQRS — publisher + query replica</em>.
+            </p>
 
             <h3>Chess spectators</h3>
             <p>
@@ -573,8 +626,8 @@ node.getPeerGroupStats();
                   </tr>
                   <tr>
                     <td><code>maxHops</code></td>
-                    <td>6</td>
-                    <td>Covers large graphs with low diameter</td>
+                    <td>64</td>
+                    <td>Covers large graphs (fanout³×⁶⁴) without per-group tuning</td>
                   </tr>
                   <tr>
                     <td><code>globalMaxOpenConnections</code></td>
@@ -591,7 +644,8 @@ node.getPeerGroupStats();
             </div>
 
             <h3>Roadmap</h3>
-            <p><strong>v0.7.1 (current)</strong> — live docs playground, demo fixes, syntax highlighting.</p>
+            <p><strong>v0.8.0 (current)</strong> — CQRS tiered PeerGroups, domain events, DignityQueryReplica, hash chains, bulk relay, maxHops 64.</p>
+            <p><strong>v0.7.1</strong> — live docs playground, demo fixes, syntax highlighting.</p>
             <p><strong>v0.7.0 (shipped)</strong> — credential-derived keys, identity rotation, PeerGroup hardening, stress harness.</p>
             <p><strong>v0.6.0 (shipped)</strong> — core gossip, chess spectators, unit + e2e tests.</p>
             <p><strong>v0.6.x polish</strong> — <code>subscribeObjectFeed</code> wrapper, connection LRU trim, IndexedDB joined-group persistence, React <code>usePeerGroup</code> hook, 50+ node integration test.</p>
@@ -914,7 +968,7 @@ const pool = createDefaultSignalingPool({
                 <tbody>
                   <tr>
                     <td><code>dignity.js</code></td>
-                    <td><code>DignityP2P</code>, <code>IndexedDBPersistence</code>, signaling providers, in-memory adapters, security utilities</td>
+                    <td><code>DignityP2P</code>, <code>DignityQueryReplica</code>, <code>IndexedDBPersistence</code>, signaling providers, in-memory adapters, PeerGroup + CQRS helpers (<code>domain-events</code>, <code>peer-group-tiers</code>, <code>bulk-relay</code>), security utilities</td>
                   </tr>
                   <tr>
                     <td><code>dignity.js/react</code></td>
@@ -965,10 +1019,10 @@ const pool = createDefaultSignalingPool({
           <section id="development" class="section">
             <h2>Development</h2>
             <div class="code-block">
-              <pre><code class="language-bash"># Run tests (237+ passing, ~91% line coverage)
+              <pre><code class="language-bash"># Run tests (289+ passing)
 npm test
 
-# PeerGroup unit + e2e tests only
+# PeerGroup + CQRS unit + integration tests
 npm run test:peer-group
 
 # Build browser + Node bundles
@@ -985,7 +1039,7 @@ npm run example:chess</code></pre>
 
           <footer class="site-footer">
             <p>
-              dignity.js v0.7.1 ·
+              dignity.js v0.8.0 ·
               <a href="https://github.com/jose-compu/dignity.js/blob/main/LICENSE">Apache 2.0</a> ·
               <a href="https://github.com/jose-compu/dignity.js">GitHub</a> ·
               <a href="https://www.npmjs.com/package/dignity.js">npm</a>

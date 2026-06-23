@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "P2P object API for decentralized JavaScript applications",
   "homepage": "https://jose-compu.github.io/dignity.js/",
   "repository": {
@@ -41,7 +41,7 @@
   "scripts": {
     "test": "jest --coverage",
     "test:unit": "jest tests/unit --runInBand",
-    "test:peer-group": "jest tests/unit/peer-group-gossip.test.js tests/unit/peer-group-helpers.test.js tests/integration/peer-group-gossip-e2e.test.js --runInBand --coverage=false",
+    "test:peer-group": "jest tests/unit/peer-group-gossip.test.js tests/unit/peer-group-helpers.test.js tests/unit/domain-events.test.js tests/unit/peer-group-tiers.test.js tests/unit/query-replica.test.js tests/unit/view-consistency.test.js tests/integration/peer-group-gossip-e2e.test.js tests/integration/cqrs-tiered-peergroup.test.js --runInBand --coverage=false",
     "test:stress-peer-group": "RUN_STRESS_TESTS=1 jest tests/stress/peer-group-scale.test.js --runInBand --coverage=false",
     "stress:peer-group": "node scripts/stress-peer-group.js",
     "test:cloudflare-live": "RUN_CLOUDFLARE_LIVE_TESTS=1 jest tests/integration/cloudflare-signaling-live.test.js --runInBand",
