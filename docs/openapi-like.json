@@ -1,7 +1,11 @@
 {
   "name": "dignity.js",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "REST-like object API over peer-to-peer replication",
+  "lifecycle": {
+    "start": "attach network message handler and begin receiving",
+    "stop": "leave discovery scopes and detach handler"
+  },
   "resources": {
     "collections/{collection}/{id}": {
       "create": {
@@ -11,7 +15,8 @@
           "id": "optional stable id",
           "collaborators": "optional peer id list",
           "broadcastScope": "scoped broadcast password namespace",
-          "connectToPeers": "optional; defaults to collaborators on PeerJS mesh"
+          "connectToPeers": "optional; defaults to collaborators on PeerJS mesh",
+          "peerGroupId": "optional; auto-publish signed domain event to this PeerGroup (v0.8+, publisher role)"
         }
       },
       "read": {
@@ -43,7 +48,17 @@
       },
       "delete": {
         "method": "remove(collection, id)",
-        "authorization": "owner-only"
+        "authorization": "owner-only",
+        "options": {
+          "peerGroupId": "optional; auto-publish domain event when publisher (v0.8+)"
+        }
+      },
+      "transferOwnership": {
+        "method": "transferOwnership(collection, id, newOwnerId, options)",
+        "authorization": "owner-only",
+        "options": {
+          "keepAsCollaborator": "default true; previous owner stays collaborator"
+        }
       }
     },
     "collections/{collection}": {
@@ -57,7 +72,28 @@
       "getConnectionStats": "{ openCount, peerIds }",
       "ensureConnectedToPeers": "connect to many peers before broadcast",
       "joinDiscovery": "scoped presence; options.bootstrapPeerIds connects before announce",
-      "broadcastMessage": "custom app messages; options.connectToPeers"
+      "leaveDiscovery": "stop heartbeat and remove local presence from scope",
+      "listPeers": "list presence entries in a discovery scope",
+      "announcePresence": "manual presence heartbeat for a joined scope",
+      "broadcastMessage": "custom app messages; options.connectToPeers",
+      "sendDirectMessage": "encrypted direct message to targetId",
+      "registerPeerPublicKey": "trust peer signing/encryption keys with optional generation",
+      "trustPeerPublicKey": "register trusted keys without generation metadata",
+      "getPublicKey": "returns this node's public key bundle",
+      "unbanPeer": "clear manual or automatic peer ban",
+      "getBanInfo": "returns ban expiry and reason for peerId, or null"
+    },
+    "identity": {
+      "getPeerIdentityGeneration": "trusted identity generation for peerId",
+      "getPeerIdentityState": "public key + generation state for peerId",
+      "adoptDerivedIdentityKeyPair": "install credential-derived keys locally",
+      "deriveAndAdoptIdentity": "derive keys from username/password and adopt",
+      "broadcastIdentityRotation": "broadcast signed identity:rotate to peers",
+      "enrollAndBroadcastColdRecovery": "enroll cold recovery key and announce",
+      "revokeAndRotateDerivedIdentity": "compromise recovery rotation helper",
+      "rotateDerivedIdentityPassword": "password-change rotation helper",
+      "applyPeerIdentityRotation": "apply remote identity:rotate message",
+      "applyPeerColdRecoveryEnrollment": "apply remote cold-recovery enrollment"
     },
     "peerGroups": {
       "joinPeerGroup": "join scalable gossip group; options: fanout, maxActivePeers, maxHops (default 64), role, tiered, liveCap, tierMode, domainEvents, publisherId",
@@ -86,8 +122,12 @@
     "bulkrelaychanged": "bulk relay peer set changed for a tiered group",
     "checkpointpublished": "publisher published domain-event checkpoint",
     "peerdiscovered": "peer joined discovery scope",
+    "peergroupjoined": "local node joined a PeerGroup",
+    "peergroupleft": "local node left a PeerGroup",
     "peerleft": "peer left or timed out",
-    "message": "custom decrypted message received"
+    "message": "custom decrypted message received",
+    "securityerror": "signature, PoW, or decrypt failure on incoming message",
+    "messageignored": "message dropped (wrong target, banned peer, etc.)"
   },
   "recordShape": {
     "active": {
