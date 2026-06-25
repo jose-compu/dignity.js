@@ -519,7 +519,7 @@ npm run docs:dev
 
 If 4173 is busy, `docs:dev` auto-picks the next free port (4174, 4175, …) and prints the URLs.
 
-## Dignity Apps (planned, v0.8.2+)
+## Dignity Apps (v0.8.2+)
 
 Self-contained HTML apps in a sandboxed iframe, inspired by [Datasette Apps](https://datasette.io/blog/2026/datasette-apps/). Track: [#100](https://github.com/jose-compu/dignity.js/issues/100).
 

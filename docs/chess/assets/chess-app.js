@@ -26210,6 +26210,123 @@ var require_query_replica = __commonJS({
   }
 });
 
+// src/apps/manifest.js
+var require_manifest = __commonJS({
+  "src/apps/manifest.js"(exports, module) {
+    var MANIFEST_SCHEMA_VERSION = 1;
+    var ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+    function isNonEmptyString(value) {
+      return typeof value === "string" && value.trim().length > 0;
+    }
+    function validateStoredCommand(command, index) {
+      const prefix = `storedCommands[${index}]`;
+      if (!command || typeof command !== "object") {
+        return { ok: false, reason: `${prefix} must be an object` };
+      }
+      if (!isNonEmptyString(command.id)) {
+        return { ok: false, reason: `${prefix}.id is required` };
+      }
+      if (!isNonEmptyString(command.collection)) {
+        return { ok: false, reason: `${prefix}.collection is required` };
+      }
+      if (!["create", "update", "delete"].includes(command.kind)) {
+        return { ok: false, reason: `${prefix}.kind must be create, update, or delete` };
+      }
+      if (command.allowedFields !== void 0) {
+        if (!Array.isArray(command.allowedFields) || command.allowedFields.some((f) => !isNonEmptyString(f))) {
+          return { ok: false, reason: `${prefix}.allowedFields must be a string array` };
+        }
+      }
+      return { ok: true };
+    }
+    function validateDignityAppManifest(raw) {
+      if (!raw || typeof raw !== "object") {
+        return { ok: false, reason: "manifest must be an object" };
+      }
+      if (raw.schemaVersion !== void 0 && raw.schemaVersion !== MANIFEST_SCHEMA_VERSION) {
+        return { ok: false, reason: `unsupported schemaVersion: ${raw.schemaVersion}` };
+      }
+      if (!isNonEmptyString(raw.id) || !ID_PATTERN.test(raw.id)) {
+        return { ok: false, reason: "id must match [a-z0-9][a-z0-9._-]{0,63}" };
+      }
+      if (!isNonEmptyString(raw.title)) {
+        return { ok: false, reason: "title is required" };
+      }
+      if (!Array.isArray(raw.collections) || raw.collections.length === 0) {
+        return { ok: false, reason: "collections must be a non-empty string array" };
+      }
+      const collections = [];
+      for (const name of raw.collections) {
+        if (!isNonEmptyString(name)) {
+          return { ok: false, reason: "collections entries must be non-empty strings" };
+        }
+        if (collections.includes(name)) {
+          return { ok: false, reason: `duplicate collection: ${name}` };
+        }
+        collections.push(name.trim());
+      }
+      const storedCommands = Array.isArray(raw.storedCommands) ? raw.storedCommands : [];
+      for (let index = 0; index < storedCommands.length; index += 1) {
+        const result = validateStoredCommand(storedCommands[index], index);
+        if (!result.ok) {
+          return result;
+        }
+        const collection = storedCommands[index].collection;
+        if (!collections.includes(collection)) {
+          return {
+            ok: false,
+            reason: `storedCommands[${index}] references undeclared collection: ${collection}`
+          };
+        }
+      }
+      const allowedCspOrigins = Array.isArray(raw.allowedCspOrigins) ? raw.allowedCspOrigins : [];
+      for (const origin of allowedCspOrigins) {
+        if (!isNonEmptyString(origin) || !origin.startsWith("https://")) {
+          return { ok: false, reason: "allowedCspOrigins entries must be https:// URLs" };
+        }
+        if (/localhost|127\.0\.0\.1/i.test(origin)) {
+          return { ok: false, reason: "localhost origins are not allowed in allowedCspOrigins" };
+        }
+      }
+      const manifest = {
+        schemaVersion: MANIFEST_SCHEMA_VERSION,
+        id: raw.id.trim(),
+        title: raw.title.trim(),
+        description: isNonEmptyString(raw.description) ? raw.description.trim() : "",
+        collections,
+        peerGroupId: isNonEmptyString(raw.peerGroupId) ? raw.peerGroupId.trim() : null,
+        publisherId: isNonEmptyString(raw.publisherId) ? raw.publisherId.trim() : null,
+        storedCommands: storedCommands.map((cmd) => ({
+          id: cmd.id.trim(),
+          collection: cmd.collection.trim(),
+          kind: cmd.kind,
+          allowedFields: Array.isArray(cmd.allowedFields) ? [...cmd.allowedFields] : null,
+          requiresRole: isNonEmptyString(cmd.requiresRole) ? cmd.requiresRole.trim() : null
+        })),
+        allowedCspOrigins: allowedCspOrigins.map((o) => o.trim()),
+        readOnly: storedCommands.length === 0
+      };
+      return { ok: true, manifest };
+    }
+    function collectionAllowed(manifest, collectionName) {
+      return manifest && Array.isArray(manifest.collections) && manifest.collections.includes(collectionName);
+    }
+    function getStoredCommand(manifest, commandId) {
+      if (!manifest || !Array.isArray(manifest.storedCommands)) {
+        return null;
+      }
+      return manifest.storedCommands.find((cmd) => cmd.id === commandId) || null;
+    }
+    module.exports = {
+      MANIFEST_SCHEMA_VERSION,
+      ID_PATTERN,
+      validateDignityAppManifest,
+      collectionAllowed,
+      getStoredCommand
+    };
+  }
+});
+
 // src/index.js
 var require_src = __commonJS({
   "src/index.js"(exports, module) {
@@ -26274,6 +26391,12 @@ var require_src = __commonJS({
     } = require_peer_group_tiers();
     var { electBulkRelays, DEFAULT_BULK_RELAY_COUNT } = require_bulk_relay();
     var DignityQueryReplica = require_query_replica();
+    var {
+      MANIFEST_SCHEMA_VERSION: DIGNITY_APP_MANIFEST_SCHEMA_VERSION,
+      validateDignityAppManifest,
+      collectionAllowed,
+      getStoredCommand
+    } = require_manifest();
     module.exports = {
       DignityP2P: DignityP2P2,
       createDefaultSignalingPool,
@@ -26322,7 +26445,11 @@ var require_src = __commonJS({
       filterPeersByTier,
       electBulkRelays,
       DEFAULT_BULK_RELAY_COUNT,
-      DignityQueryReplica
+      DignityQueryReplica,
+      DIGNITY_APP_MANIFEST_SCHEMA_VERSION,
+      validateDignityAppManifest,
+      collectionAllowed,
+      getStoredCommand
     };
   }
 });
@@ -26674,7 +26801,7 @@ function Lobby({
   function handleOpenGame(game) {
     onOpenGame(sessionResumeHash(game));
   }
-  return /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby-layout" }, /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v0.8.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname" }, "Your nickname", /* @__PURE__ */ import_react.default.createElement(
+  return /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby-layout" }, /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v0.8.2 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname" }, "Your nickname", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
       value: nickname,
