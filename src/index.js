@@ -67,6 +67,12 @@ const {
 } = require('./cqrs/peer-group-tiers');
 const { electBulkRelays, DEFAULT_BULK_RELAY_COUNT } = require('./cqrs/bulk-relay');
 const DignityQueryReplica = require('./cqrs/query-replica');
+const {
+  MANIFEST_SCHEMA_VERSION: DIGNITY_APP_MANIFEST_SCHEMA_VERSION,
+  validateDignityAppManifest,
+  collectionAllowed,
+  getStoredCommand
+} = require('./apps/manifest');
 
 module.exports = {
   DignityP2P,
@@ -116,5 +122,9 @@ module.exports = {
   filterPeersByTier,
   electBulkRelays,
   DEFAULT_BULK_RELAY_COUNT,
-  DignityQueryReplica
+  DignityQueryReplica,
+  DIGNITY_APP_MANIFEST_SCHEMA_VERSION,
+  validateDignityAppManifest,
+  collectionAllowed,
+  getStoredCommand
 };
