@@ -519,6 +519,29 @@ npm run docs:dev
 
 If 4173 is busy, `docs:dev` auto-picks the next free port (4174, 4175, …) and prints the URLs.
 
+## Dignity Apps (planned, v0.8.2+)
+
+Self-contained HTML apps in a sandboxed iframe, inspired by [Datasette Apps](https://datasette.io/blog/2026/datasette-apps/). Track: [#100](https://github.com/jose-compu/dignity.js/issues/100).
+
+**Threat boundaries (v0.8.2):**
+
+- Apps run in an iframe with `sandbox` + immutable CSP — no parent DOM, cookies, or `localStorage`.
+- Data access only via a parent **MessageChannel** bridge; no signing keys or mesh credentials in the iframe.
+- **Read:** `dignity.query` backed by `DignityQueryReplica` (collections allowlisted in manifest).
+- **Write:** only **stored commands** pre-declared in the app manifest — no arbitrary CRUD.
+- External `fetch` blocked unless origin is listed in `allowedCspOrigins` (https only; no localhost).
+
+```js
+const { validateDignityAppManifest } = require('dignity.js');
+
+const { ok, manifest } = validateDignityAppManifest({
+  id: 'timeline-demo',
+  title: 'Event timeline',
+  collections: ['posts'],
+  peerGroupId: 'feed:alice'
+});
+```
+
 ## Docs and Examples
 
 - **Documentation:** [jose-compu.github.io/dignity.js](https://jose-compu.github.io/dignity.js/)
