@@ -519,11 +519,11 @@ npm run docs:dev
 
 If 4173 is busy, `docs:dev` auto-picks the next free port (4174, 4175, …) and prints the URLs.
 
-## Dignity Apps (v0.8.2+)
+## Dignity Apps (v0.8.3+)
 
 Self-contained HTML apps in a sandboxed iframe, inspired by [Datasette Apps](https://datasette.io/blog/2026/datasette-apps/). Track: [#100](https://github.com/jose-compu/dignity.js/issues/100).
 
-**Threat boundaries (v0.8.2):**
+**Threat boundaries (v0.8.2+, documented in v0.8.3):**
 
 - Apps run in an iframe with `sandbox` + immutable CSP — no parent DOM, cookies, or `localStorage`.
 - Data access only via a parent **MessageChannel** bridge; no signing keys or mesh credentials in the iframe.
@@ -545,6 +545,9 @@ const { ok, manifest } = validateDignityAppManifest({
 ## Docs and Examples
 
 - **Documentation:** [jose-compu.github.io/dignity.js](https://jose-compu.github.io/dignity.js/)
+- **API reference:** [`docs/api-reference.md`](./docs/api-reference.md) (generated from `openapi-like.json`)
+- **Browser compatibility:** [`docs/browser-compatibility.md`](./docs/browser-compatibility.md) (#91)
+- **Benchmarks:** [`docs/benchmarks/results.json`](./docs/benchmarks/results.json) — `npm run benchmark` (#92)
 - Docs site source: `docs/index.html` (local: `npm run docs:dev`)
 - **3D Chess demo:** `docs/chess/` — PeerJS mesh, dual-signed resume links, IndexedDB → [local chess demo](http://127.0.0.1:4173/chess/) when `docs:dev` is running
 - API metadata: `docs/openapi-like.json`

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="dignity.js v0.8.2 — REST-like P2P object API for decentralized JavaScript applications." />
+    <meta name="description" content="dignity.js v0.8.3 — REST-like P2P object API for decentralized JavaScript applications." />
     <title>dignity.js · Documentation</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.ico" sizes="32x32" />
@@ -16,7 +16,7 @@
       <a class="site-header__brand" href="#overview">
         <img src="./assets/dignity-logo.svg" alt="" width="344" height="80" />
         <!-- <span>dignity.js</span> -->
-        <span class="site-header__version">v0.8.2</span>
+        <span class="site-header__version">v0.8.3</span>
       </a>
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
@@ -24,6 +24,7 @@
         <a href="./playground/index.html">Playground</a>
         <a href="./chess/index.html">3D Chess</a>
         <a href="./openapi-like.json">API JSON</a>
+        <a href="./api-reference.md">API MD</a>
       </div>
       <button class="menu-toggle" type="button" aria-label="Toggle navigation">Menu</button>
     </header>
@@ -62,6 +63,9 @@
           <div class="sidebar__label">Reference</div>
           <nav>
             <a href="#api-reference">API reference</a>
+            <a href="./api-reference.md">Full API (Markdown)</a>
+            <a href="#browser-compat">Browser compatibility</a>
+            <a href="#benchmarks">Benchmarks</a>
             <a href="#events">Events</a>
             <a href="#exports">Package exports</a>
             <a href="#examples">Examples</a>
@@ -100,6 +104,10 @@
               <article class="card">
                 <h3>CQRS PeerGroups (v0.8+)</h3>
                 <p>Live + bulk tiers, signed domain events, and <code>DignityQueryReplica</code> read views for massive audiences.</p>
+              </article>
+              <article class="card">
+                <h3>Reference &amp; benchmarks (v0.8.3)</h3>
+                <p><a href="./api-reference.md">API reference</a>, <a href="./browser-compatibility.md">browser matrix</a>, and <a href="./benchmarks/results.json">performance numbers</a>.</p>
               </article>
             </div>
           </section>
@@ -644,7 +652,8 @@ replica.verifyChain();  // hash-chain consistency</code></pre>
             </div>
 
             <h3>Roadmap</h3>
-            <p><strong>v0.8.2 (current)</strong> — Dignity App manifest validation, sandboxed-apps threat model (#101, #108).</p>
+            <p><strong>v0.8.3 (current)</strong> — API reference (#93), browser compatibility matrix (#91), performance benchmarks (#92).</p>
+            <p><strong>v0.8.2</strong> — Dignity App manifest validation, sandboxed-apps threat model (#101, #108).</p>
             <p><strong>v0.8.1</strong> — openapi-like.json sync with DignityP2P API.</p>
             <p><strong>v0.8.0</strong> — CQRS tiered PeerGroups, domain events, DignityQueryReplica, hash chains, bulk relay, maxHops 64.</p>
             <p><strong>v0.7.0 (shipped)</strong> — credential-derived keys, identity rotation, PeerGroup hardening, stress harness.</p>
@@ -908,7 +917,90 @@ const pool = createDefaultSignalingPool({
             <p>
               Machine-readable metadata:
               <a href="./openapi-like.json">openapi-like.json</a>
+              ·
+              <a href="./api-reference.md">api-reference.md</a> (generated, #93)
             </p>
+          </section>
+
+          <section id="browser-compat" class="section">
+            <h2>Browser compatibility</h2>
+            <p>
+              dignity.js requires WebRTC, IndexedDB (optional persistence), and Web Crypto in a secure context (HTTPS or localhost).
+              CI runs Node.js 18/20/22 only — browser rows reflect manual smoke tests on the playground and chess demo.
+              Full matrix: <a href="./browser-compatibility.md">browser-compatibility.md</a> (#91).
+            </p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Browser</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td>Chrome / Chromium</td><td>Supported (primary dev target)</td></tr>
+                  <tr><td>Firefox</td><td>Supported</td></tr>
+                  <tr><td>Safari</td><td>Supported with WebRTC / background-tab caveats</td></tr>
+                  <tr><td>Edge (Chromium)</td><td>Supported</td></tr>
+                  <tr><td>Node.js 18+</td><td>Supported (in-memory / tests)</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="benchmarks" class="section">
+            <h2>Performance benchmarks</h2>
+            <p>
+              Reproducible in-memory gossip latency and IndexedDB hydration numbers (#92).
+              Regenerate: <code>npm run benchmark</code> · smoke: <code>npm run benchmark:quick</code>.
+              Details: <a href="./benchmarks/README.md">benchmarks/README.md</a>.
+            </p>
+            <p>Latest checked-in results: <a href="./benchmarks/results.json">benchmarks/results.json</a> (Node in-memory harness; not real WebRTC).</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Suite</th>
+                    <th>Audience / records</th>
+                    <th>p50</th>
+                    <th>p90</th>
+                    <th>p99</th>
+                    <th>Delivery</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Gossip epidemic</td>
+                    <td>100 subscribers</td>
+                    <td>2 ms</td>
+                    <td>5 ms</td>
+                    <td>5 ms</td>
+                    <td>93%</td>
+                  </tr>
+                  <tr>
+                    <td>CQRS tiered gossip</td>
+                    <td>50 subs, liveCap 20</td>
+                    <td>1 ms</td>
+                    <td>1 ms</td>
+                    <td>1 ms</td>
+                    <td>100%</td>
+                  </tr>
+                  <tr>
+                    <td>IndexedDB hydrate</td>
+                    <td>1,000 records</td>
+                    <td colspan="3">6 ms total (~0.006 ms/record)</td>
+                    <td>—</td>
+                  </tr>
+                  <tr>
+                    <td>IndexedDB hydrate</td>
+                    <td>2,000 records</td>
+                    <td colspan="3">17 ms total (~0.009 ms/record)</td>
+                    <td>—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p><small>Figures from <code>docs/benchmarks/results.json</code>; re-run locally to refresh after harness changes.</small></p>
           </section>
 
           <section id="events" class="section">
@@ -1009,8 +1101,23 @@ const pool = createDefaultSignalingPool({
                   </tr>
                   <tr>
                     <td><a href="./chess/index.html"><code>docs/chess/</code></a></td>
-                    <td>3D browser chess — PeerJS mesh, dual-signed resume links, IndexedDB, React hooks</td>
+                    <td>3D browser chess — PeerJS mesh, dual-signed resume links, IndexedDB, React hooks (v0.8.3)</td>
                     <td><code>npm run build:chess</code> then <code>npm run docs:serve</code></td>
+                  </tr>
+                  <tr>
+                    <td><a href="./api-reference.md"><code>docs/api-reference.md</code></a></td>
+                    <td>Generated API reference from <code>openapi-like.json</code> (#93)</td>
+                    <td><code>npm run docs:api-reference</code></td>
+                  </tr>
+                  <tr>
+                    <td><a href="./browser-compatibility.md"><code>docs/browser-compatibility.md</code></a></td>
+                    <td>Browser support matrix and platform caveats (#91)</td>
+                    <td>—</td>
+                  </tr>
+                  <tr>
+                    <td><a href="./benchmarks/results.json"><code>docs/benchmarks/</code></a></td>
+                    <td>Gossip latency and IndexedDB hydration benchmarks (#92)</td>
+                    <td><code>npm run benchmark</code></td>
                   </tr>
                 </tbody>
               </table>
@@ -1020,7 +1127,7 @@ const pool = createDefaultSignalingPool({
           <section id="development" class="section">
             <h2>Development</h2>
             <div class="code-block">
-              <pre><code class="language-bash"># Run tests (289+ passing)
+              <pre><code class="language-bash"># Run tests (291+ passing)
 npm test
 
 # PeerGroup + CQRS unit + integration tests
@@ -1028,6 +1135,12 @@ npm run test:peer-group
 
 # Build browser + Node bundles
 npm run build
+
+# Regenerate API reference markdown (#93)
+npm run docs:api-reference
+
+# Run performance benchmarks (#92)
+npm run benchmark
 
 # Serve docs locally
 npm run docs:serve
@@ -1040,7 +1153,7 @@ npm run example:chess</code></pre>
 
           <footer class="site-footer">
             <p>
-              dignity.js v0.8.2 ·
+              dignity.js v0.8.3 ·
               <a href="https://github.com/jose-compu/dignity.js/blob/main/LICENSE">Apache 2.0</a> ·
               <a href="https://github.com/jose-compu/dignity.js">GitHub</a> ·
               <a href="https://www.npmjs.com/package/dignity.js">npm</a>

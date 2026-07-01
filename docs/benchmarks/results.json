@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-01T19:13:06.389Z",
+  "environment": {
+    "nodeVersion": "v22.20.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "quick": false
+  },
+  "notes": [
+    "Gossip benchmarks use InMemoryNetworkAdapter (simulated epidemic relay, not real WebRTC).",
+    "Audience sizes: 100 plain gossip + 50 tiered CQRS (liveCap 20). 10k WebRTC peers not simulated in one process.",
+    "heapUsedMb is process heap after the run (Node may retain allocated pages).",
+    "IndexedDB hydration uses fake-indexeddb in Node; browser timings may differ."
+  ],
+  "gossip": [
+    {
+      "name": "gossip-100",
+      "subscribers": 100,
+      "deliveryRatio": 0.93,
+      "medianDeliveryMs": 2,
+      "p90DeliveryMs": 5,
+      "p99DeliveryMs": 5,
+      "joinDurationMs": 2871,
+      "heapUsedMb": 2087.88,
+      "heapPerSubscriberKb": 21379.89,
+      "peakSeenGossip": 1,
+      "peakOpenConnections": 100,
+      "durationMs": 8218,
+      "nodeCount": 101
+    },
+    {
+      "name": "gossip-tiered-50",
+      "subscribers": 50,
+      "deliveryRatio": 1,
+      "medianDeliveryMs": 1,
+      "p90DeliveryMs": 1,
+      "p99DeliveryMs": 1,
+      "joinDurationMs": 321,
+      "heapUsedMb": 305.46,
+      "heapPerSubscriberKb": 6255.82,
+      "peakSeenGossip": 2,
+      "peakOpenConnections": 51,
+      "durationMs": 572,
+      "nodeCount": 52
+    }
+  ],
+  "indexeddb": [
+    {
+      "name": "indexeddb-hydrate-100",
+      "recordCount": 100,
+      "hydrateMs": 0,
+      "recordsRestored": 100,
+      "msPerRecord": 0
+    },
+    {
+      "name": "indexeddb-hydrate-1000",
+      "recordCount": 1000,
+      "hydrateMs": 6,
+      "recordsRestored": 1000,
+      "msPerRecord": 0.006
+    },
+    {
+      "name": "indexeddb-hydrate-2000",
+      "recordCount": 2000,
+      "hydrateMs": 17,
+      "recordsRestored": 2000,
+      "msPerRecord": 0.009
+    }
+  ]
+}
