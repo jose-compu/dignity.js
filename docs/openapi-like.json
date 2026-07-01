@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "REST-like object API over peer-to-peer replication",
   "lifecycle": {
     "start": "attach network message handler and begin receiving",

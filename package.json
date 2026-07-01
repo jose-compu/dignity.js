@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "P2P object API for decentralized JavaScript applications",
   "homepage": "https://jose-compu.github.io/dignity.js/",
   "repository": {
@@ -53,7 +53,10 @@
     "docs:dev": "node scripts/serve-docs.js",
     "docs:serve": "node scripts/serve-docs.js",
     "docs:stop": "node scripts/stop-docs.js",
-    "docs:check": "node -e \"const fs=require('fs');['docs/index.html','docs/favicon.ico','docs/playground/index.html','docs/assets/playground.js','docs/assets/playground-demos.js','docs/assets/playground.css','docs/chess/index.html','docs/chess/favicon.ico','docs/assets/favicon.svg','docs/chess/assets/chess-app.js','docs/assets/dignity.esm.js','docs/assets/highlight/highlight.min.js','docs/assets/highlight/github.min.css','docs/assets/highlight/github-dark.min.css'].forEach(p=>fs.accessSync(p));\"",
+    "docs:api-reference": "node scripts/generate-api-reference.js",
+    "benchmark": "node scripts/run-benchmarks.js --write docs/benchmarks/results.json",
+    "benchmark:quick": "node scripts/run-benchmarks.js --quick",
+    "docs:check": "node -e \"const fs=require('fs');['docs/index.html','docs/favicon.ico','docs/api-reference.md','docs/browser-compatibility.md','docs/benchmarks/results.json','docs/playground/index.html','docs/assets/playground.js','docs/assets/playground-demos.js','docs/assets/playground.css','docs/chess/index.html','docs/chess/favicon.ico','docs/assets/favicon.svg','docs/chess/assets/chess-app.js','docs/assets/dignity.esm.js','docs/assets/highlight/highlight.min.js','docs/assets/highlight/github.min.css','docs/assets/highlight/github-dark.min.css'].forEach(p=>fs.accessSync(p));\"",
     "example:tictactoe": "node examples/decentralized-tictactoe.js",
     "example:chess": "node examples/decentralized-chess-lite.js",
     "prepublishOnly": "npm test && npm run build"
