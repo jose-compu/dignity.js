@@ -15027,12 +15027,25 @@ var require_event_emitter = __commonJS({
       constructor() {
         this.handlers = /* @__PURE__ */ new Map();
       }
+      /**
+       * Register a handler for an event name.
+       * Multiple handlers per event are supported; order is registration order.
+       *
+       * @param {string} eventName
+       * @param {Function} handler - Called with a single payload argument when {@link EventEmitter#emit} runs.
+       */
       on(eventName, handler) {
         if (!this.handlers.has(eventName)) {
           this.handlers.set(eventName, /* @__PURE__ */ new Set());
         }
         this.handlers.get(eventName).add(handler);
       }
+      /**
+       * Remove a previously registered handler. No-op if the handler was not registered.
+       *
+       * @param {string} eventName
+       * @param {Function} handler
+       */
       off(eventName, handler) {
         const eventHandlers = this.handlers.get(eventName);
         if (!eventHandlers) {
@@ -15043,6 +15056,13 @@ var require_event_emitter = __commonJS({
           this.handlers.delete(eventName);
         }
       }
+      /**
+       * Invoke all handlers registered for `eventName` with `payload`.
+       * No-op when no handlers are registered.
+       *
+       * @param {string} eventName
+       * @param {*} payload
+       */
       emit(eventName, payload) {
         const eventHandlers = this.handlers.get(eventName);
         if (!eventHandlers) {
@@ -26801,7 +26821,7 @@ function Lobby({
   function handleOpenGame(game) {
     onOpenGame(sessionResumeHash(game));
   }
-  return /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby-layout" }, /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v0.8.3 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname" }, "Your nickname", /* @__PURE__ */ import_react.default.createElement(
+  return /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby-layout" }, /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v0.9.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname" }, "Your nickname", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
       value: nickname,
