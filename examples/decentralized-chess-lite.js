@@ -1,8 +1,12 @@
 /**
- * Node.js chess example.
+ * Node.js chess-lite example (in-memory peers, no WebRTC).
  *
- * Run this example with:
- *   npm run example:chess
+ * Run: npm run example:chess
+ *
+ * Demonstrates:
+ * - Room discovery and scoped broadcast
+ * - Replicated match state (create / update / read)
+ * - Owner authorization on moves
  *
  * For the browser 3D demo (PeerJS, dual-signed resume, IndexedDB), see:
  *   docs/chess/   — rebuild with: npm run build:chess

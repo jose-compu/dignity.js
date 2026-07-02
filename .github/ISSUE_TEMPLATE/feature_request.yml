@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest an enhancement or new capability
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem and proposed solution. Check the [roadmap issue](https://github.com/jose-compu/dignity.js/issues/87) for alignment with v1.0 goals.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What are you trying to build or fix?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: API sketch, behavior, or docs change
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Area
+      options:
+        - label: Core P2P / DignityP2P API
+        - label: PeerGroup gossip / CQRS
+        - label: Security / signing / encryption
+        - label: Docs / examples / playground
+        - label: React hooks
+        - label: Dignity Apps (sandboxed iframe)

@@ -1,7 +1,7 @@
 const SlothPermutation = require('../../src/security/sloth-vdf');
 
 describe('SlothPermutation core', () => {
-  test('fastPow handles modulus equal to one', () => {
+  test('fastPow handles modulus equal to one (#37)', () => {
     const sloth = new SlothPermutation();
     const result = sloth.fastPow(5n, 7n, 1n);
     expect(result).toBe(0n);

@@ -468,6 +468,12 @@ await host.pushRecordSnapshot('chess-matches', gameId, {
 
 The joiner applies the snapshot via `restoreRecord`, then subsequent move updates replicate normally.
 
+## Contributing
+
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup, tests, and PR expectations.
+
+**Good first issues:** [issues labeled `good first issue`](https://github.com/jose-compu/dignity.js/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+
 ## Development
 
 | Script | Purpose | Notes |
