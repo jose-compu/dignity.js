@@ -1,3 +1,14 @@
+/**
+ * Minimal tic-tac-toe over dignity.js (in-memory peers).
+ *
+ * Run: npm run example:tictactoe
+ *
+ * Demonstrates:
+ * - Two nodes on InMemoryNetworkHub (no WebRTC)
+ * - Room discovery (joinDiscovery / listPeers)
+ * - Shared object create + owner-only updates
+ * - broadcastScope so ops stay in the same room
+ */
 const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = require('../src');
 
 function printBoard(cells) {
@@ -10,6 +21,7 @@ function printBoard(cells) {
 }
 
 async function runDemo() {
+  // Hub relays messages between adapters — stand-in for PeerJS in tests.
   const hub = new InMemoryNetworkHub();
 
   const alice = new DignityP2P({
@@ -17,7 +29,7 @@ async function runDemo() {
     networkAdapter: new InMemoryNetworkAdapter(hub),
     security: {
       appPassword: 'demo-shared-password',
-      powTargetMs: 100
+      powTargetMs: 100 // lower PoW for fast local demo
     }
   });
 
@@ -32,6 +44,8 @@ async function runDemo() {
 
   await alice.start();
   await bob.start();
+
+  // Same scope string = same virtual room; metadata is visible to listPeers.
   await alice.joinDiscovery('room:tictactoe', {
     metadata: { nickname: 'alice', role: 'host' },
     heartbeatIntervalMs: 100000,
@@ -48,6 +62,7 @@ async function runDemo() {
     alice.listPeers('room:tictactoe', { includeSelf: false }).map((peer) => peer.peerId)
   );
 
+  // Alice creates the game object; she becomes owner (only owner may update/delete).
   await alice.create(
     'games',
     {
@@ -59,8 +74,7 @@ async function runDemo() {
     { id: 'ttt-1', broadcastScope: 'room:tictactoe' }
   );
 
-  // Owner-updated canonical state for v0.1.0:
-  // participants can propose moves, while owner commits official updates.
+  // Demo uses Alice as owner for all moves; production games might use delegated proposals (#13).
   const moves = [
     { actor: alice, playerId: 'alice', index: 0, mark: 'X' },
     { actor: alice, playerId: 'alice', index: 4, mark: 'O' },
@@ -85,6 +99,7 @@ async function runDemo() {
     );
   }
 
+  // Bob is not owner — update must fail.
   try {
     await bob.update('games', 'ttt-1', { illegal: true });
   } catch (error) {

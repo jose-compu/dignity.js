@@ -468,6 +468,12 @@ await host.pushRecordSnapshot('chess-matches', gameId, {
 
 The joiner applies the snapshot via `restoreRecord`, then subsequent move updates replicate normally.
 
+## Contributing
+
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup, tests, and PR expectations.
+
+**Good first issues:** [issues labeled `good first issue`](https://github.com/jose-compu/dignity.js/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+
 ## Development
 
 | Script | Purpose | Notes |
@@ -519,11 +525,11 @@ npm run docs:dev
 
 If 4173 is busy, `docs:dev` auto-picks the next free port (4174, 4175, …) and prints the URLs.
 
-## Dignity Apps (v0.8.3+)
+## Dignity Apps (v0.9.0+)
 
 Self-contained HTML apps in a sandboxed iframe, inspired by [Datasette Apps](https://datasette.io/blog/2026/datasette-apps/). Track: [#100](https://github.com/jose-compu/dignity.js/issues/100).
 
-**Threat boundaries (v0.8.2+, documented in v0.8.3):**
+**Threat boundaries (v0.8.2+, documented in v0.9):**
 
 - Apps run in an iframe with `sandbox` + immutable CSP — no parent DOM, cookies, or `localStorage`.
 - Data access only via a parent **MessageChannel** bridge; no signing keys or mesh credentials in the iframe.

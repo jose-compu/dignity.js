@@ -3,7 +3,7 @@
 This tutorial walks you through dignity.js from zero to a working multi-peer app. No prior P2P experience required.
 
 **Time:** ~35 minutes  
-**Version:** 0.8.3  
+**Version:** 0.9.0  
 **Full docs:** [docs site](https://jose-compu.github.io/dignity.js/) · [README](./README.md)
 
 ---
@@ -364,7 +364,7 @@ node.on('warning', handler);
 
 | Resource | What it covers |
 |----------|----------------|
-| [docs/index.html](./docs/index.html) | Full docs site (CQRS, security, v0.8.3 reference) |
+| [docs/index.html](./docs/index.html) | Full docs site (CQRS, security, v0.9 reference) |
 | [docs/api-reference.md](./docs/api-reference.md) | Generated API reference from `openapi-like.json` |
 | [docs/browser-compatibility.md](./docs/browser-compatibility.md) | Supported browsers and platform requirements |
 | [docs/benchmarks/results.json](./docs/benchmarks/results.json) | Gossip latency and IndexedDB hydration benchmarks |

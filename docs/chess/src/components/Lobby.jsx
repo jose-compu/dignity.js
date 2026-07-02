@@ -78,7 +78,7 @@ export default function Lobby({
     <div className="lobby-layout">
       <section className="lobby lobby__top">
         <div className="lobby__hero">
-          <p className="eyebrow">dignity.js v0.8.3 · decentralized demo</p>
+          <p className="eyebrow">dignity.js v0.9.0 · decentralized demo</p>
           <h1>3D Chess on dignity.js</h1>
           <p>
             Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption,
