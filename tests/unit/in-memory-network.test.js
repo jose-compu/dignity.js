@@ -92,4 +92,21 @@ describe('InMemoryNetworkAdapter', () => {
     await adapter.stop();
     expect(adapter.nodeId).toBeNull();
   });
+
+  test('connectToPeer ignores null self and tracks connections', async () => {
+    const hub = new InMemoryNetworkHub();
+    const adapter = new InMemoryNetworkAdapter(hub);
+    await adapter.start('alice');
+
+    await adapter.connectToPeer(null);
+    await adapter.connectToPeer('alice');
+    await adapter.connectToPeer('bob');
+
+    expect(adapter.isConnectedTo('bob')).toBe(true);
+    expect(adapter.listOpenPeerIds()).toEqual(['bob']);
+    expect(adapter.getOpenConnectionCount()).toBe(1);
+
+    await expect(adapter.sendToPeers({ x: 1 }, ['bob'])).resolves.toBeUndefined();
+    await adapter.stop();
+  });
 });

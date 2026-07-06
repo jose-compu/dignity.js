@@ -16,7 +16,7 @@ const {
   InMemoryNetworkAdapter,
   IndexedDBPersistence
 } = require('../../src');
-const { useDignity, useCollection, usePeers, useObject, useDiscovery, useMessages } = require('../../src/react');
+const { useDignity, useCollection, usePeers, useObject, useDiscovery, useMessages, useConnectionStats, useRoom } = require('../../src/react');
 const { stableStringify } = require('../../src/security/message-security-service');
 const { fastTestSecurity } = require('../helpers/fast-security');
 
@@ -561,6 +561,85 @@ describe('React hooks', () => {
       expect(result.current[0].type).toBe('chat');
     });
 
+    await node.stop();
+  });
+
+  test('useMessages applies optional filter', async () => {
+    const node = new DignityP2P(nodeConfig);
+    await node.start();
+
+    const { result } = renderHook(() => useMessages(node, (message) => message.type === 'keep'));
+
+    act(() => {
+      node.emit('message', { type: 'drop' });
+      node.emit('message', { type: 'keep', payload: 1 });
+    });
+
+    await waitFor(() => {
+      expect(result.current).toEqual([{ type: 'keep', payload: 1 }]);
+    });
+
+    await node.stop();
+  });
+
+  test('useObject returns null when params are missing', () => {
+    const node = new DignityP2P(nodeConfig);
+    const { result } = renderHook(() => useObject(node, null, 'x'));
+    expect(result.current).toBeNull();
+  });
+
+  test('useDiscovery surfaces join errors', async () => {
+    const node = new DignityP2P(nodeConfig);
+    await node.start();
+    const joinSpy = jest.spyOn(node, 'joinDiscovery').mockRejectedValue(new Error('join failed'));
+    const options = { metadata: {} };
+
+    const { result, unmount } = renderHook(() => useDiscovery(node, 'room', options));
+
+    await waitFor(() => {
+      expect(result.current.joined).toBe(false);
+      expect(result.current.error).toMatchObject({ message: 'join failed' });
+    });
+
+    unmount();
+    joinSpy.mockRestore();
+    await node.stop();
+  });
+
+  test('useConnectionStats reads node connection stats without polling', async () => {
+    const node = new DignityP2P(nodeConfig);
+    await node.start();
+    jest.spyOn(node, 'getConnectionStats').mockReturnValue({ openCount: 2, peerIds: ['a', 'b'] });
+
+    const { result } = renderHook(() => useConnectionStats(node, 0));
+
+    await waitFor(() => {
+      expect(result.current.openCount).toBe(2);
+      expect(result.current.peerIds).toEqual(['a', 'b']);
+    });
+
+    await node.stop();
+  });
+
+  test('useRoom composes discovery peers and connection stats', async () => {
+    const node = new DignityP2P(nodeConfig);
+    await node.start();
+    jest.spyOn(node, 'getConnectionStats').mockReturnValue({ openCount: 0, peerIds: [] });
+    const roomOptions = {
+      metadata: { nickname: 'alice' },
+      peersOptions: { includeSelf: true },
+      connectionPollMs: 0
+    };
+
+    const { result, unmount } = renderHook(() => useRoom(node, 'room', roomOptions));
+
+    await waitFor(() => {
+      expect(result.current.joined).toBe(true);
+    });
+    expect(result.current.peers).toBeDefined();
+    expect(result.current.connectionStats).toEqual({ openCount: 0, peerIds: [] });
+
+    unmount();
     await node.stop();
   });
 });

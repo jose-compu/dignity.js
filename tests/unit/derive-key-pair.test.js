@@ -105,4 +105,33 @@ describe('deriveKeyPairFromCredentials', () => {
     await expect(deriveKeyPairFromCredentials({ username: 'alice' }))
       .rejects.toThrow('requires password');
   });
+
+  test('deriveColdRecoverySigningKey and buildIdentitySalt', async () => {
+    const {
+      deriveColdRecoverySigningKey,
+      buildIdentitySalt,
+      buildColdRecoverySalt,
+      concatBytes
+    } = require('../../src/security/derive-key-pair');
+
+    const recovery = await deriveColdRecoverySigningKey({
+      username: 'alice',
+      coldPassword: 'cold-secret',
+      kdfIterations: 500
+    });
+    expect(recovery.recoveryPublicKey).toBeTruthy();
+    expect(recovery.signing.publicKey).toBeInstanceOf(Uint8Array);
+
+    expect(() => buildIdentitySalt('', 'info')).toThrow('requires username');
+    expect(() => buildIdentitySalt('alice', '')).toThrow('requires info');
+    expect(() => buildIdentitySalt('alice', 'info', '', 0)).toThrow('generation');
+
+    const salt = buildIdentitySalt('alice', 'sign', 'pepper', 2);
+    expect(salt).toBeInstanceOf(Uint8Array);
+    expect(buildColdRecoverySalt('alice', 'pepper')).toBeInstanceOf(Uint8Array);
+    expect(concatBytes(new Uint8Array([1]), new Uint8Array([2]))).toEqual(new Uint8Array([1, 2]));
+
+    await expect(deriveColdRecoverySigningKey({ username: 'alice' }))
+      .rejects.toThrow('requires coldPassword');
+  });
 });

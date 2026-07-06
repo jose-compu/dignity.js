@@ -2,7 +2,8 @@ const {
   DEFAULT_LIVE_CAP,
   assignPeerGroupTier,
   filterPeersByTier,
-  countLivePeers
+  countLivePeers,
+  countBulkPeers
 } = require('../../src/cqrs/peer-group-tiers');
 
 describe('peer group tiers', () => {
@@ -22,6 +23,7 @@ describe('peer group tiers', () => {
 
   test('requested live tier downgrades when cap exceeded', () => {
     expect(assignPeerGroupTier({ joinIndex: 10, liveCap: 5, requestedTier: 'live' })).toBe('bulk');
+    expect(assignPeerGroupTier({ joinIndex: 10, liveCap: 5, requestedTier: 'bulk' })).toBe('bulk');
   });
 
   test('filterPeersByTier filters presence metadata', () => {
@@ -33,5 +35,7 @@ describe('peer group tiers', () => {
     expect(filterPeersByTier(peers, 'live')).toHaveLength(1);
     expect(filterPeersByTier(peers, 'live')[0].peerId).toBe('a');
     expect(countLivePeers(peers)).toBe(1);
+    expect(countBulkPeers(peers)).toBe(1);
+    expect(filterPeersByTier(peers, null)).toEqual(peers);
   });
 });
