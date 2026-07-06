@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="dignity.js v0.9.0 — REST-like P2P object API for decentralized JavaScript applications." />
+    <meta name="description" content="dignity.js v0.10.0 — REST-like P2P object API for decentralized JavaScript applications." />
     <title>dignity.js · Documentation</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.ico" sizes="32x32" />
@@ -16,7 +16,7 @@
       <a class="site-header__brand" href="#overview">
         <img src="./assets/dignity-logo.svg" alt="" width="344" height="80" />
         <!-- <span>dignity.js</span> -->
-        <span class="site-header__version">v0.9.0</span>
+        <span class="site-header__version">v0.10.0</span>
       </a>
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
@@ -57,6 +57,7 @@
             <a href="#react">React hooks</a>
             <a href="#signaling">Signaling</a>
             <a href="./chess/index.html">3D Chess demo</a>
+            <a href="./tictactoe/index.html">Tic-tac-toe demo</a>
           </nav>
         </div>
         <div class="sidebar__group">
@@ -80,35 +81,53 @@
             <h1 class="page-title">Documentation</h1>
             <p class="lead">
               <strong>dignity.js</strong> is a REST-like P2P object API for decentralized JavaScript
-              applications. Synchronize shared objects across browsers with owner authorization,
-              scoped broadcast encryption, and built-in anti-abuse controls.
+              applications. Synchronize shared objects across browsers with
+              <a href="#object-api">owner authorization</a>,
+              <a href="#security">scoped broadcast encryption</a>, and built-in
+              <a href="#security">anti-abuse controls</a>.
             </p>
 
+            <div class="section-jump" aria-label="Jump to guide sections">
+              <a href="#installation">Installation</a>
+              <a href="#tutorial">Tutorial</a>
+              <a href="#quick-start">Quick start</a>
+              <a href="#object-api">Object API</a>
+              <a href="#security">Security</a>
+              <a href="#peer-groups">PeerGroups</a>
+              <a href="#examples">Examples</a>
+            </div>
+
             <div class="card-grid">
-              <article class="card">
+              <a class="card card--link" href="#object-api">
                 <h3>Object CRUD</h3>
                 <p><code>create</code>, <code>read</code>, <code>list</code>, <code>update</code>, <code>remove</code> over P2P replication.</p>
-              </article>
-              <article class="card">
+                <span class="card__more">Object API →</span>
+              </a>
+              <a class="card card--link" href="#security">
                 <h3>Security default-on</h3>
                 <p>Signing, encryption, Sloth VDF proof-of-work, and automatic peer bans.</p>
-              </article>
-              <article class="card">
+                <span class="card__more">Security model →</span>
+              </a>
+              <a class="card card--link" href="#browser">
                 <h3>Browser-first</h3>
                 <p>IIFE, ESM, and CJS bundles. Optional IndexedDB persistence and React hooks.</p>
-              </article>
-              <article class="card">
+                <span class="card__more">Browser usage →</span>
+              </a>
+              <a class="card card--link" href="#content-hashes">
                 <h3>Content hashes</h3>
                 <p><code>record.hash</code> — <code>sha512:</code> digests over canonical <code>data</code> via <code>stableStringify</code>.</p>
-              </article>
-              <article class="card">
+                <span class="card__more">Content hashes →</span>
+              </a>
+              <a class="card card--link" href="#cqrs-tiers">
                 <h3>CQRS PeerGroups (v0.8+)</h3>
                 <p>Live + bulk tiers, signed domain events, and <code>DignityQueryReplica</code> read views for massive audiences.</p>
-              </article>
-              <article class="card">
+                <span class="card__more">CQRS tiers →</span>
+              </a>
+              <a class="card card--link" href="#api-reference">
                 <h3>Reference &amp; benchmarks (v0.8.3+)</h3>
-                <p><a href="./api-reference.md">API reference</a>, <a href="./browser-compatibility.md">browser matrix</a>, and <a href="./benchmarks/results.json">performance numbers</a>.</p>
-              </article>
+                <p>API reference, browser matrix, and performance numbers.</p>
+                <span class="card__more">API reference →</span>
+              </a>
             </div>
           </section>
 
@@ -118,7 +137,7 @@
               <span class="code-block__label">npm</span>
               <pre><code class="language-bash">npm install dignity.js</code></pre>
             </div>
-            <p>For React hooks, install React 18+ as a peer dependency:</p>
+            <p>For React hooks, install React 18+ as a peer dependency. Then continue with the <a href="#tutorial">beginner tutorial</a> or <a href="#quick-start">quick start</a>.</p>
             <div class="code-block">
               <pre><code class="language-bash">npm install dignity.js react react-dom</code></pre>
             </div>
@@ -129,29 +148,45 @@
             <p class="lead">
               New to P2P? Follow these eight short lessons. The full walkthrough is also in
               <a href="https://github.com/jose-compu/dignity.js/blob/main/TUTORIAL.md" target="_blank" rel="noopener noreferrer"><code>TUTORIAL.md</code></a>
-              in the repository.
+              in the repository, or try the <a href="./playground/index.html">live playground</a> first.
             </p>
 
-            <div class="card-grid">
-              <article class="card">
-                <h3>Lesson 1</h3>
-                <p>Two peers, one shared object — <code>InMemoryNetworkHub</code> basics.</p>
-              </article>
-              <article class="card">
-                <h3>Lesson 2</h3>
-                <p>Rooms — <code>joinDiscovery</code> and <code>broadcastScope</code>.</p>
-              </article>
-              <article class="card">
-                <h3>Lesson 3–5</h3>
-                <p>Ownership, collaborators, and version conflicts.</p>
-              </article>
-              <article class="card">
-                <h3>Lesson 6–8</h3>
-                <p>Browser/PeerJS, PeerGroup spectators, IndexedDB persistence.</p>
-              </article>
+            <div class="section-jump" aria-label="Jump to lessons">
+              <a href="#tutorial-lesson-1">Lesson 1</a>
+              <a href="#tutorial-lesson-2">Lesson 2</a>
+              <a href="#tutorial-lesson-3">Lesson 3</a>
+              <a href="#tutorial-lesson-4">Lesson 4</a>
+              <a href="#tutorial-lesson-5">Lesson 5</a>
+              <a href="#tutorial-lesson-6">Lesson 6</a>
+              <a href="#tutorial-lesson-6b">Lesson 6b</a>
+              <a href="#tutorial-lesson-7">Lesson 7</a>
+              <a href="#tutorial-lesson-8">Lesson 8</a>
             </div>
 
-            <h3>Lesson 1 — Hello, two peers</h3>
+            <div class="card-grid">
+              <a class="card card--link" href="#tutorial-lesson-1">
+                <h3>Lesson 1</h3>
+                <p>Two peers, one shared object — <code>InMemoryNetworkHub</code> basics.</p>
+                <span class="card__more">Hello, two peers →</span>
+              </a>
+              <a class="card card--link" href="#tutorial-lesson-2">
+                <h3>Lesson 2</h3>
+                <p>Rooms — <code>joinDiscovery</code> and <code>broadcastScope</code>.</p>
+                <span class="card__more">Room discovery →</span>
+              </a>
+              <a class="card card--link" href="#tutorial-lesson-3">
+                <h3>Lesson 3–5</h3>
+                <p>Ownership, collaborators, and version conflicts.</p>
+                <span class="card__more">Lessons 3–5 →</span>
+              </a>
+              <a class="card card--link" href="#tutorial-lesson-6">
+                <h3>Lesson 6–8</h3>
+                <p>Browser/PeerJS, PeerGroup spectators, IndexedDB persistence.</p>
+                <span class="card__more">Lessons 6–8 →</span>
+              </a>
+            </div>
+
+            <h3 id="tutorial-lesson-1">Lesson 1 — Hello, two peers</h3>
             <p>A <strong>node</strong> is one participant. The in-memory adapter wires peers inside one process (tests and learning):</p>
             <div class="code-block">
               <pre><code class="language-javascript">const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = require('dignity.js');
@@ -169,8 +204,8 @@ await alice.create('notes', { title: 'Hello P2P' }, { id: 'note-1' });
 console.log(bob.read('notes', 'note-1')); // replicated automatically</code></pre>
             </div>
 
-            <h3>Lesson 2 — Find peers in a room</h3>
-            <p>Use <strong>scoped discovery</strong> so peers see who is online before collaborating:</p>
+            <h3 id="tutorial-lesson-2">Lesson 2 — Find peers in a room</h3>
+            <p>Use <strong>scoped discovery</strong> so peers see who is online before collaborating. See also <a href="#discovery">Room discovery</a>.</p>
             <div class="code-block">
               <pre><code class="language-javascript">await alice.joinDiscovery('lobby', { metadata: { nickname: 'Alice' } });
 await bob.joinDiscovery('lobby', { bootstrapPeerIds: ['alice'] });
@@ -183,8 +218,8 @@ await alice.create('notes', { title: 'Room note' }, {
 });</code></pre>
             </div>
 
-            <h3>Lesson 3 — Only the owner can edit</h3>
-            <p>The peer that calls <code>create</code> becomes <code>ownerId</code>. Others can read but not update unless you add them as collaborators:</p>
+            <h3 id="tutorial-lesson-3">Lesson 3 — Only the owner can edit</h3>
+            <p>The peer that calls <code>create</code> becomes <code>ownerId</code>. Others can read but not update unless you add them as collaborators. Details: <a href="#object-api">Object API</a>.</p>
             <div class="code-block">
               <pre><code class="language-javascript">await alice.create('games', { score: 0 }, { id: 'g1' });
 await alice.update('games', 'g1', { score: 10 });   // OK
@@ -193,7 +228,7 @@ await bob.update('games', 'g1', { score: 999 });    // rejected — Bob is not o
 alice.on('change', (e) => console.log(e.kind, e.collection, e.id));</code></pre>
             </div>
 
-            <h3>Lesson 4 — Invite a collaborator</h3>
+            <h3 id="tutorial-lesson-4">Lesson 4 — Invite a collaborator</h3>
             <div class="code-block">
               <pre><code class="language-javascript">await alice.update('docs', 'd1', { body: 'shared' }, {
   collaborators: ['alice', 'bob']
@@ -201,13 +236,33 @@ alice.on('change', (e) => console.log(e.kind, e.collection, e.id));</code></pre>
 await bob.update('docs', 'd1', { body: 'Bob edited' }); // OK now</code></pre>
             </div>
 
-            <h3>Lesson 5 — Versions and conflicts</h3>
+            <h3 id="tutorial-lesson-5">Lesson 5 — Versions and conflicts</h3>
             <p>Each update increments <code>version</code>. Use <code>expectedVersion</code> or <code>updateWithRetry</code> to avoid overwriting concurrent edits (see <a href="#concurrency">Concurrency</a>).</p>
 
-            <h3>Lesson 6 — Real browsers (PeerJS)</h3>
-            <p>Swap the in-memory adapter for <code>createPeerJSNetworkAdapter</code> and a signaling server. Open the <a href="./chess/index.html">3D Chess demo</a> in two tabs to see live WebRTC sync.</p>
+            <h3 id="tutorial-lesson-6">Lesson 6 — Real browsers (PeerJS)</h3>
+            <p>Swap the in-memory adapter for <code>createPeerJSNetworkAdapter</code> and a signaling server. Open the <a href="./chess/index.html">3D Chess demo</a> or <a href="./tictactoe/index.html">tic-tac-toe demo</a> in two tabs to see live WebRTC sync. See <a href="#browser">Browser usage</a> and <a href="#signaling">Signaling</a>.</p>
+            <p>Strict NAT or corporate firewalls may require custom STUN/TURN servers — see <a href="./browser-compatibility.md#peerjs-ice-turn">PeerJS ICE/TURN setup</a>.</p>
 
-            <h3>Lesson 7 — Small teams vs big audiences</h3>
+            <h3 id="tutorial-lesson-6b">Lesson 6b — Dual-signed resume checkpoints (chess demo)</h3>
+            <p>
+              The <a href="./chess/index.html">3D Chess demo</a> supports pausing a live game with a <strong>co-signed checkpoint</strong>:
+              both players sign the same canonical board payload (FEN, move history, tokens) with their seat keys.
+              The resulting resume link embeds the checkpoint in the URL when it fits; otherwise the creating browser stores a local
+              <code>checkpointRef</code> and you must export the <strong>portable checkpoint bundle</strong> for cross-device resume.
+            </p>
+            <div class="code-block">
+              <pre><code class="language-text">Flow:
+1. Host + joiner play at least one move
+2. Either player proposes pause → opponent signs the same checkpoint
+3. Copy the dual-signed resume link (or portable bundle if link uses checkpointRef)
+4. On a new device: import seat key backup in the lobby, then open the resume link</code></pre>
+            </div>
+            <p>
+              Broadcast encryption uses scoped <code>appPassword</code> (PBKDF2-hardened since v0.3.0).
+              Resume checkpoints add an independent Ed25519 dual-signature layer on top of the signed game state.
+            </p>
+
+            <h3 id="tutorial-lesson-7">Lesson 7 — Small teams vs big audiences</h3>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -236,9 +291,9 @@ await bob.update('docs', 'd1', { body: 'Bob edited' }); // OK now</code></pre>
 await spectator.joinPeerGroup('spectate:chess:game-42', { bootstrapPeerIds: ['white-host'] });
 await white.publishRecordToPeerGroup('spectate:chess:game-42', 'chess-matches', 'game-42');</code></pre>
             </div>
-            <p>Details: <a href="#peer-groups">PeerGroup gossip</a>.</p>
+            <p>Details: <a href="#peer-groups">PeerGroup gossip</a> and <a href="#cqrs-tiers">CQRS tiers</a>.</p>
 
-            <h3>Lesson 8 — Survive page reload</h3>
+            <h3 id="tutorial-lesson-8">Lesson 8 — Survive page reload</h3>
             <p>Attach <code>IndexedDBPersistence</code> in the browser so objects persist locally (see <a href="#persistence">IndexedDB persistence</a>).</p>
 
             <div class="callout callout--warn">
@@ -251,7 +306,7 @@ await white.publishRecordToPeerGroup('spectate:chess:game-42', 'chess-matches', 
               </ul>
             </div>
 
-            <p><strong>Next:</strong> run <code>node examples/decentralized-tictactoe.js</code> or read the full <a href="https://github.com/jose-compu/dignity.js/blob/main/TUTORIAL.md" target="_blank" rel="noopener noreferrer">TUTORIAL.md</a>.</p>
+            <p><strong>Next:</strong> try the <a href="#quick-start">quick start</a>, open the <a href="./playground/index.html">live playground</a>, run <code>node examples/decentralized-tictactoe.js</code> (<a href="#examples">examples</a>), or read the full <a href="https://github.com/jose-compu/dignity.js/blob/main/TUTORIAL.md" target="_blank" rel="noopener noreferrer">TUTORIAL.md</a>.</p>
           </section>
 
           <section id="quick-start" class="section">
@@ -315,8 +370,44 @@ await bob.stop();</code></pre>
               Try dignity.js features in the browser: pick a scenario, edit the code on the left,
               and see output on the right. Uses the bundled ESM build with an in-memory mesh — no install required.
             </p>
+
+            <h3>v0.10.0 examples</h3>
+            <p>New playground scenarios for this release. Full browser demos linked below.</p>
+            <div class="card-grid">
+              <a class="card card--link" href="./playground/index.html#transfer-ownership">
+                <h3>Transfer ownership</h3>
+                <p>Turn-based games hand off <code>ownerId</code> each move — tic-tac-toe pattern.</p>
+                <span class="card__more">Run in playground →</span>
+              </a>
+              <a class="card card--link" href="./playground/index.html#late-joiner-snapshot">
+                <h3>Late joiner snapshot</h3>
+                <p><code>pushRecordSnapshot</code> when a peer missed the initial <code>create</code>.</p>
+                <span class="card__more">Run in playground →</span>
+              </a>
+              <a class="card card--link" href="./playground/index.html#peerjs-ice-config">
+                <h3>PeerJS ICE/TURN</h3>
+                <p><code>createPeerJSNetworkAdapter({ iceServers })</code> for production browsers.</p>
+                <span class="card__more">Run in playground →</span>
+              </a>
+              <a class="card card--link" href="./chess/index.html">
+                <h3>3D Chess demo</h3>
+                <p>PeerJS mesh, dual-signed resume links, portable checkpoints, cross-device import.</p>
+                <span class="card__more">Open chess demo →</span>
+              </a>
+              <a class="card card--link" href="./tictactoe/index.html">
+                <h3>Browser tic-tac-toe</h3>
+                <p>PeerJS room discovery, owner-only moves, ownership transfer each turn.</p>
+                <span class="card__more">Open tic-tac-toe →</span>
+              </a>
+            </div>
+
             <p>
               <a class="playground-cta" href="./playground/index.html">Open live playground →</a>
+            </p>
+            <p class="muted">
+              See also <a href="#tutorial-lesson-6">Lesson 6 (PeerJS)</a>,
+              <a href="#tutorial-lesson-6b">Lesson 6b (resume checkpoints)</a>, and
+              <a href="./browser-compatibility.md#peerjs-ice-turn">ICE/TURN troubleshooting</a>.
             </p>
           </section>
 
@@ -652,7 +743,8 @@ replica.verifyChain();  // hash-chain consistency</code></pre>
             </div>
 
             <h3>Roadmap</h3>
-            <p><strong>v0.9.0 (current)</strong> — CONTRIBUTING.md, issue templates, example polish, JSDoc and tests (#28–#31, #35, #37, #42, #44).</p>
+            <p><strong>v0.10.0 (current)</strong> — cross-device chess resume, portable checkpoints, lobby seat-key import, browser tic-tac-toe demo, PeerJS <code>iceServers</code>, Playwright e2e smoke, Bauhaus branding, doc cross-links (#11, #22–#27, #36).</p>
+            <p><strong>v0.9.0 (shipped)</strong> — CONTRIBUTING.md, issue templates, example polish, JSDoc and tests (#28–#31, #35, #37, #42, #44).</p>
             <p><strong>v0.8.3</strong> — API reference (#93), browser compatibility matrix (#91), performance benchmarks (#92).</p>
             <p><strong>v0.8.2</strong> — Dignity App manifest validation, sandboxed-apps threat model (#101, #108).</p>
             <p><strong>v0.8.1</strong> — openapi-like.json sync with DignityP2P API.</p>
@@ -1101,8 +1193,13 @@ const pool = createDefaultSignalingPool({
                     <td><code>npm run docs:serve</code></td>
                   </tr>
                   <tr>
+                    <td><a href="./tictactoe/index.html"><code>docs/tictactoe/</code></a></td>
+                    <td>Browser tic-tac-toe — PeerJS mesh, room discovery, owner-only moves (v0.10.0)</td>
+                    <td><code>npm run build:tictactoe</code> then <code>npm run docs:serve</code></td>
+                  </tr>
+                  <tr>
                     <td><a href="./chess/index.html"><code>docs/chess/</code></a></td>
-                    <td>3D browser chess — PeerJS mesh, dual-signed resume links, IndexedDB, React hooks (v0.9.0)</td>
+                    <td>3D browser chess — PeerJS mesh, dual-signed resume links, IndexedDB, React hooks (v0.10.0)</td>
                     <td><code>npm run build:chess</code> then <code>npm run docs:serve</code></td>
                   </tr>
                   <tr>
@@ -1128,7 +1225,7 @@ const pool = createDefaultSignalingPool({
           <section id="development" class="section">
             <h2>Development</h2>
             <div class="code-block">
-              <pre><code class="language-bash"># Run tests (291+ passing)
+              <pre><code class="language-bash"># Run tests (324+ passing)
 npm test
 
 # PeerGroup + CQRS unit + integration tests
@@ -1154,7 +1251,7 @@ npm run example:chess</code></pre>
 
           <footer class="site-footer">
             <p>
-              dignity.js v0.9.0 ·
+              dignity.js v0.10.0 ·
               <a href="https://github.com/jose-compu/dignity.js/blob/main/LICENSE">Apache 2.0</a> ·
               <a href="https://github.com/jose-compu/dignity.js">GitHub</a> ·
               <a href="https://www.npmjs.com/package/dignity.js">npm</a>

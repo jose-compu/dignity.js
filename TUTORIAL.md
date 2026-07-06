@@ -3,7 +3,7 @@
 This tutorial walks you through dignity.js from zero to a working multi-peer app. No prior P2P experience required.
 
 **Time:** ~35 minutes  
-**Version:** 0.9.0  
+**Version:** 0.10.0  
 **Full docs:** [docs site](https://jose-compu.github.io/dignity.js/) · [README](./README.md)
 
 ---
@@ -364,13 +364,14 @@ node.on('warning', handler);
 
 | Resource | What it covers |
 |----------|----------------|
-| [docs/index.html](./docs/index.html) | Full docs site (CQRS, security, v0.9 reference) |
+| [docs/index.html](./docs/index.html) | Full docs site (CQRS, security, v0.10 reference) |
 | [docs/api-reference.md](./docs/api-reference.md) | Generated API reference from `openapi-like.json` |
 | [docs/browser-compatibility.md](./docs/browser-compatibility.md) | Supported browsers and platform requirements |
 | [docs/benchmarks/results.json](./docs/benchmarks/results.json) | Gossip latency and IndexedDB hydration benchmarks |
 | [docs/playground/](./docs/playground/) | Live in-browser demos, including CQRS replica |
-| [examples/decentralized-tictactoe.js](./examples/decentralized-tictactoe.js) | Small multiplayer game |
-| [docs/chess/](./docs/chess/) | Full 3D chess + spectators |
+| [examples/decentralized-tictactoe.js](./examples/decentralized-tictactoe.js) | Small multiplayer game (Node CLI) |
+| [docs/tictactoe/](./docs/tictactoe/) | Browser tic-tac-toe (PeerJS onboarding demo) |
+| [docs/chess/](./docs/chess/) | Full 3D chess + spectators + dual-signed resume |
 | [README.md](./README.md) | Security model, React hooks, signaling |
 
 ## Common beginner mistakes

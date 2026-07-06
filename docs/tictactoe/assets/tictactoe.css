@@ -1,0 +1,58 @@
+.ttt-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.ttt-card {
+  background: var(--panel, #111827);
+  border: 1px solid var(--border, #1f2937);
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.ttt-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(72px, 1fr));
+  gap: 0.5rem;
+  max-width: 320px;
+  margin: 1rem auto;
+}
+
+.ttt-cell {
+  aspect-ratio: 1;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.ttt-cell:disabled {
+  opacity: 0.45;
+}
+
+.ttt-status {
+  text-align: center;
+  margin: 0.75rem 0;
+}
+
+.ttt-error {
+  color: #f87171;
+}
+
+.ttt-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.ttt-actions input,
+.ttt-actions textarea {
+  width: 100%;
+}
+
+.ttt-link {
+  word-break: break-all;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}

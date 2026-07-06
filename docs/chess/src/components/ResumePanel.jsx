@@ -5,7 +5,9 @@ import {
   signCheckpoint,
   isCheckpointFullySigned,
   buildResumeLink,
-  validateCheckpointForResume
+  validateCheckpointForResume,
+  formatPortableCheckpointBundle,
+  buildResumeHashFromCheckpoint
 } from '../lib/resumeCheckpoint.js';
 import { exportSeatKeyBackup } from '../lib/playerKeys.js';
 
@@ -36,6 +38,7 @@ export default function ResumePanel({
   const [busy, setBusy] = useState(false);
   const [resumeLink, setResumeLink] = useState('');
   const [copied, setCopied] = useState(false);
+  const [portableCopied, setPortableCopied] = useState(false);
   const [seatBackup, setSeatBackup] = useState('');
 
   const phase = useMemo(() => {
@@ -136,6 +139,41 @@ export default function ResumePanel({
     ? validateCheckpointForResume(finalizedCheckpoint)
     : null;
 
+  const portableBundle = useMemo(() => {
+    if (!finalizedCheckpoint || !validation?.ok) {
+      return '';
+    }
+    try {
+      return formatPortableCheckpointBundle(finalizedCheckpoint);
+    } catch (_error) {
+      return '';
+    }
+  }, [finalizedCheckpoint, validation]);
+
+  const usesLocalCheckpointRef = Boolean(resumeLink && resumeLink.includes('checkpointRef='));
+
+  async function copyPortableBundle() {
+    if (!portableBundle) {
+      return;
+    }
+    await navigator.clipboard.writeText(portableBundle);
+    setPortableCopied(true);
+    setTimeout(() => setPortableCopied(false), 2000);
+  }
+
+  function downloadPortableBundle() {
+    if (!portableBundle || !gameId) {
+      return;
+    }
+    const blob = new Blob([portableBundle], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${gameId}-checkpoint.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <section className="panel resume-panel">
       <div className="resume-panel__head">
@@ -191,10 +229,29 @@ export default function ResumePanel({
             <p className="muted">
               Both signatures verified. The signed board state is embedded in the link when it fits in the URL;
               otherwise this browser keeps a local checkpoint ref (not shareable across devices).
+              {usesLocalCheckpointRef ? ' Use the portable checkpoint below to resume on another device.' : null}
+              {!buildResumeHashFromCheckpoint(finalizedCheckpoint)
+                ? ' This checkpoint is too large for an inline URL — export the portable bundle.'
+                : null}
             </p>
           ) : (
             <p className="error-inline">Checkpoint validation failed: {validation?.reason}</p>
           )}
+
+          {portableBundle ? (
+            <div className="resume-panel__portable">
+              <label>Portable checkpoint bundle</label>
+              <textarea readOnly rows={4} value={portableBundle} aria-label="Portable checkpoint bundle for cross-device resume" />
+              <div className="resume-panel__buttons">
+                <button type="button" onClick={copyPortableBundle}>
+                  {portableCopied ? 'Copied' : 'Copy portable checkpoint'}
+                </button>
+                <button type="button" className="secondary" onClick={downloadPortableBundle}>
+                  Download checkpoint file
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

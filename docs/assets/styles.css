@@ -253,6 +253,11 @@ pre code.hljs {
   max-width: 720px;
 }
 
+.muted {
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+}
+
 .section {
   margin-bottom: 48px;
   scroll-margin-top: calc(var(--header-height) + 24px);
@@ -414,6 +419,54 @@ td code {
   margin: 0;
   font-size: 0.875rem;
   color: var(--text-muted);
+}
+
+a.card--link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+a.card--link:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(91, 127, 255, 0.12);
+  text-decoration: none;
+}
+
+a.card--link:hover h3 {
+  color: var(--accent);
+}
+
+.card__more {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.section-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 24px;
+}
+
+.section-jump a {
+  font-size: 0.8125rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.section-jump a:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  text-decoration: none;
 }
 
 .site-footer {

@@ -16,7 +16,7 @@ const {
   InMemoryNetworkAdapter,
   IndexedDBPersistence
 } = require('../../src');
-const { useDignity, useCollection, usePeers, useObject, useDiscovery, useMessages } = require('../../src/react');
+const { useDignity, useCollection, usePeers, useObject, useDiscovery, useMessages, useConnectionStats, useRoom } = require('../../src/react');
 const { stableStringify } = require('../../src/security/message-security-service');
 const { fastTestSecurity } = require('../helpers/fast-security');
 
@@ -386,6 +386,64 @@ describe('IndexedDBPersistence', () => {
 
     await expect(persistence.detach()).resolves.toBeUndefined();
   });
+
+  test('serializeRecord handles non-array collaboratorIds and hydrate restores null hash', async () => {
+    const persistence = new IndexedDBPersistence({
+      dbName: 'dignity-test-branch-coverage',
+      collections: ['games']
+    });
+    const alice = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+
+    await alice.start();
+    await persistence.attach(alice);
+    await alice.create('games', { score: 1 }, { id: 'g1' });
+
+    const collection = alice.getCollection('games');
+    collection.set('g1', {
+      ...collection.get('g1'),
+      collaboratorIds: 'legacy',
+      hash: null
+    });
+
+    expect(persistence.serializeRecord('games', 'g1')).toMatchObject({
+      collaboratorIds: [],
+      hash: null
+    });
+
+    await persistence.persistRecord('games', 'g1');
+    await persistence.detach();
+    await alice.stop();
+
+    const restored = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: defaultSecurity
+    });
+    const reader = new IndexedDBPersistence({
+      dbName: 'dignity-test-branch-coverage',
+      collections: ['games']
+    });
+
+    await restored.start();
+    await reader.attach(restored);
+    expect(restored.read('games', 'g1').hash).toBeTruthy();
+    await reader.clear();
+    await reader.detach();
+    await restored.stop();
+  });
+
+  test('openDb reuses existing object store on upgrade', async () => {
+    const persistence = new IndexedDBPersistence({ dbName: 'dignity-test-upgrade-reuse' });
+    const db1 = await persistence.openDb();
+    db1.close();
+    const db2 = await persistence.openDb();
+    expect(db2.objectStoreNames.contains('records')).toBe(true);
+    db2.close();
+  });
 });
 
 describe('React hooks', () => {
@@ -559,6 +617,179 @@ describe('React hooks', () => {
     await waitFor(() => {
       expect(result.current).toHaveLength(1);
       expect(result.current[0].type).toBe('chat');
+    });
+
+    await node.stop();
+  });
+
+  test('useMessages applies optional filter', async () => {
+    const node = new DignityP2P(nodeConfig);
+    await node.start();
+
+    const { result } = renderHook(() => useMessages(node, (message) => message.type === 'keep'));
+
+    act(() => {
+      node.emit('message', { type: 'drop' });
+      node.emit('message', { type: 'keep', payload: 1 });
+    });
+
+    await waitFor(() => {
+      expect(result.current).toEqual([{ type: 'keep', payload: 1 }]);
+    });
+
+    await node.stop();
+  });
+
+  test('useObject returns null when params are missing', () => {
+    const node = new DignityP2P(nodeConfig);
+    const { result } = renderHook(() => useObject(node, null, 'x'));
+    expect(result.current).toBeNull();
+  });
+
+  test('useDiscovery surfaces join errors', async () => {
+    const node = new DignityP2P(nodeConfig);
+    await node.start();
+    const joinSpy = jest.spyOn(node, 'joinDiscovery').mockRejectedValue(new Error('join failed'));
+    const options = { metadata: {} };
+
+    const { result, unmount } = renderHook(() => useDiscovery(node, 'room', options));
+
+    await waitFor(() => {
+      expect(result.current.joined).toBe(false);
+      expect(result.current.error).toMatchObject({ message: 'join failed' });
+    });
+
+    unmount();
+    joinSpy.mockRestore();
+    await node.stop();
+  });
+
+  test('useConnectionStats reads node connection stats without polling', async () => {
+    const node = new DignityP2P(nodeConfig);
+    await node.start();
+    jest.spyOn(node, 'getConnectionStats').mockReturnValue({ openCount: 2, peerIds: ['a', 'b'] });
+
+    const { result } = renderHook(() => useConnectionStats(node, 0));
+
+    await waitFor(() => {
+      expect(result.current.openCount).toBe(2);
+      expect(result.current.peerIds).toEqual(['a', 'b']);
+    });
+
+    await node.stop();
+  });
+
+  test('useRoom composes discovery peers and connection stats', async () => {
+    const node = new DignityP2P(nodeConfig);
+    await node.start();
+    jest.spyOn(node, 'getConnectionStats').mockReturnValue({ openCount: 0, peerIds: [] });
+    const roomOptions = {
+      metadata: { nickname: 'alice' },
+      peersOptions: { includeSelf: true },
+      connectionPollMs: 0
+    };
+
+    const { result, unmount } = renderHook(() => useRoom(node, 'room', roomOptions));
+
+    await waitFor(() => {
+      expect(result.current.joined).toBe(true);
+    });
+    expect(result.current.peers).toBeDefined();
+    expect(result.current.connectionStats).toEqual({ openCount: 0, peerIds: [] });
+
+    unmount();
+    await node.stop();
+  });
+
+  test('useDiscovery resets when node scope or options are missing', () => {
+    const node = new DignityP2P(nodeConfig);
+    const stableOptions = { metadata: {} };
+
+    const noNode = renderHook(() => useDiscovery(null, 'room', stableOptions));
+    expect(noNode.result.current.joined).toBe(false);
+    noNode.unmount();
+
+    const noScope = renderHook(() => useDiscovery(node, '', stableOptions));
+    expect(noScope.result.current.joined).toBe(false);
+    noScope.unmount();
+
+    const noOptions = renderHook(() => useDiscovery(node, 'room', null));
+    expect(noOptions.result.current.joined).toBe(false);
+    noOptions.unmount();
+  });
+
+  test('useConnectionStats handles missing stats API and polling', async () => {
+    jest.useFakeTimers();
+    try {
+      const node = { listPeers: () => [] };
+      const { result, unmount } = renderHook(() => useConnectionStats(node, 1000));
+      expect(result.current).toEqual({ openCount: 0, peerIds: [] });
+      unmount();
+
+      const pollingNode = {
+        getConnectionStats: () => ({ openCount: 3, peerIds: ['x'] })
+      };
+      const polled = renderHook(() => useConnectionStats(pollingNode, 1000));
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+      });
+      expect(polled.result.current.openCount).toBe(3);
+      polled.unmount();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('useMessages clears when node is null', () => {
+    const { result, rerender } = renderHook(
+      ({ currentNode }) => useMessages(currentNode),
+      { initialProps: { currentNode: null } }
+    );
+    expect(result.current).toEqual([]);
+
+    const node = new DignityP2P(nodeConfig);
+    rerender({ currentNode: node });
+    act(() => {
+      node.emit('message', { type: 'ping' });
+    });
+    expect(result.current).toHaveLength(1);
+
+    rerender({ currentNode: null });
+    expect(result.current).toEqual([]);
+  });
+
+  test('useDignity cleanup tolerates stop failures', async () => {
+    const stopSpy = jest.spyOn(DignityP2P.prototype, 'stop').mockRejectedValue(new Error('stop failed'));
+    const { unmount } = renderHook(() => useDignity(nodeConfig));
+
+    await waitFor(() => undefined);
+    unmount();
+
+    await waitFor(() => undefined);
+    stopSpy.mockRestore();
+  });
+
+  test('useObject ignores unrelated change events', async () => {
+    const node = new DignityP2P(nodeConfig);
+    await node.start();
+    await node.create('notes', { title: 'one' }, { id: 'n1' });
+
+    const { result } = renderHook(() => useObject(node, 'notes', 'n1'));
+    await waitFor(() => {
+      expect(result.current?.id).toBe('n1');
+    });
+
+    act(() => {
+      node.emit('change', { collection: 'notes', id: 'other' });
+      node.emit('change', { collection: 'games', id: 'n1' });
+    });
+    expect(result.current?.data.title).toBe('one');
+
+    await act(async () => {
+      await node.update('notes', 'n1', { title: 'two' });
+    });
+    await waitFor(() => {
+      expect(result.current?.data.title).toBe('two');
     });
 
     await node.stop();

@@ -126,8 +126,14 @@ export function exportSeatKeyBackup(gameId, seat) {
 }
 
 export function importSeatKeyBackup(backupText) {
-  const record = JSON.parse(atob(backupText.trim()));
-  if (!record?.gameId || !record?.seat) {
+  let record;
+  try {
+    record = JSON.parse(atob(String(backupText || '').trim()));
+  } catch (_error) {
+    throw new Error('Invalid seat key backup');
+  }
+
+  if (!record?.gameId || !record?.seat || (record.seat !== 'white' && record.seat !== 'black')) {
     throw new Error('Invalid seat key backup');
   }
 

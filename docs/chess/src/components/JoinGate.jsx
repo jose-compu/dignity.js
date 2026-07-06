@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 
 const ROLE_COPY = {
   host: {
@@ -19,12 +19,13 @@ const ROLE_COPY = {
   resume: {
     title: 'Resume game',
     action: 'Reconnect',
-    hint: 'This link carries a dual-signed checkpoint. Use the same device when possible so your seat keys match.'
+    hint: 'This link carries a dual-signed checkpoint. Import your seat key backup in the lobby first when using a new device.'
   }
 };
 
 export default function JoinGate({ route, defaultNickname, onConfirm, onBack }) {
   const [name, setName] = useState(defaultNickname);
+  const nicknameInputId = useId();
   const copy = ROLE_COPY[route.role] || ROLE_COPY.resume;
 
   function handleSubmit(event) {
@@ -40,24 +41,32 @@ export default function JoinGate({ route, defaultNickname, onConfirm, onBack }) 
     <section className="join-gate">
       <div className="join-gate__card panel">
         <p className="eyebrow">Game {route.gameId}</p>
-        <h2>{copy.title}</h2>
-        <p>{copy.hint}</p>
+        <h2 id="join-gate-title">{copy.title}</h2>
+        <p id="join-gate-hint">{copy.hint}</p>
 
-        <form onSubmit={handleSubmit}>
-          <label className="join-gate__field">
+        <form onSubmit={handleSubmit} aria-labelledby="join-gate-title">
+          <label className="join-gate__field" htmlFor={nicknameInputId}>
             Your nickname
             <input
+              id={nicknameInputId}
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="Nickname"
               autoFocus
               maxLength={32}
+              autoComplete="nickname"
+              aria-describedby="join-gate-hint"
             />
           </label>
 
           <div className="join-gate__actions">
             <button type="button" className="ghost" onClick={onBack}>← Back</button>
-            <button type="submit" className="primary" disabled={!name.trim()}>
+            <button
+              type="submit"
+              className="primary"
+              disabled={!name.trim()}
+              aria-label={`${copy.action} for game ${route.gameId}`}
+            >
               {copy.action}
             </button>
           </div>

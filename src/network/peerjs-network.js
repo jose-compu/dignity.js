@@ -19,12 +19,16 @@ class PeerJSNetworkAdapter {
     url,
     urls,
     PeerImpl,
-    connectTimeoutMs = 12000
+    connectTimeoutMs = 12000,
+    iceServers = null,
+    peerOptions = null
   } = {}) {
     this.urls = urls || (url ? [url] : [...DEFAULT_CLOUDFLARE_SIGNALING_URLS]);
     this.url = this.urls[0];
     this.PeerImpl = resolvePeerImplementation(PeerImpl);
     this.connectTimeoutMs = connectTimeoutMs;
+    this.iceServers = iceServers;
+    this.peerOptions = peerOptions;
     this.nodeId = null;
     this.peer = null;
     this.connections = new Map();
@@ -64,13 +68,23 @@ class PeerJSNetworkAdapter {
     const server = parsePeerJsServerUrl(url);
 
     await new Promise((resolve, reject) => {
-      const peer = new this.PeerImpl(nodeId, {
+      const peerConfig = {
         host: server.host,
         port: server.port,
         path: server.path,
         secure: server.secure,
-        key: server.key
-      });
+        key: server.key,
+        ...(this.peerOptions && typeof this.peerOptions === 'object' ? this.peerOptions : {})
+      };
+
+      if (Array.isArray(this.iceServers) && this.iceServers.length > 0) {
+        peerConfig.config = {
+          ...(peerConfig.config && typeof peerConfig.config === 'object' ? peerConfig.config : {}),
+          iceServers: this.iceServers
+        };
+      }
+
+      const peer = new this.PeerImpl(nodeId, peerConfig);
 
       const timeout = setTimeout(() => {
         peer.destroy?.();

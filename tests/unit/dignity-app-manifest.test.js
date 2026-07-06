@@ -59,6 +59,55 @@ describe('Dignity App manifest', () => {
     expect(collectionAllowed(manifest, 'posts')).toBe(true);
     expect(collectionAllowed(manifest, 'other')).toBe(false);
     expect(getStoredCommand(manifest, 'bump').kind).toBe('update');
+    expect(getStoredCommand(manifest, 'missing')).toBeNull();
     expect(manifest.readOnly).toBe(false);
+  });
+
+  test('rejects invalid manifest shapes and stored command fields', () => {
+    expect(validateDignityAppManifest(null).ok).toBe(false);
+    expect(validateDignityAppManifest({ schemaVersion: 99, id: 'app', title: 'x', collections: ['a'] }).ok).toBe(false);
+    expect(validateDignityAppManifest({ id: 'app', title: 'x', collections: [] }).ok).toBe(false);
+    expect(validateDignityAppManifest({ id: 'app', title: 'x', collections: ['', 'a'] }).ok).toBe(false);
+    expect(validateDignityAppManifest({ id: 'app', title: 'x', collections: ['a', 'a'] }).ok).toBe(false);
+
+    const badCmd = validateDignityAppManifest({
+      id: 'app',
+      title: 'App',
+      collections: ['posts'],
+      storedCommands: [{ id: '', collection: 'posts', kind: 'update' }]
+    });
+    expect(badCmd.ok).toBe(false);
+
+    const badKind = validateDignityAppManifest({
+      id: 'app',
+      title: 'App',
+      collections: ['posts'],
+      storedCommands: [{ id: 'x', collection: 'posts', kind: 'patch' }]
+    });
+    expect(badKind.ok).toBe(false);
+
+    const badFields = validateDignityAppManifest({
+      id: 'app',
+      title: 'App',
+      collections: ['posts'],
+      storedCommands: [{ id: 'x', collection: 'posts', kind: 'update', allowedFields: [''] }]
+    });
+    expect(badFields.ok).toBe(false);
+  });
+
+  test('validates optional manifest metadata and https origins', () => {
+    const result = validateDignityAppManifest({
+      id: 'timeline',
+      title: 'Timeline',
+      description: '  Events  ',
+      collections: ['posts'],
+      peerGroupId: ' feed:alice ',
+      publisherId: ' pub-1 ',
+      allowedCspOrigins: ['https://cdn.example.com']
+    });
+    expect(result.ok).toBe(true);
+    expect(result.manifest.description).toBe('Events');
+    expect(result.manifest.peerGroupId).toBe('feed:alice');
+    expect(collectionAllowed(null, 'posts')).toBeFalsy();
   });
 });
