@@ -1,8 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="7" fill="#120D0A"/>
-  <rect x="1" y="1" width="30" height="30" rx="6" stroke="#C9A66B" stroke-width="1.2" opacity="0.55"/>
-  <path fill="#F6EFE6" d="M16 6c-2.2 0-4 1.6-4 3.6 0 1.2.6 2.2 1.5 2.9L11 18h10l-2.5-5.5c.9-.7 1.5-1.7 1.5-2.9 0-2-1.8-3.6-4-3.6z"/>
-  <rect x="10" y="19" width="12" height="2.5" rx="1.2" fill="#C9A66B"/>
-  <rect x="9" y="22.5" width="14" height="3" rx="1.2" fill="#6B4423"/>
-  <circle cx="16" cy="9.5" r="1.2" fill="#5B7FFF"/>
+  <!-- Same emblem geometry as dignity-logo.svg, scaled to fit -->
+  <rect width="32" height="32" fill="#0A0A0A"/>
+  <g transform="translate(2 2) scale(0.608695652)">
+    <circle cx="16" cy="16" r="14" fill="#005CB8"/>
+    <path d="M30 6 L44 34 L16 34 Z" fill="#F5C400"/>
+    <rect x="26" y="26" width="22" height="22" fill="#1A8F3C"/>
+    <line x1="16" y1="16" x2="37" y2="37" stroke="#F2EDE4" stroke-width="3" stroke-linecap="square"/>
+  </g>
 </svg>

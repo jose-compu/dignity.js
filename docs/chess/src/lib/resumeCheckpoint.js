@@ -230,7 +230,7 @@ export async function storeCheckpointRef(checkpoint) {
   const db = await openCheckpointDb();
   await new Promise((resolve, reject) => {
     const tx = db.transaction(CHECKPOINT_STORE, 'readwrite');
-    tx.objectStore(CHECKPOINT_STORE).put({ encoded, checkpoint, savedAt: Date.now() }, ref);
+    tx.objectStore(CHECKPOINT_STORE).put({ encoded, savedAt: Date.now() }, ref);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
@@ -282,21 +282,73 @@ export async function resolveCheckpointFromRoute(route) {
   return null;
 }
 
-export async function buildResumeLink(checkpoint) {
-  const base = `${window.location.origin}${window.location.pathname}`;
+const PORTABLE_BUNDLE_VERSION = 1;
+
+export function buildResumeHashFromCheckpoint(checkpoint, { seat = null } = {}) {
   const encoded = serializeCheckpoint(checkpoint);
-  const common = [
+  const parts = [
     `game=${encodeURIComponent(checkpoint.gameId)}`,
     `room=${encodeURIComponent(checkpoint.roomKey)}`,
     'role=resume'
   ];
 
+  if (seat === 'white' || seat === 'black') {
+    parts.push(`seat=${seat}`);
+  }
+
   if (encoded.length <= MAX_INLINE_CHECKPOINT_CHARS) {
-    return `${base}#${common.join('&')}&checkpoint=${encoded}`;
+    parts.push(`checkpoint=${encoded}`);
+    return parts.join('&');
+  }
+
+  return null;
+}
+
+export function formatPortableCheckpointBundle(checkpoint) {
+  const validation = validateCheckpointForResume(checkpoint);
+  if (!validation.ok) {
+    throw new Error(`Cannot export invalid checkpoint: ${validation.reason}`);
+  }
+
+  return JSON.stringify({
+    v: PORTABLE_BUNDLE_VERSION,
+    kind: 'dignity-chess-checkpoint',
+    exportedAt: Date.now(),
+    checkpoint
+  });
+}
+
+export function parsePortableCheckpointBundle(bundleText) {
+  let parsed;
+  try {
+    parsed = JSON.parse(String(bundleText || '').trim());
+  } catch (_error) {
+    throw new Error('Invalid portable checkpoint bundle');
+  }
+
+  if (parsed?.kind !== 'dignity-chess-checkpoint' || parsed?.v !== PORTABLE_BUNDLE_VERSION) {
+    throw new Error('Invalid portable checkpoint bundle');
+  }
+
+  const checkpoint = parsed.checkpoint;
+  const validation = validateCheckpointForResume(checkpoint);
+  if (!validation.ok) {
+    throw new Error(`Checkpoint signature verification failed: ${validation.reason}`);
+  }
+
+  return checkpoint;
+}
+
+export async function buildResumeLink(checkpoint, options = {}) {
+  const base = `${window.location.origin}${window.location.pathname}`;
+  const inlineHash = buildResumeHashFromCheckpoint(checkpoint, options);
+
+  if (inlineHash) {
+    return `${base}#${inlineHash}`;
   }
 
   const ref = await storeCheckpointRef(checkpoint);
-  return `${base}#${common.join('&')}&checkpointRef=${encodeURIComponent(ref)}`;
+  return `${base}#game=${encodeURIComponent(checkpoint.gameId)}&room=${encodeURIComponent(checkpoint.roomKey)}&role=resume&checkpointRef=${encodeURIComponent(ref)}`;
 }
 
 export function gamePatchFromCheckpoint(checkpoint, localNodeId, seat) {

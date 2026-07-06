@@ -25679,12 +25679,16 @@ var require_peerjs_network = __commonJS({
         url,
         urls,
         PeerImpl,
-        connectTimeoutMs = 12e3
+        connectTimeoutMs = 12e3,
+        iceServers = null,
+        peerOptions = null
       } = {}) {
         this.urls = urls || (url ? [url] : [...DEFAULT_CLOUDFLARE_SIGNALING_URLS2]);
         this.url = this.urls[0];
         this.PeerImpl = resolvePeerImplementation(PeerImpl);
         this.connectTimeoutMs = connectTimeoutMs;
+        this.iceServers = iceServers;
+        this.peerOptions = peerOptions;
         this.nodeId = null;
         this.peer = null;
         this.connections = /* @__PURE__ */ new Map();
@@ -25717,13 +25721,21 @@ var require_peerjs_network = __commonJS({
         this.nodeId = nodeId;
         const server = parsePeerJsServerUrl(url);
         await new Promise((resolve, reject) => {
-          const peer = new this.PeerImpl(nodeId, {
+          const peerConfig = {
             host: server.host,
             port: server.port,
             path: server.path,
             secure: server.secure,
-            key: server.key
-          });
+            key: server.key,
+            ...this.peerOptions && typeof this.peerOptions === "object" ? this.peerOptions : {}
+          };
+          if (Array.isArray(this.iceServers) && this.iceServers.length > 0) {
+            peerConfig.config = {
+              ...peerConfig.config && typeof peerConfig.config === "object" ? peerConfig.config : {},
+              iceServers: this.iceServers
+            };
+          }
+          const peer = new this.PeerImpl(nodeId, peerConfig);
           const timeout = setTimeout(() => {
             peer.destroy?.();
             reject(new Error(`Unable to connect PeerJS network adapter to ${url}`));
@@ -26785,6 +26797,455 @@ function formatRoleLabel(game) {
   return "Resume";
 }
 
+// docs/chess/src/lib/playerKeys.js
+var import_tweetnacl = __toESM(require_nacl_fast());
+var import_tweetnacl_util = __toESM(require_nacl_util());
+var STORAGE_KEY = "dignity-chess-player-keys-v1";
+function loadStore() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_error) {
+    return {};
+  }
+}
+function saveStore(store) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+}
+function serializeKeyPair(keyPair) {
+  return {
+    signingSecretKey: import_tweetnacl_util.default.encodeBase64(keyPair.signing.secretKey),
+    signingPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.signing.publicKey),
+    encryptionSecretKey: import_tweetnacl_util.default.encodeBase64(keyPair.encryption.secretKey),
+    encryptionPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.encryption.publicKey)
+  };
+}
+function deserializeKeyPair(record) {
+  if (!record?.signingSecretKey || !record?.encryptionSecretKey) {
+    return null;
+  }
+  return {
+    signing: {
+      secretKey: import_tweetnacl_util.default.decodeBase64(record.signingSecretKey),
+      publicKey: import_tweetnacl_util.default.decodeBase64(record.signingPublicKey)
+    },
+    encryption: {
+      secretKey: import_tweetnacl_util.default.decodeBase64(record.encryptionSecretKey),
+      publicKey: import_tweetnacl_util.default.decodeBase64(record.encryptionPublicKey)
+    }
+  };
+}
+function createFreshKeyPair() {
+  return {
+    signing: import_tweetnacl.default.sign.keyPair(),
+    encryption: import_tweetnacl.default.box.keyPair()
+  };
+}
+function keyPairToPublicBundle(keyPair) {
+  return {
+    signingPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.signing.publicKey),
+    encryptionPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.encryption.publicKey)
+  };
+}
+function savePlayerKeyRecord(gameId, seat, keyPair, nickname) {
+  if (!gameId || !seat || !keyPair) {
+    return;
+  }
+  const store = loadStore();
+  const entryKey = `${gameId}:${seat}`;
+  store[entryKey] = {
+    gameId,
+    seat,
+    nickname: nickname || null,
+    ...serializeKeyPair(keyPair),
+    updatedAt: Date.now()
+  };
+  const fingerprint = keyPairToPublicBundle(keyPair).signingPublicKey;
+  store[`fp:${fingerprint}`] = entryKey;
+  saveStore(store);
+}
+function loadPlayerKeyPair(gameId, seat) {
+  const store = loadStore();
+  const record = store[`${gameId}:${seat}`];
+  return deserializeKeyPair(record);
+}
+function findPlayerKeyPairByPublicKey(publicKeyBundle) {
+  if (!publicKeyBundle?.signingPublicKey) {
+    return null;
+  }
+  const store = loadStore();
+  const entryKey = store[`fp:${publicKeyBundle.signingPublicKey}`];
+  if (!entryKey) {
+    return null;
+  }
+  return deserializeKeyPair(store[entryKey]);
+}
+function resolveKeyPairForResume({ gameId, seat, checkpointPlayer }) {
+  if (checkpointPlayer?.publicKey) {
+    const byFingerprint = findPlayerKeyPairByPublicKey(checkpointPlayer.publicKey);
+    if (byFingerprint) {
+      return byFingerprint;
+    }
+  }
+  if (gameId && seat) {
+    const bySeat = loadPlayerKeyPair(gameId, seat);
+    if (bySeat) {
+      return bySeat;
+    }
+  }
+  return createFreshKeyPair();
+}
+function exportSeatKeyBackup(gameId, seat) {
+  const record = loadStore()[`${gameId}:${seat}`];
+  if (!record) {
+    return null;
+  }
+  return btoa(JSON.stringify(record));
+}
+function importSeatKeyBackup(backupText) {
+  let record;
+  try {
+    record = JSON.parse(atob(String(backupText || "").trim()));
+  } catch (_error) {
+    throw new Error("Invalid seat key backup");
+  }
+  if (!record?.gameId || !record?.seat || record.seat !== "white" && record.seat !== "black") {
+    throw new Error("Invalid seat key backup");
+  }
+  const keyPair = deserializeKeyPair(record);
+  if (!keyPair) {
+    throw new Error("Invalid seat key backup");
+  }
+  savePlayerKeyRecord(record.gameId, record.seat, keyPair, record.nickname);
+  return { gameId: record.gameId, seat: record.seat, keyPair };
+}
+
+// docs/chess/src/lib/resumeCheckpoint.js
+var import_tweetnacl2 = __toESM(require_nacl_fast());
+var import_tweetnacl_util2 = __toESM(require_nacl_util());
+var CHECKPOINT_VERSION = 1;
+var CHECKPOINT_DB = "dignity-chess-checkpoints";
+var CHECKPOINT_STORE = "bundles";
+var MAX_INLINE_CHECKPOINT_CHARS = 8192;
+function stableStringify(value) {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+  }
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+}
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+function base64UrlToBytes(value) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padLen = (4 - padded.length % 4) % 4;
+  const binary = atob(`${padded}${"=".repeat(padLen)}`);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+function checkpointSigningPayload(checkpoint) {
+  const { signatures, ...rest } = checkpoint;
+  return stableStringify(rest);
+}
+function buildCheckpointDraft({
+  gameId,
+  roomKey,
+  scope,
+  game,
+  seat,
+  nickname,
+  publicKey,
+  peerId
+}) {
+  if (!game?.data) {
+    return null;
+  }
+  return {
+    v: CHECKPOINT_VERSION,
+    gameId,
+    roomKey,
+    scope,
+    fen: game.data.fen,
+    moveHistory: game.data.moveHistory || [],
+    status: game.data.status,
+    turn: game.data.turn,
+    winner: game.data.winner ?? null,
+    joinToken: game.data.joinToken || null,
+    watchToken: game.data.watchToken || null,
+    version: game.version || 1,
+    white: game.data.whitePlayerId ? {
+      peerId: game.data.whitePlayerId,
+      nickname: seat === "white" ? nickname : game.data.whiteNickname || "White",
+      publicKey: seat === "white" ? publicKey : game.data.whitePublicKey || null
+    } : null,
+    black: game.data.blackPlayerId ? {
+      peerId: game.data.blackPlayerId,
+      nickname: seat === "black" ? nickname : game.data.blackNickname || "Black",
+      publicKey: seat === "black" ? publicKey : game.data.blackPublicKey || null
+    } : null,
+    signatures: {},
+    createdAt: Date.now(),
+    proposer: {
+      seat,
+      peerId,
+      nickname,
+      publicKey
+    }
+  };
+}
+function enrichCheckpointPlayerMetadata(checkpoint, game) {
+  if (!checkpoint || !game?.data) {
+    return checkpoint;
+  }
+  const next = { ...checkpoint, signatures: { ...checkpoint.signatures || {} } };
+  if (game.data.whitePlayerId) {
+    next.white = {
+      ...next.white || {},
+      peerId: game.data.whitePlayerId,
+      nickname: game.data.whiteNickname || next.white?.nickname || "White",
+      publicKey: game.data.whitePublicKey || next.white?.publicKey || null
+    };
+  }
+  if (game.data.blackPlayerId) {
+    next.black = {
+      ...next.black || {},
+      peerId: game.data.blackPlayerId,
+      nickname: game.data.blackNickname || next.black?.nickname || "Black",
+      publicKey: game.data.blackPublicKey || next.black?.publicKey || null
+    };
+  }
+  return next;
+}
+function signCheckpoint(checkpoint, keyPair, seat) {
+  const payload = checkpointSigningPayload(checkpoint);
+  const signature = import_tweetnacl2.default.sign.detached(
+    import_tweetnacl_util2.default.decodeUTF8(payload),
+    keyPair.signing.secretKey
+  );
+  return {
+    ...checkpoint,
+    signatures: {
+      ...checkpoint.signatures || {},
+      [seat]: {
+        signature: import_tweetnacl_util2.default.encodeBase64(signature),
+        publicKey: keyPairToPublicBundle(keyPair),
+        signedAt: Date.now()
+      }
+    }
+  };
+}
+function verifyCheckpointSignature(checkpoint, seat) {
+  const entry = checkpoint?.signatures?.[seat];
+  if (!entry?.signature || !entry?.publicKey?.signingPublicKey) {
+    return false;
+  }
+  const payload = checkpointSigningPayload(checkpoint);
+  return import_tweetnacl2.default.sign.detached.verify(
+    import_tweetnacl_util2.default.decodeUTF8(payload),
+    import_tweetnacl_util2.default.decodeBase64(entry.signature),
+    import_tweetnacl_util2.default.decodeBase64(entry.publicKey.signingPublicKey)
+  );
+}
+function isCheckpointFullySigned(checkpoint) {
+  return Boolean(
+    checkpoint && verifyCheckpointSignature(checkpoint, "white") && verifyCheckpointSignature(checkpoint, "black")
+  );
+}
+function checkpointSeatForPublicKey(checkpoint, publicKeyBundle) {
+  if (!checkpoint || !publicKeyBundle?.signingPublicKey) {
+    return null;
+  }
+  if (checkpoint.white?.publicKey?.signingPublicKey === publicKeyBundle.signingPublicKey) {
+    return "white";
+  }
+  if (checkpoint.black?.publicKey?.signingPublicKey === publicKeyBundle.signingPublicKey) {
+    return "black";
+  }
+  return null;
+}
+function serializeCheckpoint(checkpoint) {
+  return bytesToBase64Url(import_tweetnacl_util2.default.decodeUTF8(JSON.stringify(checkpoint)));
+}
+function deserializeCheckpoint(encoded) {
+  if (!encoded) {
+    return null;
+  }
+  try {
+    const json = import_tweetnacl_util2.default.encodeUTF8(base64UrlToBytes(encoded));
+    const parsed = JSON.parse(json);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_error) {
+    return null;
+  }
+}
+function openCheckpointDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(CHECKPOINT_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(CHECKPOINT_STORE)) {
+        db.createObjectStore(CHECKPOINT_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+async function storeCheckpointRef(checkpoint) {
+  const encoded = serializeCheckpoint(checkpoint);
+  const digest = import_tweetnacl_util2.default.encodeBase64(import_tweetnacl2.default.hash(import_tweetnacl_util2.default.decodeUTF8(encoded))).slice(0, 16);
+  const ref = `cp_${digest.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12)}`;
+  if (typeof indexedDB === "undefined") {
+    localStorage.setItem(`dignity-chess-checkpoint:${ref}`, encoded);
+    return ref;
+  }
+  const db = await openCheckpointDb();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(CHECKPOINT_STORE, "readwrite");
+    tx.objectStore(CHECKPOINT_STORE).put({ encoded, savedAt: Date.now() }, ref);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+  localStorage.setItem(`dignity-chess-checkpoint:${ref}`, encoded);
+  return ref;
+}
+async function loadCheckpointRef(ref) {
+  if (!ref) {
+    return null;
+  }
+  const cached = localStorage.getItem(`dignity-chess-checkpoint:${ref}`);
+  if (cached) {
+    return deserializeCheckpoint(cached);
+  }
+  if (typeof indexedDB === "undefined") {
+    return null;
+  }
+  const db = await openCheckpointDb();
+  const record = await new Promise((resolve, reject) => {
+    const tx = db.transaction(CHECKPOINT_STORE, "readonly");
+    const request = tx.objectStore(CHECKPOINT_STORE).get(ref);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+  db.close();
+  if (!record?.encoded) {
+    return null;
+  }
+  return deserializeCheckpoint(record.encoded);
+}
+async function resolveCheckpointFromRoute(route) {
+  if (route.checkpoint) {
+    return deserializeCheckpoint(route.checkpoint);
+  }
+  if (route.checkpointRef) {
+    return loadCheckpointRef(route.checkpointRef);
+  }
+  return null;
+}
+var PORTABLE_BUNDLE_VERSION = 1;
+function buildResumeHashFromCheckpoint(checkpoint, { seat = null } = {}) {
+  const encoded = serializeCheckpoint(checkpoint);
+  const parts = [
+    `game=${encodeURIComponent(checkpoint.gameId)}`,
+    `room=${encodeURIComponent(checkpoint.roomKey)}`,
+    "role=resume"
+  ];
+  if (seat === "white" || seat === "black") {
+    parts.push(`seat=${seat}`);
+  }
+  if (encoded.length <= MAX_INLINE_CHECKPOINT_CHARS) {
+    parts.push(`checkpoint=${encoded}`);
+    return parts.join("&");
+  }
+  return null;
+}
+function formatPortableCheckpointBundle(checkpoint) {
+  const validation = validateCheckpointForResume(checkpoint);
+  if (!validation.ok) {
+    throw new Error(`Cannot export invalid checkpoint: ${validation.reason}`);
+  }
+  return JSON.stringify({
+    v: PORTABLE_BUNDLE_VERSION,
+    kind: "dignity-chess-checkpoint",
+    exportedAt: Date.now(),
+    checkpoint
+  });
+}
+function parsePortableCheckpointBundle(bundleText) {
+  let parsed;
+  try {
+    parsed = JSON.parse(String(bundleText || "").trim());
+  } catch (_error) {
+    throw new Error("Invalid portable checkpoint bundle");
+  }
+  if (parsed?.kind !== "dignity-chess-checkpoint" || parsed?.v !== PORTABLE_BUNDLE_VERSION) {
+    throw new Error("Invalid portable checkpoint bundle");
+  }
+  const checkpoint = parsed.checkpoint;
+  const validation = validateCheckpointForResume(checkpoint);
+  if (!validation.ok) {
+    throw new Error(`Checkpoint signature verification failed: ${validation.reason}`);
+  }
+  return checkpoint;
+}
+async function buildResumeLink(checkpoint, options = {}) {
+  const base = `${window.location.origin}${window.location.pathname}`;
+  const inlineHash = buildResumeHashFromCheckpoint(checkpoint, options);
+  if (inlineHash) {
+    return `${base}#${inlineHash}`;
+  }
+  const ref = await storeCheckpointRef(checkpoint);
+  return `${base}#game=${encodeURIComponent(checkpoint.gameId)}&room=${encodeURIComponent(checkpoint.roomKey)}&role=resume&checkpointRef=${encodeURIComponent(ref)}`;
+}
+function gamePatchFromCheckpoint(checkpoint, localNodeId, seat) {
+  const whitePlayerId = seat === "white" ? localNodeId : checkpoint.white?.peerId || null;
+  const blackPlayerId = seat === "black" ? localNodeId : checkpoint.black?.peerId || null;
+  return {
+    fen: checkpoint.fen,
+    moveHistory: checkpoint.moveHistory || [],
+    status: checkpoint.status,
+    turn: checkpoint.turn,
+    winner: checkpoint.winner ?? null,
+    joinToken: checkpoint.joinToken,
+    joinTokenUsed: Boolean(checkpoint.black?.peerId || checkpoint.black?.publicKey),
+    watchToken: checkpoint.watchToken,
+    resumeToken: null,
+    resumeCheckpointId: checkpoint.createdAt,
+    whitePlayerId,
+    blackPlayerId,
+    whiteNickname: checkpoint.white?.nickname || "White",
+    blackNickname: checkpoint.black?.nickname || "Black",
+    whitePublicKey: checkpoint.white?.publicKey || null,
+    blackPublicKey: checkpoint.black?.publicKey || null,
+    lastMove: null
+  };
+}
+function validateCheckpointForResume(checkpoint) {
+  if (!checkpoint || checkpoint.v !== CHECKPOINT_VERSION) {
+    return { ok: false, reason: "unsupported-checkpoint" };
+  }
+  if (!isCheckpointFullySigned(checkpoint)) {
+    return { ok: false, reason: "missing-signatures" };
+  }
+  if (!checkpoint.gameId || !checkpoint.roomKey || !checkpoint.fen) {
+    return { ok: false, reason: "incomplete-checkpoint" };
+  }
+  return { ok: true };
+}
+
 // docs/chess/src/components/Lobby.jsx
 function GameList({ title, games, emptyText, onOpen }) {
   if (!games.length) {
@@ -26800,9 +27261,17 @@ function Lobby({
   onOpenGame
 }) {
   const [pasteValue, setPasteValue] = (0, import_react.useState)("");
+  const [seatBackupValue, setSeatBackupValue] = (0, import_react.useState)("");
+  const [checkpointBundleValue, setCheckpointBundleValue] = (0, import_react.useState)("");
+  const [importMessage, setImportMessage] = (0, import_react.useState)("");
+  const [importError, setImportError] = (0, import_react.useState)("");
   const [activeGames, setActiveGames] = (0, import_react.useState)([]);
   const [finishedGames, setFinishedGames] = (0, import_react.useState)([]);
   const [loadingGames, setLoadingGames] = (0, import_react.useState)(true);
+  const nicknameInputId = (0, import_react.useId)();
+  const pasteLinkId = (0, import_react.useId)();
+  const seatBackupId = (0, import_react.useId)();
+  const checkpointBundleId = (0, import_react.useId)();
   async function refreshGames() {
     setLoadingGames(true);
     try {
@@ -26821,21 +27290,52 @@ function Lobby({
   function handleOpenGame(game) {
     onOpenGame(sessionResumeHash(game));
   }
-  return /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby-layout" }, /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v0.9.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname" }, "Your nickname", /* @__PURE__ */ import_react.default.createElement(
+  function handleImportSeatBackup() {
+    setImportMessage("");
+    setImportError("");
+    try {
+      const imported = importSeatKeyBackup(seatBackupValue);
+      setImportMessage(`Imported ${imported.seat} seat keys for game ${imported.gameId}. Open a resume link for that game on this device.`);
+      setSeatBackupValue("");
+    } catch (error2) {
+      setImportError(error2?.message || "Invalid seat key backup");
+    }
+  }
+  function handleImportCheckpointBundle() {
+    setImportMessage("");
+    setImportError("");
+    try {
+      const checkpoint = parsePortableCheckpointBundle(checkpointBundleValue);
+      const hash = buildResumeHashFromCheckpoint(checkpoint);
+      if (!hash) {
+        setImportError("Checkpoint is too large for an inline resume link. Paste the resume URL from the device that created it, or use a smaller game state.");
+        return;
+      }
+      onOpenGame(hash);
+      setCheckpointBundleValue("");
+    } catch (error2) {
+      setImportError(error2?.message || "Invalid portable checkpoint bundle");
+    }
+  }
+  return /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby-layout" }, /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v0.10.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: nicknameInputId }, "Your nickname", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
+      id: nicknameInputId,
       value: nickname,
       onChange: (event) => onNicknameChange(event.target.value),
       placeholder: "Nickname",
-      maxLength: 32
+      maxLength: 32,
+      autoComplete: "nickname"
     }
-  )), /* @__PURE__ */ import_react.default.createElement("button", { type: "button", className: "primary", onClick: () => onCreate(generateGameId()) }, "Start new game")), /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__join" }, /* @__PURE__ */ import_react.default.createElement("h2", null, "Join from link"), /* @__PURE__ */ import_react.default.createElement("p", null, "Paste a host, opponent, spectator, or dual-signed resume link. Resume links restore signed game state from the URL when possible."), /* @__PURE__ */ import_react.default.createElement(
+  )), /* @__PURE__ */ import_react.default.createElement("button", { type: "button", className: "primary", onClick: () => onCreate(generateGameId()) }, "Start new game")), /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__join" }, /* @__PURE__ */ import_react.default.createElement("h2", null, "Join from link"), /* @__PURE__ */ import_react.default.createElement("p", null, "Paste a host, opponent, spectator, or dual-signed resume link. Resume links restore signed game state from the URL when possible."), /* @__PURE__ */ import_react.default.createElement("label", { htmlFor: pasteLinkId }, "Game link"), /* @__PURE__ */ import_react.default.createElement(
     "textarea",
     {
+      id: pasteLinkId,
       rows: 4,
       value: pasteValue,
       onChange: (event) => setPasteValue(event.target.value),
-      placeholder: "https://\u2026/chess/#game=\u2026&role=join\u2026"
+      placeholder: "https://\u2026/chess/#game=\u2026&role=join\u2026",
+      "aria-label": "Paste a host, opponent, spectator, or resume link"
     }
   ), /* @__PURE__ */ import_react.default.createElement(
     "button",
@@ -26850,7 +27350,45 @@ function Lobby({
       }
     },
     "Open link"
-  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby__history" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__history-head" }, /* @__PURE__ */ import_react.default.createElement("h2", null, "Your games on this device"), /* @__PURE__ */ import_react.default.createElement("button", { type: "button", className: "ghost", onClick: refreshGames, disabled: loadingGames }, "Refresh")), loadingGames ? /* @__PURE__ */ import_react.default.createElement("p", { className: "muted" }, "Loading saved games\u2026") : /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__history-grid" }, /* @__PURE__ */ import_react.default.createElement(
+  )), /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__import panel" }, /* @__PURE__ */ import_react.default.createElement("h2", null, "Cross-device resume"), /* @__PURE__ */ import_react.default.createElement("p", null, "Resume links restore the board. Your signing keys stay on the original device unless you import a seat key backup below. For large checkpoints, import the portable bundle exported from the Resume panel."), /* @__PURE__ */ import_react.default.createElement("label", { htmlFor: seatBackupId }, "Seat key backup"), /* @__PURE__ */ import_react.default.createElement(
+    "textarea",
+    {
+      id: seatBackupId,
+      rows: 3,
+      value: seatBackupValue,
+      onChange: (event) => setSeatBackupValue(event.target.value),
+      placeholder: "Paste base64 seat key backup from the Resume panel",
+      "aria-label": "Seat key backup for cross-device resume"
+    }
+  ), /* @__PURE__ */ import_react.default.createElement(
+    "button",
+    {
+      type: "button",
+      className: "secondary",
+      disabled: !seatBackupValue.trim(),
+      onClick: handleImportSeatBackup
+    },
+    "Import seat keys"
+  ), /* @__PURE__ */ import_react.default.createElement("label", { htmlFor: checkpointBundleId }, "Portable checkpoint bundle"), /* @__PURE__ */ import_react.default.createElement(
+    "textarea",
+    {
+      id: checkpointBundleId,
+      rows: 4,
+      value: checkpointBundleValue,
+      onChange: (event) => setCheckpointBundleValue(event.target.value),
+      placeholder: '{"kind":"dignity-chess-checkpoint",\u2026}',
+      "aria-label": "Portable dual-signed checkpoint bundle"
+    }
+  ), /* @__PURE__ */ import_react.default.createElement(
+    "button",
+    {
+      type: "button",
+      className: "secondary",
+      disabled: !checkpointBundleValue.trim(),
+      onClick: handleImportCheckpointBundle
+    },
+    "Import checkpoint and open resume"
+  ), importMessage ? /* @__PURE__ */ import_react.default.createElement("p", { className: "notice", role: "status" }, importMessage) : null, importError ? /* @__PURE__ */ import_react.default.createElement("p", { className: "error-inline", role: "alert" }, importError) : null)), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby__history" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__history-head" }, /* @__PURE__ */ import_react.default.createElement("h2", null, "Your games on this device"), /* @__PURE__ */ import_react.default.createElement("button", { type: "button", className: "ghost", onClick: refreshGames, disabled: loadingGames }, "Refresh")), loadingGames ? /* @__PURE__ */ import_react.default.createElement("p", { className: "muted" }, "Loading saved games\u2026") : /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__history-grid" }, /* @__PURE__ */ import_react.default.createElement(
     GameList,
     {
       title: "Active",
@@ -26890,11 +27428,12 @@ var ROLE_COPY = {
   resume: {
     title: "Resume game",
     action: "Reconnect",
-    hint: "This link carries a dual-signed checkpoint. Use the same device when possible so your seat keys match."
+    hint: "This link carries a dual-signed checkpoint. Import your seat key backup in the lobby first when using a new device."
   }
 };
 function JoinGate({ route, defaultNickname, onConfirm, onBack }) {
   const [name, setName] = (0, import_react2.useState)(defaultNickname);
+  const nicknameInputId = (0, import_react2.useId)();
   const copy = ROLE_COPY[route.role] || ROLE_COPY.resume;
   function handleSubmit(event) {
     event.preventDefault();
@@ -26904,16 +27443,28 @@ function JoinGate({ route, defaultNickname, onConfirm, onBack }) {
     }
     onConfirm(trimmed);
   }
-  return /* @__PURE__ */ import_react2.default.createElement("section", { className: "join-gate" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "join-gate__card panel" }, /* @__PURE__ */ import_react2.default.createElement("p", { className: "eyebrow" }, "Game ", route.gameId), /* @__PURE__ */ import_react2.default.createElement("h2", null, copy.title), /* @__PURE__ */ import_react2.default.createElement("p", null, copy.hint), /* @__PURE__ */ import_react2.default.createElement("form", { onSubmit: handleSubmit }, /* @__PURE__ */ import_react2.default.createElement("label", { className: "join-gate__field" }, "Your nickname", /* @__PURE__ */ import_react2.default.createElement(
+  return /* @__PURE__ */ import_react2.default.createElement("section", { className: "join-gate" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "join-gate__card panel" }, /* @__PURE__ */ import_react2.default.createElement("p", { className: "eyebrow" }, "Game ", route.gameId), /* @__PURE__ */ import_react2.default.createElement("h2", { id: "join-gate-title" }, copy.title), /* @__PURE__ */ import_react2.default.createElement("p", { id: "join-gate-hint" }, copy.hint), /* @__PURE__ */ import_react2.default.createElement("form", { onSubmit: handleSubmit, "aria-labelledby": "join-gate-title" }, /* @__PURE__ */ import_react2.default.createElement("label", { className: "join-gate__field", htmlFor: nicknameInputId }, "Your nickname", /* @__PURE__ */ import_react2.default.createElement(
     "input",
     {
+      id: nicknameInputId,
       value: name,
       onChange: (event) => setName(event.target.value),
       placeholder: "Nickname",
       autoFocus: true,
-      maxLength: 32
+      maxLength: 32,
+      autoComplete: "nickname",
+      "aria-describedby": "join-gate-hint"
     }
-  )), /* @__PURE__ */ import_react2.default.createElement("div", { className: "join-gate__actions" }, /* @__PURE__ */ import_react2.default.createElement("button", { type: "button", className: "ghost", onClick: onBack }, "\u2190 Back"), /* @__PURE__ */ import_react2.default.createElement("button", { type: "submit", className: "primary", disabled: !name.trim() }, copy.action)))));
+  )), /* @__PURE__ */ import_react2.default.createElement("div", { className: "join-gate__actions" }, /* @__PURE__ */ import_react2.default.createElement("button", { type: "button", className: "ghost", onClick: onBack }, "\u2190 Back"), /* @__PURE__ */ import_react2.default.createElement(
+    "button",
+    {
+      type: "submit",
+      className: "primary",
+      disabled: !name.trim(),
+      "aria-label": `${copy.action} for game ${route.gameId}`
+    },
+    copy.action
+  )))));
 }
 
 // docs/chess/src/components/GameView.jsx
@@ -30631,397 +31182,6 @@ function installGlobalDebug(dumpFn) {
   }
   window.__chessP2pDump = dumpFn;
   p2pLog("manual dump: run __chessP2pDump() in console");
-}
-
-// docs/chess/src/lib/playerKeys.js
-var import_tweetnacl = __toESM(require_nacl_fast());
-var import_tweetnacl_util = __toESM(require_nacl_util());
-var STORAGE_KEY = "dignity-chess-player-keys-v1";
-function loadStore() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch (_error) {
-    return {};
-  }
-}
-function saveStore(store) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-}
-function serializeKeyPair(keyPair) {
-  return {
-    signingSecretKey: import_tweetnacl_util.default.encodeBase64(keyPair.signing.secretKey),
-    signingPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.signing.publicKey),
-    encryptionSecretKey: import_tweetnacl_util.default.encodeBase64(keyPair.encryption.secretKey),
-    encryptionPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.encryption.publicKey)
-  };
-}
-function deserializeKeyPair(record) {
-  if (!record?.signingSecretKey || !record?.encryptionSecretKey) {
-    return null;
-  }
-  return {
-    signing: {
-      secretKey: import_tweetnacl_util.default.decodeBase64(record.signingSecretKey),
-      publicKey: import_tweetnacl_util.default.decodeBase64(record.signingPublicKey)
-    },
-    encryption: {
-      secretKey: import_tweetnacl_util.default.decodeBase64(record.encryptionSecretKey),
-      publicKey: import_tweetnacl_util.default.decodeBase64(record.encryptionPublicKey)
-    }
-  };
-}
-function createFreshKeyPair() {
-  return {
-    signing: import_tweetnacl.default.sign.keyPair(),
-    encryption: import_tweetnacl.default.box.keyPair()
-  };
-}
-function keyPairToPublicBundle(keyPair) {
-  return {
-    signingPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.signing.publicKey),
-    encryptionPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.encryption.publicKey)
-  };
-}
-function savePlayerKeyRecord(gameId, seat, keyPair, nickname) {
-  if (!gameId || !seat || !keyPair) {
-    return;
-  }
-  const store = loadStore();
-  const entryKey = `${gameId}:${seat}`;
-  store[entryKey] = {
-    gameId,
-    seat,
-    nickname: nickname || null,
-    ...serializeKeyPair(keyPair),
-    updatedAt: Date.now()
-  };
-  const fingerprint = keyPairToPublicBundle(keyPair).signingPublicKey;
-  store[`fp:${fingerprint}`] = entryKey;
-  saveStore(store);
-}
-function loadPlayerKeyPair(gameId, seat) {
-  const store = loadStore();
-  const record = store[`${gameId}:${seat}`];
-  return deserializeKeyPair(record);
-}
-function findPlayerKeyPairByPublicKey(publicKeyBundle) {
-  if (!publicKeyBundle?.signingPublicKey) {
-    return null;
-  }
-  const store = loadStore();
-  const entryKey = store[`fp:${publicKeyBundle.signingPublicKey}`];
-  if (!entryKey) {
-    return null;
-  }
-  return deserializeKeyPair(store[entryKey]);
-}
-function resolveKeyPairForResume({ gameId, seat, checkpointPlayer }) {
-  if (checkpointPlayer?.publicKey) {
-    const byFingerprint = findPlayerKeyPairByPublicKey(checkpointPlayer.publicKey);
-    if (byFingerprint) {
-      return byFingerprint;
-    }
-  }
-  if (gameId && seat) {
-    const bySeat = loadPlayerKeyPair(gameId, seat);
-    if (bySeat) {
-      return bySeat;
-    }
-  }
-  return createFreshKeyPair();
-}
-function exportSeatKeyBackup(gameId, seat) {
-  const record = loadStore()[`${gameId}:${seat}`];
-  if (!record) {
-    return null;
-  }
-  return btoa(JSON.stringify(record));
-}
-
-// docs/chess/src/lib/resumeCheckpoint.js
-var import_tweetnacl2 = __toESM(require_nacl_fast());
-var import_tweetnacl_util2 = __toESM(require_nacl_util());
-var CHECKPOINT_VERSION = 1;
-var CHECKPOINT_DB = "dignity-chess-checkpoints";
-var CHECKPOINT_STORE = "bundles";
-var MAX_INLINE_CHECKPOINT_CHARS = 8192;
-function stableStringify(value) {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
-  }
-  const keys = Object.keys(value).sort();
-  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
-}
-function bytesToBase64Url(bytes) {
-  let binary = "";
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte);
-  });
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-function base64UrlToBytes(value) {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padLen = (4 - padded.length % 4) % 4;
-  const binary = atob(`${padded}${"=".repeat(padLen)}`);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
-}
-function checkpointSigningPayload(checkpoint) {
-  const { signatures, ...rest } = checkpoint;
-  return stableStringify(rest);
-}
-function buildCheckpointDraft({
-  gameId,
-  roomKey,
-  scope,
-  game,
-  seat,
-  nickname,
-  publicKey,
-  peerId
-}) {
-  if (!game?.data) {
-    return null;
-  }
-  return {
-    v: CHECKPOINT_VERSION,
-    gameId,
-    roomKey,
-    scope,
-    fen: game.data.fen,
-    moveHistory: game.data.moveHistory || [],
-    status: game.data.status,
-    turn: game.data.turn,
-    winner: game.data.winner ?? null,
-    joinToken: game.data.joinToken || null,
-    watchToken: game.data.watchToken || null,
-    version: game.version || 1,
-    white: game.data.whitePlayerId ? {
-      peerId: game.data.whitePlayerId,
-      nickname: seat === "white" ? nickname : game.data.whiteNickname || "White",
-      publicKey: seat === "white" ? publicKey : game.data.whitePublicKey || null
-    } : null,
-    black: game.data.blackPlayerId ? {
-      peerId: game.data.blackPlayerId,
-      nickname: seat === "black" ? nickname : game.data.blackNickname || "Black",
-      publicKey: seat === "black" ? publicKey : game.data.blackPublicKey || null
-    } : null,
-    signatures: {},
-    createdAt: Date.now(),
-    proposer: {
-      seat,
-      peerId,
-      nickname,
-      publicKey
-    }
-  };
-}
-function enrichCheckpointPlayerMetadata(checkpoint, game) {
-  if (!checkpoint || !game?.data) {
-    return checkpoint;
-  }
-  const next = { ...checkpoint, signatures: { ...checkpoint.signatures || {} } };
-  if (game.data.whitePlayerId) {
-    next.white = {
-      ...next.white || {},
-      peerId: game.data.whitePlayerId,
-      nickname: game.data.whiteNickname || next.white?.nickname || "White",
-      publicKey: game.data.whitePublicKey || next.white?.publicKey || null
-    };
-  }
-  if (game.data.blackPlayerId) {
-    next.black = {
-      ...next.black || {},
-      peerId: game.data.blackPlayerId,
-      nickname: game.data.blackNickname || next.black?.nickname || "Black",
-      publicKey: game.data.blackPublicKey || next.black?.publicKey || null
-    };
-  }
-  return next;
-}
-function signCheckpoint(checkpoint, keyPair, seat) {
-  const payload = checkpointSigningPayload(checkpoint);
-  const signature = import_tweetnacl2.default.sign.detached(
-    import_tweetnacl_util2.default.decodeUTF8(payload),
-    keyPair.signing.secretKey
-  );
-  return {
-    ...checkpoint,
-    signatures: {
-      ...checkpoint.signatures || {},
-      [seat]: {
-        signature: import_tweetnacl_util2.default.encodeBase64(signature),
-        publicKey: keyPairToPublicBundle(keyPair),
-        signedAt: Date.now()
-      }
-    }
-  };
-}
-function verifyCheckpointSignature(checkpoint, seat) {
-  const entry = checkpoint?.signatures?.[seat];
-  if (!entry?.signature || !entry?.publicKey?.signingPublicKey) {
-    return false;
-  }
-  const payload = checkpointSigningPayload(checkpoint);
-  return import_tweetnacl2.default.sign.detached.verify(
-    import_tweetnacl_util2.default.decodeUTF8(payload),
-    import_tweetnacl_util2.default.decodeBase64(entry.signature),
-    import_tweetnacl_util2.default.decodeBase64(entry.publicKey.signingPublicKey)
-  );
-}
-function isCheckpointFullySigned(checkpoint) {
-  return Boolean(
-    checkpoint && verifyCheckpointSignature(checkpoint, "white") && verifyCheckpointSignature(checkpoint, "black")
-  );
-}
-function checkpointSeatForPublicKey(checkpoint, publicKeyBundle) {
-  if (!checkpoint || !publicKeyBundle?.signingPublicKey) {
-    return null;
-  }
-  if (checkpoint.white?.publicKey?.signingPublicKey === publicKeyBundle.signingPublicKey) {
-    return "white";
-  }
-  if (checkpoint.black?.publicKey?.signingPublicKey === publicKeyBundle.signingPublicKey) {
-    return "black";
-  }
-  return null;
-}
-function serializeCheckpoint(checkpoint) {
-  return bytesToBase64Url(import_tweetnacl_util2.default.decodeUTF8(JSON.stringify(checkpoint)));
-}
-function deserializeCheckpoint(encoded) {
-  if (!encoded) {
-    return null;
-  }
-  try {
-    const json = import_tweetnacl_util2.default.encodeUTF8(base64UrlToBytes(encoded));
-    const parsed = JSON.parse(json);
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch (_error) {
-    return null;
-  }
-}
-function openCheckpointDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(CHECKPOINT_DB, 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(CHECKPOINT_STORE)) {
-        db.createObjectStore(CHECKPOINT_STORE);
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-async function storeCheckpointRef(checkpoint) {
-  const encoded = serializeCheckpoint(checkpoint);
-  const digest = import_tweetnacl_util2.default.encodeBase64(import_tweetnacl2.default.hash(import_tweetnacl_util2.default.decodeUTF8(encoded))).slice(0, 16);
-  const ref = `cp_${digest.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12)}`;
-  if (typeof indexedDB === "undefined") {
-    localStorage.setItem(`dignity-chess-checkpoint:${ref}`, encoded);
-    return ref;
-  }
-  const db = await openCheckpointDb();
-  await new Promise((resolve, reject) => {
-    const tx = db.transaction(CHECKPOINT_STORE, "readwrite");
-    tx.objectStore(CHECKPOINT_STORE).put({ encoded, checkpoint, savedAt: Date.now() }, ref);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-  db.close();
-  localStorage.setItem(`dignity-chess-checkpoint:${ref}`, encoded);
-  return ref;
-}
-async function loadCheckpointRef(ref) {
-  if (!ref) {
-    return null;
-  }
-  const cached = localStorage.getItem(`dignity-chess-checkpoint:${ref}`);
-  if (cached) {
-    return deserializeCheckpoint(cached);
-  }
-  if (typeof indexedDB === "undefined") {
-    return null;
-  }
-  const db = await openCheckpointDb();
-  const record = await new Promise((resolve, reject) => {
-    const tx = db.transaction(CHECKPOINT_STORE, "readonly");
-    const request = tx.objectStore(CHECKPOINT_STORE).get(ref);
-    request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => reject(request.error);
-  });
-  db.close();
-  if (!record?.encoded) {
-    return null;
-  }
-  return deserializeCheckpoint(record.encoded);
-}
-async function resolveCheckpointFromRoute(route) {
-  if (route.checkpoint) {
-    return deserializeCheckpoint(route.checkpoint);
-  }
-  if (route.checkpointRef) {
-    return loadCheckpointRef(route.checkpointRef);
-  }
-  return null;
-}
-async function buildResumeLink(checkpoint) {
-  const base = `${window.location.origin}${window.location.pathname}`;
-  const encoded = serializeCheckpoint(checkpoint);
-  const common2 = [
-    `game=${encodeURIComponent(checkpoint.gameId)}`,
-    `room=${encodeURIComponent(checkpoint.roomKey)}`,
-    "role=resume"
-  ];
-  if (encoded.length <= MAX_INLINE_CHECKPOINT_CHARS) {
-    return `${base}#${common2.join("&")}&checkpoint=${encoded}`;
-  }
-  const ref = await storeCheckpointRef(checkpoint);
-  return `${base}#${common2.join("&")}&checkpointRef=${encodeURIComponent(ref)}`;
-}
-function gamePatchFromCheckpoint(checkpoint, localNodeId, seat) {
-  const whitePlayerId = seat === "white" ? localNodeId : checkpoint.white?.peerId || null;
-  const blackPlayerId = seat === "black" ? localNodeId : checkpoint.black?.peerId || null;
-  return {
-    fen: checkpoint.fen,
-    moveHistory: checkpoint.moveHistory || [],
-    status: checkpoint.status,
-    turn: checkpoint.turn,
-    winner: checkpoint.winner ?? null,
-    joinToken: checkpoint.joinToken,
-    joinTokenUsed: Boolean(checkpoint.black?.peerId || checkpoint.black?.publicKey),
-    watchToken: checkpoint.watchToken,
-    resumeToken: null,
-    resumeCheckpointId: checkpoint.createdAt,
-    whitePlayerId,
-    blackPlayerId,
-    whiteNickname: checkpoint.white?.nickname || "White",
-    blackNickname: checkpoint.black?.nickname || "Black",
-    whitePublicKey: checkpoint.white?.publicKey || null,
-    blackPublicKey: checkpoint.black?.publicKey || null,
-    lastMove: null
-  };
-}
-function validateCheckpointForResume(checkpoint) {
-  if (!checkpoint || checkpoint.v !== CHECKPOINT_VERSION) {
-    return { ok: false, reason: "unsupported-checkpoint" };
-  }
-  if (!isCheckpointFullySigned(checkpoint)) {
-    return { ok: false, reason: "missing-signatures" };
-  }
-  if (!checkpoint.gameId || !checkpoint.roomKey || !checkpoint.fen) {
-    return { ok: false, reason: "incomplete-checkpoint" };
-  }
-  return { ok: true };
 }
 
 // docs/chess/src/lib/audio.js
@@ -60076,6 +60236,7 @@ function ResumePanel({
   const [busy, setBusy] = (0, import_react6.useState)(false);
   const [resumeLink, setResumeLink] = (0, import_react6.useState)("");
   const [copied, setCopied] = (0, import_react6.useState)(false);
+  const [portableCopied, setPortableCopied] = (0, import_react6.useState)(false);
   const [seatBackup, setSeatBackup] = (0, import_react6.useState)("");
   const phase = (0, import_react6.useMemo)(() => {
     if (finalizedCheckpoint && isCheckpointFullySigned(finalizedCheckpoint)) {
@@ -60157,6 +60318,37 @@ function ResumePanel({
     setTimeout(() => setCopied(false), 2e3);
   }
   const validation = finalizedCheckpoint ? validateCheckpointForResume(finalizedCheckpoint) : null;
+  const portableBundle = (0, import_react6.useMemo)(() => {
+    if (!finalizedCheckpoint || !validation?.ok) {
+      return "";
+    }
+    try {
+      return formatPortableCheckpointBundle(finalizedCheckpoint);
+    } catch (_error) {
+      return "";
+    }
+  }, [finalizedCheckpoint, validation]);
+  const usesLocalCheckpointRef = Boolean(resumeLink && resumeLink.includes("checkpointRef="));
+  async function copyPortableBundle() {
+    if (!portableBundle) {
+      return;
+    }
+    await navigator.clipboard.writeText(portableBundle);
+    setPortableCopied(true);
+    setTimeout(() => setPortableCopied(false), 2e3);
+  }
+  function downloadPortableBundle() {
+    if (!portableBundle || !gameId) {
+      return;
+    }
+    const blob = new Blob([portableBundle], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${gameId}-checkpoint.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
   return /* @__PURE__ */ import_react6.default.createElement("section", { className: "panel resume-panel" }, /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__head" }, /* @__PURE__ */ import_react6.default.createElement("h3", null, "Resume later"), /* @__PURE__ */ import_react6.default.createElement("span", { className: "resume-panel__phase" }, phase)), /* @__PURE__ */ import_react6.default.createElement("p", { className: "resume-panel__hint" }, STEPS[phase]), phase === "idle" ? /* @__PURE__ */ import_react6.default.createElement(
     "button",
     {
@@ -60166,7 +60358,7 @@ function ResumePanel({
       onClick: handlePropose
     },
     busy ? "Signing\u2026" : "Propose pause & co-sign checkpoint"
-  ) : null, phase === "proposed" ? /* @__PURE__ */ import_react6.default.createElement("p", { className: "notice" }, "Checkpoint sent to opponent. They must sign the same position to finalize the resume link.") : null, phase === "incoming" ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__actions" }, /* @__PURE__ */ import_react6.default.createElement("p", null, /* @__PURE__ */ import_react6.default.createElement("strong", null, pendingProposal.checkpoint?.proposer?.nickname || "Opponent"), " ", "signed move ", pendingProposal.checkpoint?.moveHistory?.length || 0, " and wants to pause here."), /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__buttons" }, /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", className: "primary", disabled: busy, onClick: handleAccept }, busy ? "Signing\u2026" : "Sign & finalize resume link"), /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", className: "ghost", disabled: busy, onClick: onDeclineProposal }, "Decline"))) : null, phase === "ready" && resumeLink ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__ready" }, /* @__PURE__ */ import_react6.default.createElement("label", null, "Dual-signed resume link"), /* @__PURE__ */ import_react6.default.createElement("input", { readOnly: true, value: resumeLink, onFocus: (event) => event.target.select() }), /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__buttons" }, /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", onClick: copyResumeLink }, copied ? "Copied" : "Copy resume link")), validation?.ok ? /* @__PURE__ */ import_react6.default.createElement("p", { className: "muted" }, "Both signatures verified. The signed board state is embedded in the link when it fits in the URL; otherwise this browser keeps a local checkpoint ref (not shareable across devices).") : /* @__PURE__ */ import_react6.default.createElement("p", { className: "error-inline" }, "Checkpoint validation failed: ", validation?.reason)) : null, seatBackup ? /* @__PURE__ */ import_react6.default.createElement("details", { className: "resume-panel__backup" }, /* @__PURE__ */ import_react6.default.createElement("summary", null, "Seat key backup (optional, same device or manual transfer)"), /* @__PURE__ */ import_react6.default.createElement("p", { className: "muted" }, "Resume links restore the board. Your signing keys stay on this device unless you copy this backup."), /* @__PURE__ */ import_react6.default.createElement("textarea", { readOnly: true, rows: 3, value: seatBackup, onFocus: (event) => event.target.select() })) : null);
+  ) : null, phase === "proposed" ? /* @__PURE__ */ import_react6.default.createElement("p", { className: "notice" }, "Checkpoint sent to opponent. They must sign the same position to finalize the resume link.") : null, phase === "incoming" ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__actions" }, /* @__PURE__ */ import_react6.default.createElement("p", null, /* @__PURE__ */ import_react6.default.createElement("strong", null, pendingProposal.checkpoint?.proposer?.nickname || "Opponent"), " ", "signed move ", pendingProposal.checkpoint?.moveHistory?.length || 0, " and wants to pause here."), /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__buttons" }, /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", className: "primary", disabled: busy, onClick: handleAccept }, busy ? "Signing\u2026" : "Sign & finalize resume link"), /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", className: "ghost", disabled: busy, onClick: onDeclineProposal }, "Decline"))) : null, phase === "ready" && resumeLink ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__ready" }, /* @__PURE__ */ import_react6.default.createElement("label", null, "Dual-signed resume link"), /* @__PURE__ */ import_react6.default.createElement("input", { readOnly: true, value: resumeLink, onFocus: (event) => event.target.select() }), /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__buttons" }, /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", onClick: copyResumeLink }, copied ? "Copied" : "Copy resume link")), validation?.ok ? /* @__PURE__ */ import_react6.default.createElement("p", { className: "muted" }, "Both signatures verified. The signed board state is embedded in the link when it fits in the URL; otherwise this browser keeps a local checkpoint ref (not shareable across devices).", usesLocalCheckpointRef ? " Use the portable checkpoint below to resume on another device." : null, !buildResumeHashFromCheckpoint(finalizedCheckpoint) ? " This checkpoint is too large for an inline URL \u2014 export the portable bundle." : null) : /* @__PURE__ */ import_react6.default.createElement("p", { className: "error-inline" }, "Checkpoint validation failed: ", validation?.reason), portableBundle ? /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__portable" }, /* @__PURE__ */ import_react6.default.createElement("label", null, "Portable checkpoint bundle"), /* @__PURE__ */ import_react6.default.createElement("textarea", { readOnly: true, rows: 4, value: portableBundle, "aria-label": "Portable checkpoint bundle for cross-device resume" }), /* @__PURE__ */ import_react6.default.createElement("div", { className: "resume-panel__buttons" }, /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", onClick: copyPortableBundle }, portableCopied ? "Copied" : "Copy portable checkpoint"), /* @__PURE__ */ import_react6.default.createElement("button", { type: "button", className: "secondary", onClick: downloadPortableBundle }, "Download checkpoint file"))) : null) : null, seatBackup ? /* @__PURE__ */ import_react6.default.createElement("details", { className: "resume-panel__backup" }, /* @__PURE__ */ import_react6.default.createElement("summary", null, "Seat key backup (optional, same device or manual transfer)"), /* @__PURE__ */ import_react6.default.createElement("p", { className: "muted" }, "Resume links restore the board. Your signing keys stay on this device unless you copy this backup."), /* @__PURE__ */ import_react6.default.createElement("textarea", { readOnly: true, rows: 3, value: seatBackup, onFocus: (event) => event.target.select() })) : null);
 }
 
 // docs/chess/src/components/GameView.jsx

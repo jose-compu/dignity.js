@@ -6,8 +6,12 @@ const root = path.join(__dirname, '..');
 const svg = path.join(root, 'docs/assets/favicon.svg');
 const outputs = [
   path.join(root, 'docs/favicon.ico'),
-  path.join(root, 'docs/chess/favicon.ico')
+  path.join(root, 'docs/chess/favicon.ico'),
+  path.join(root, 'docs/tictactoe/favicon.ico')
 ];
+
+const logoSvg = path.join(root, 'docs/assets/dignity-logo.svg');
+const logoPng = path.join(root, 'docs/assets/dignity-logo.png');
 
 for (const output of outputs) {
   fs.mkdirSync(path.dirname(output), { recursive: true });
@@ -22,4 +26,9 @@ for (const output of outputs) {
   fs.unlinkSync(output.replace(/\.ico$/, '.png'));
 }
 
-console.log('Generated favicon.ico for docs and docs/chess');
+console.log('Generated favicon.ico for docs, chess, and tictactoe');
+
+if (fs.existsSync(logoSvg)) {
+  execSync(`rsvg-convert -w 840 -h 160 "${logoSvg}" -o "${logoPng}"`, { stdio: 'inherit' });
+  console.log('Generated dignity-logo.png for README');
+}

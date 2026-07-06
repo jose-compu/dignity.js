@@ -25,9 +25,37 @@ function getDemoById(id) {
 }
 
 function populateFeatureSelect() {
-  els.featureSelect.innerHTML = PLAYGROUND_DEMOS.map(
-    (demo) => `<option value="${demo.id}">${demo.title}</option>`
-  ).join('');
+  const groups = new Map();
+  for (const demo of PLAYGROUND_DEMOS) {
+    const key = demo.group || 'core';
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key).push(demo);
+  }
+
+  const labels = {
+    core: 'Core',
+    'v0.10': 'v0.10.0'
+  };
+
+  const order = ['core', 'v0.10'];
+  const seen = new Set(order);
+  for (const key of groups.keys()) {
+    if (!seen.has(key)) {
+      order.push(key);
+    }
+  }
+
+  els.featureSelect.innerHTML = order
+    .filter((key) => groups.has(key))
+    .map((key) => {
+      const options = groups.get(key).map(
+        (demo) => `<option value="${demo.id}">${demo.title}</option>`
+      ).join('');
+      return `<optgroup label="${labels[key] || key}">${options}</optgroup>`;
+    })
+    .join('');
 }
 
 function syncEditorScroll() {

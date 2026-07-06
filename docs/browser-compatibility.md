@@ -38,6 +38,39 @@ dignity.js targets **modern evergreen browsers** with WebRTC, IndexedDB, and Web
 
 Default pool includes Cloudflare and public PeerJS servers (`wss://`). Custom deployments should provide their own signaling URLs via `createDefaultSignalingPool({ cloudflareUrls, fallbackUrls })`.
 
-## Reporting issues
+## PeerJS ICE/TURN and reconnect {#peerjs-ice-turn}
+
+Browser mesh connectivity depends on **WebRTC ICE** (STUN for NAT discovery, TURN for relay when direct UDP fails). dignity.js passes optional `iceServers` through `createPeerJSNetworkAdapter`:
+
+```js
+const { createPeerJSNetworkAdapter } = require('dignity.js');
+
+const networkAdapter = createPeerJSNetworkAdapter({
+  urls: ['wss://your-signaling.example/peerjs?key=peerjs'],
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    {
+      urls: 'turn:turn.example.com:3478',
+      username: 'user',
+      credential: 'pass'
+    }
+  ]
+});
+```
+
+### Reconnect behavior
+
+- **Signaling drop:** `PeerJSNetworkAdapter` tries each URL in `urls` on `start()`. If the active PeerJS connection errors, call `stop()` then `start(nodeId)` to re-register with signaling and re-open data channels.
+- **Data channel empty but signaling connected:** This usually means ICE failed or the remote peer is offline. Ensure both sides call `connectToPeer(remoteId)` (or use `bootstrapPeerIds` / `connectToPeers` on broadcasts). Check browser console for WebRTC errors.
+- **Mid-game disconnect:** Peers should reconnect signaling, call `connectToPeer` again, and the owner may need `pushRecordSnapshot` so late joiners receive the full record before applying updates.
+
+### Troubleshooting
+
+| Symptom | Likely cause | Mitigation |
+| --- | --- | --- |
+| Signaling connected, no messages | No open data channel | `connectToPeer`, `bootstrapPeerIds` |
+| Works on LAN, fails on VPN/corp network | UDP blocked | Deploy TURN, set `iceServers` |
+| Safari tab backgrounded | WebRTC throttled | Keep tab focused during connect |
+| Joiner sees stale/missing state | Missed initial `create` | Owner calls `pushRecordSnapshot` |
 
 If a browser-specific failure is reproducible on the [playground](https://jose-compu.github.io/dignity.js/playground/) or chess demo, open an issue with browser version, OS, and console errors.

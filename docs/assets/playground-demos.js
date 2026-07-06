@@ -394,5 +394,114 @@ log('stats:', JSON.stringify(replica.getViewStats()));
 await replica.stop();
 await publisher.stop();
 await reader.stop();`
+  },
+  {
+    id: 'transfer-ownership',
+    group: 'v0.10',
+    title: 'v0.10 — Transfer ownership (turn-based moves)',
+    description: 'Hand off record owner each turn — pattern used by the browser tic-tac-toe demo.',
+    code: `const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = dignity;
+
+const hub = new InMemoryNetworkHub();
+const security = helpers.fastSecurity();
+
+const alice = new DignityP2P({ nodeId: 'alice', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+const bob = new DignityP2P({ nodeId: 'bob', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+helpers.track(alice, bob);
+await alice.start();
+await bob.start();
+
+await alice.joinDiscovery('room:ttt', { metadata: { role: 'host' } });
+await bob.joinDiscovery('room:ttt', { metadata: { role: 'join' }, bootstrapPeerIds: ['alice'] });
+await helpers.sleep(30);
+
+await alice.create('games', {
+  board: ['X', null, null, null, null, null, null, null, null],
+  turn: 'alice',
+  status: 'playing'
+}, { id: 'ttt-1', broadcastScope: 'room:ttt' });
+await helpers.sleep(30);
+
+log('owner after create:', alice.read('games', 'ttt-1')?.ownerId);
+
+await alice.update('games', 'ttt-1', {
+  board: ['X', 'O', null, null, null, null, null, null, null],
+  turn: 'bob'
+}, { broadcastScope: 'room:ttt' });
+await alice.transferOwnership('games', 'ttt-1', 'bob', { broadcastScope: 'room:ttt' });
+await helpers.sleep(30);
+
+log('owner after handoff:', bob.read('games', 'ttt-1')?.ownerId);
+log('bob can update:', bob.read('games', 'ttt-1')?.ownerId === 'bob');
+
+let aliceRejected = null;
+try {
+  await alice.update('games', 'ttt-1', { turn: 'alice' });
+} catch (err) {
+  aliceRejected = err.message;
+}
+log('alice update rejected:', aliceRejected || 'unexpected');
+
+await alice.stop();
+await bob.stop();`
+  },
+  {
+    id: 'late-joiner-snapshot',
+    group: 'v0.10',
+    title: 'v0.10 — Late joiner snapshot',
+    description: 'pushRecordSnapshot catches up a peer that missed the initial create (PeerJS pattern).',
+    code: `const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = dignity;
+
+const hub = new InMemoryNetworkHub();
+const security = helpers.fastSecurity();
+
+const host = new DignityP2P({ nodeId: 'host', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+const joiner = new DignityP2P({ nodeId: 'joiner', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+helpers.track(host, joiner);
+await host.start();
+await joiner.start();
+
+await host.create('matches', { fen: 'start', move: 0 }, { id: 'g1', broadcastScope: 'room:chess' });
+await helpers.sleep(20);
+
+log('joiner before snapshot:', joiner.read('matches', 'g1'));
+
+await host.pushRecordSnapshot('matches', 'g1', {
+  broadcastScope: 'room:chess',
+  connectToPeers: ['joiner']
+});
+await helpers.sleep(40);
+
+const restored = joiner.read('matches', 'g1');
+log('joiner after snapshot:', restored?.data);
+log('hash present:', Boolean(restored?.hash));
+
+await host.stop();
+await joiner.stop();`
+  },
+  {
+    id: 'peerjs-ice-config',
+    group: 'v0.10',
+    title: 'v0.10 — PeerJS iceServers config',
+    description: 'Create a PeerJS network adapter with custom STUN/TURN — used in production browser demos.',
+    code: `const { createPeerJSNetworkAdapter } = dignity;
+
+const adapter = createPeerJSNetworkAdapter({
+  urls: ['wss://your-signaling.example/peerjs?key=peerjs'],
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    {
+      urls: 'turn:turn.example.com:3478',
+      username: 'user',
+      credential: 'pass'
+    }
+  ],
+  connectTimeoutMs: 12000
+});
+
+log('signaling urls:', adapter.urls);
+log('iceServers:', JSON.stringify(adapter.iceServers));
+log('See docs/browser-compatibility.md#peerjs-ice-turn for deployment notes.');
+log('Live demos: docs/chess/ and docs/tictactoe/');`
   }
 ];

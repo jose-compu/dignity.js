@@ -1,12 +1,12 @@
 # dignity.js
 
-![dignity.js logo](https://raw.githubusercontent.com/jose-compu/dignity.js/refs/heads/main/docs/assets/dignity-logo.png)
+![dignity.js logo](./docs/assets/dignity-logo.png)
 
 [![docs](https://img.shields.io/badge/docs-online-5B7FFF)](https://jose-compu.github.io/dignity.js/)
 [![npm version](https://img.shields.io/npm/v/dignity.js?color=cb3837&label=npm)](https://www.npmjs.com/package/dignity.js)
 [![npm downloads](https://img.shields.io/npm/dm/dignity.js?color=blue)](https://www.npmjs.com/package/dignity.js)
 [![CI](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml/badge.svg)](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-291%2B%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-324%2B%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-92%25-brightgreen)
 ![license](https://img.shields.io/badge/license-Apache%202.0-black)
 
@@ -35,6 +35,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Optional React hooks via `dignity.js/react`
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **v0.10.0** — cross-device chess resume, portable checkpoints, browser tic-tac-toe demo, PeerJS ICE/TURN docs, Playwright e2e smoke
 - **`DignityQueryReplica`** — read-only materialized views with hash-chain verification
 - Credential-derived keys, identity rotation, and cold-recovery co-sign (v0.7+)
 - Browser-first: published npm package includes IIFE, ESM, and CJS builds
@@ -468,6 +469,30 @@ await host.pushRecordSnapshot('chess-matches', gameId, {
 
 The joiner applies the snapshot via `restoreRecord`, then subsequent move updates replicate normally.
 
+### ICE/TURN for production browsers
+
+Public STUN servers help with NAT but many deployments need a **TURN relay** (corporate VPN, symmetric NAT, UDP filtering). Pass `iceServers` when creating the network adapter:
+
+```js
+const { createPeerJSNetworkAdapter } = require('dignity.js');
+
+const networkAdapter = createPeerJSNetworkAdapter({
+  urls: ['wss://your-signaling.example/peerjs?key=peerjs'],
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    {
+      urls: 'turn:turn.example.com:3478',
+      username: 'user',
+      credential: 'pass'
+    }
+  ]
+});
+```
+
+**Reconnect:** If signaling drops mid-session, call `await adapter.stop()` then `await adapter.start(nodeId)` and re-run `connectToPeer` for each remote peer. If messages stop but signaling looks healthy, verify open data channels with `getConnectionStats()` and push a fresh snapshot after reconnect.
+
+See [docs/browser-compatibility.md](./docs/browser-compatibility.md#peerjs-ice-turn) for troubleshooting.
+
 ## Contributing
 
 See **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup, tests, and PR expectations.
@@ -525,11 +550,11 @@ npm run docs:dev
 
 If 4173 is busy, `docs:dev` auto-picks the next free port (4174, 4175, …) and prints the URLs.
 
-## Dignity Apps (v0.9.0+)
+## Dignity Apps (v0.10.0+)
 
 Self-contained HTML apps in a sandboxed iframe, inspired by [Datasette Apps](https://datasette.io/blog/2026/datasette-apps/). Track: [#100](https://github.com/jose-compu/dignity.js/issues/100).
 
-**Threat boundaries (v0.8.2+, documented in v0.9):**
+**Threat boundaries (v0.8.2+, documented in v0.10):**
 
 - Apps run in an iframe with `sandbox` + immutable CSP — no parent DOM, cookies, or `localStorage`.
 - Data access only via a parent **MessageChannel** bridge; no signing keys or mesh credentials in the iframe.
@@ -556,6 +581,7 @@ const { ok, manifest } = validateDignityAppManifest({
 - **Benchmarks:** [`docs/benchmarks/results.json`](./docs/benchmarks/results.json) — `npm run benchmark` (#92)
 - Docs site source: `docs/index.html` (local: `npm run docs:dev`)
 - **3D Chess demo:** `docs/chess/` — PeerJS mesh, dual-signed resume links, IndexedDB → [local chess demo](http://127.0.0.1:4173/chess/) when `docs:dev` is running
+- **Browser tic-tac-toe:** `docs/tictactoe/` — simpler PeerJS onboarding demo → [local tictactoe](http://127.0.0.1:4173/tictactoe/) when `docs:dev` is running
 - API metadata: `docs/openapi-like.json`
 - Minimal demos:
   - `examples/decentralized-tictactoe.js`

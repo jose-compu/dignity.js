@@ -25,9 +25,12 @@ class MockDataConnection {
 
 class MockPeer {
   static peers = new Map();
+  static lastPeerOptions = null;
 
-  constructor(id) {
+  constructor(id, options) {
     this.id = id;
+    this.options = options;
+    MockPeer.lastPeerOptions = options;
     this.handlers = {};
     MockPeer.peers.set(id, this);
     setTimeout(() => {
@@ -79,6 +82,21 @@ class MockPeer {
 describe('PeerJSNetworkAdapter', () => {
   beforeEach(() => {
     MockPeer.peers = new Map();
+    MockPeer.lastPeerOptions = null;
+  });
+
+  test('passes iceServers to Peer constructor config', async () => {
+    const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+    const adapter = new PeerJSNetworkAdapter({
+      url: 'wss://peerjs.92k.de/peerjs?key=peerjs',
+      PeerImpl: MockPeer,
+      connectTimeoutMs: 1000,
+      iceServers
+    });
+
+    await adapter.start('alice');
+    expect(MockPeer.lastPeerOptions.config.iceServers).toEqual(iceServers);
+    await adapter.stop();
   });
 
   test('connects peers and delivers broadcast messages', async () => {
