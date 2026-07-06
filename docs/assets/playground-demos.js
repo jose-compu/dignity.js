@@ -428,7 +428,10 @@ await alice.update('games', 'ttt-1', {
   board: ['X', 'O', null, null, null, null, null, null, null],
   turn: 'bob'
 }, { broadcastScope: 'room:ttt' });
-await alice.transferOwnership('games', 'ttt-1', 'bob', { broadcastScope: 'room:ttt' });
+await alice.transferOwnership('games', 'ttt-1', 'bob', {
+  broadcastScope: 'room:ttt',
+  keepAsCollaborator: false
+});
 await helpers.sleep(30);
 
 log('owner after handoff:', bob.read('games', 'ttt-1')?.ownerId);

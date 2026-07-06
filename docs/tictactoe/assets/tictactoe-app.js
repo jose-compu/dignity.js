@@ -13916,7 +13916,8 @@ async function playMove(index) {
     if (!winner && opponentId) {
       await state.node.transferOwnership(COLLECTION, state.route.gameId, opponentId, {
         broadcastScope: scope,
-        connectToPeers: [opponentId]
+        connectToPeers: [opponentId],
+        keepAsCollaborator: false
       });
     }
   } catch (error) {
