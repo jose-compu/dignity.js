@@ -36,7 +36,7 @@ function populateFeatureSelect() {
 
   const labels = {
     core: 'Core',
-    'v0.10': 'v0.10.0'
+    'v0.10': 'v0.10.1'
   };
 
   const order = ['core', 'v0.10'];

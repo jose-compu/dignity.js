@@ -35,6 +35,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Optional React hooks via `dignity.js/react`
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **v0.10.1** — README logo PNG aspect-ratio fix (export from SVG)
 - **v0.10.0** — cross-device chess resume, portable checkpoints, browser tic-tac-toe demo, PeerJS ICE/TURN docs, Playwright e2e smoke
 - **`DignityQueryReplica`** — read-only materialized views with hash-chain verification
 - Credential-derived keys, identity rotation, and cold-recovery co-sign (v0.7+)
@@ -550,7 +551,7 @@ npm run docs:dev
 
 If 4173 is busy, `docs:dev` auto-picks the next free port (4174, 4175, …) and prints the URLs.
 
-## Dignity Apps (v0.10.0+)
+## Dignity Apps (v0.10.1+)
 
 Self-contained HTML apps in a sandboxed iframe, inspired by [Datasette Apps](https://datasette.io/blog/2026/datasette-apps/). Track: [#100](https://github.com/jose-compu/dignity.js/issues/100).
 
