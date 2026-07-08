@@ -307,6 +307,262 @@ describe('DignityP2P branch coverage', () => {
 
     await node.stop();
   });
+
+  test('verification helpers cover registry and metadata attachment', async () => {
+    const node = createNode('alice');
+    await node.start();
+
+    expect(node.attachVerificationMetadata(null)).toBeNull();
+    expect(node.attachVerificationMetadata({ collectionName: 'notes' }).verificationHash).toBeUndefined();
+
+    const summary = node.registerVerification('notes', { code: 'read-only' });
+    expect(summary.verificationHash).toMatch(/^sha512:/);
+
+    const withMeta = node.attachVerificationMetadata({ collectionName: 'notes', id: 'n1' });
+    expect(withMeta.verificationHash).toBe(summary.verificationHash);
+    expect(withMeta.verificationVersion).toBeUndefined();
+
+    node.registerVerification('games', { code: 'rules', version: '3.1.4', policy: 'strict' });
+    const gameMeta = node.attachVerificationMetadata({ collectionName: 'games' });
+    expect(gameMeta.verificationVersion).toBe('3.1.4');
+
+    const rejected = [];
+    node.on('policyrejected', (e) => rejected.push(e));
+    const accepted = node.checkVerificationOnIngest('games', {
+      verificationHash: 'sha512:unknown',
+      verificationVersion: '3.1.4'
+    }, 'remote-peer');
+    expect(accepted).toBe(false);
+    expect(rejected.length).toBeGreaterThan(0);
+
+    await node.stop();
+  });
+
+  test('pushRecordSnapshot embeds verification metadata when registered', async () => {
+    const node = createNode('alice');
+    await node.start();
+    node.registerVerification('items', { code: 'rules-v1', version: '2.0.0' });
+    await node.create('items', { x: 1 }, { id: 'i1' });
+
+    const snapshot = await node.pushRecordSnapshot('items', 'i1');
+    expect(snapshot.verificationHash).toMatch(/^sha512:/);
+    expect(snapshot.verificationVersion).toBe('2.0.0');
+
+    await node.stop();
+  });
+
+  test('applyOperation rejects verification mismatch from remote sender', async () => {
+    const node = createNode('bob');
+    await node.start();
+    node.registerVerification('notes', { code: 'local-rules', policy: 'strict' });
+
+    const rejected = [];
+    node.on('policyrejected', (e) => rejected.push(e));
+
+    const applied = node.applyOperation({
+      opId: 'op-verify-1',
+      kind: 'create',
+      collectionName: 'notes',
+      id: 'n1',
+      ownerId: 'alice',
+      payload: { text: 'hi' },
+      timestamp: Date.now(),
+      verificationHash: 'sha512:bad',
+      verificationVersion: '1.0.0'
+    }, { senderId: 'alice' });
+
+    expect(applied).toBe(false);
+    expect(rejected.length).toBeGreaterThan(0);
+    expect(node.read('notes', 'n1')).toBeNull();
+
+    await node.stop();
+  });
+
+  test('ingestRemoteDomainEvent rejects verification mismatch', async () => {
+    const { operationToDomainEvent } = require('../../src/cqrs/domain-events');
+    const unsignedSecurity = fastTestSecurity({
+      appPassword: 'branch-test',
+      powEnabled: false,
+      signingEnabled: false
+    });
+    const node = new DignityP2P({
+      nodeId: 'subscriber',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: unsignedSecurity
+    });
+
+    await node.start();
+    await node.joinPeerGroup('feed:verify-events', {
+      role: 'subscriber',
+      publisherId: 'publisher',
+      domainEvents: true
+    });
+    node.registerVerification('posts', {
+      code: 'local-feed-rules',
+      version: '1.0.0',
+      policy: 'strict'
+    });
+
+    const event = operationToDomainEvent({
+      kind: 'create',
+      collectionName: 'posts',
+      id: 'p1',
+      timestamp: Date.now(),
+      payload: { text: 'hello' }
+    }, {
+      publisherId: 'publisher',
+      groupId: 'feed:verify-events',
+      eventIdGenerator: () => 'evt-verify-1'
+    });
+    event.verificationHash = 'sha512:wrong';
+    event.verificationVersion = '1.0.0';
+
+    const rejected = [];
+    node.on('policyrejected', (e) => rejected.push(e));
+    const applied = node.ingestRemoteDomainEvent(event, {
+      groupId: 'feed:verify-events',
+      publisherId: 'publisher'
+    });
+
+    expect(applied).toBe(false);
+    expect(rejected.length).toBeGreaterThan(0);
+
+    await node.stop();
+  });
+
+  test('ingestRemoteDomainEvent rejects broken hash chain', async () => {
+    const { operationToDomainEvent } = require('../../src/cqrs/domain-events');
+    const unsignedSecurity = fastTestSecurity({
+      appPassword: 'branch-test',
+      powEnabled: false,
+      signingEnabled: false
+    });
+    const node = new DignityP2P({
+      nodeId: 'subscriber',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: unsignedSecurity
+    });
+
+    await node.start();
+    await node.joinPeerGroup('feed:chain', {
+      role: 'subscriber',
+      publisherId: 'publisher',
+      domainEvents: true
+    });
+
+    const first = operationToDomainEvent({
+      kind: 'create',
+      collectionName: 'posts',
+      id: 'p1',
+      timestamp: 1,
+      payload: { text: 'one' }
+    }, {
+      publisherId: 'publisher',
+      groupId: 'feed:chain',
+      eventIdGenerator: () => 'evt-chain-1'
+    });
+
+    expect(node.ingestRemoteDomainEvent(first, {
+      groupId: 'feed:chain',
+      publisherId: 'publisher'
+    })).toBe(true);
+
+    const second = operationToDomainEvent({
+      kind: 'update',
+      collectionName: 'posts',
+      id: 'p1',
+      timestamp: 2,
+      baseVersion: 1,
+      payload: { text: 'two' }
+    }, {
+      publisherId: 'publisher',
+      groupId: 'feed:chain',
+      prevHash: 'sha512:wrong-prev',
+      eventIdGenerator: () => 'evt-chain-2'
+    });
+
+    const broken = [];
+    node.on('chainbroken', (e) => broken.push(e));
+    expect(node.ingestRemoteDomainEvent(second, {
+      groupId: 'feed:chain',
+      publisherId: 'publisher'
+    })).toBe(false);
+    expect(broken[0].eventId).toBe('evt-chain-2');
+
+    await node.stop();
+  });
+
+  test('ingestRemoteDomainEvent rejects unknown publisher signing key', async () => {
+    const { operationToDomainEvent } = require('../../src/cqrs/domain-events');
+    const signedSecurity = fastTestSecurity({
+      appPassword: 'branch-test',
+      powEnabled: false,
+      signingEnabled: true
+    });
+    const node = new DignityP2P({
+      nodeId: 'subscriber',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: signedSecurity
+    });
+
+    await node.start();
+    await node.joinPeerGroup('feed:signed-pub', {
+      role: 'subscriber',
+      publisherId: 'publisher',
+      domainEvents: true
+    });
+
+    const event = operationToDomainEvent({
+      kind: 'create',
+      collectionName: 'posts',
+      id: 'p1',
+      timestamp: 1,
+      payload: { text: 'signed' }
+    }, {
+      publisherId: 'publisher',
+      groupId: 'feed:signed-pub',
+      eventIdGenerator: () => 'evt-signed-1'
+    });
+
+    const warnings = [];
+    node.on('warning', (e) => warnings.push(e));
+    expect(node.ingestRemoteDomainEvent(event, {
+      groupId: 'feed:signed-pub',
+      publisherId: 'publisher'
+    })).toBe(false);
+    expect(warnings.some((w) => w.reason === 'missing-publisher-key')).toBe(true);
+
+    await node.stop();
+  });
+
+  test('pruneAppliedOperations enforces maxAppliedOperations cap', async () => {
+    const cappedSecurity = fastTestSecurity({
+      appPassword: 'branch-test',
+      powEnabled: false,
+      maxAppliedOperations: 2
+    });
+    const node = new DignityP2P({
+      nodeId: 'alice',
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security: cappedSecurity
+    });
+    await node.start();
+
+    for (let i = 0; i < 4; i += 1) {
+      node.applyOperation({
+        opId: `op-cap-${i}`,
+        kind: 'create',
+        collectionName: 'caps',
+        id: `c${i}`,
+        ownerId: 'alice',
+        payload: { n: i },
+        timestamp: Date.now() + i
+      });
+    }
+
+    expect(node.appliedOperations.size).toBeLessThanOrEqual(2);
+    await node.stop();
+  });
 });
 
 function createRotation(previousKeyPair, nextKeyPair) {

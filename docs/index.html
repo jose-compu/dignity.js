@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="dignity.js v0.12.0 — REST-like P2P object API for decentralized JavaScript applications." />
+    <meta name="description" content="dignity.js v0.13.0 — REST-like P2P object API for decentralized JavaScript applications." />
     <title>dignity.js · Documentation</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.ico" sizes="32x32" />
@@ -16,7 +16,7 @@
       <a class="site-header__brand" href="#overview">
         <img src="./assets/dignity-logo.svg" alt="" width="344" height="80" />
         <!-- <span>dignity.js</span> -->
-        <span class="site-header__version">v0.12.0</span>
+        <span class="site-header__version">v0.13.0</span>
       </a>
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
@@ -55,6 +55,7 @@
             <a href="#concurrency">Concurrency</a>
             <a href="#content-hashes">Content hashes</a>
             <a href="#security">Security model</a>
+            <a href="#verification-policies">Verification policies</a>
             <a href="#persistence">IndexedDB persistence</a>
             <a href="#react">React hooks</a>
             <a href="#signaling">Signaling</a>
@@ -95,6 +96,7 @@
               <a href="#quick-start">Quick start</a>
               <a href="#object-api">Object API</a>
               <a href="#security">Security</a>
+              <a href="#verification-policies">Verification</a>
               <a href="#peer-groups">PeerGroups</a>
               <a href="#examples">Examples</a>
             </div>
@@ -125,6 +127,11 @@
                 <p>Live + bulk tiers, signed domain events, and <code>DignityQueryReplica</code> read views for massive audiences.</p>
                 <span class="card__more">CQRS tiers →</span>
               </a>
+              <a class="card card--link" href="#verification-policies">
+                <h3>Verification (v0.13+)</h3>
+                <p>Bind collections to logic hashes, semver policies, reflective fingerprints, and publisher trust.</p>
+                <span class="card__more">Verification policies →</span>
+              </a>
               <a class="card card--link" href="#api-reference">
                 <h3>Reference &amp; benchmarks (v0.8.3+)</h3>
                 <p>API reference, browser matrix, and performance numbers.</p>
@@ -148,9 +155,9 @@
           <section id="tutorial" class="section">
             <h2>Beginner tutorial</h2>
             <p class="lead">
-              New to P2P? Follow these eight short lessons. The full walkthrough is also in
-              <a href="https://github.com/jose-compu/dignity.js/blob/main/TUTORIAL.md" target="_blank" rel="noopener noreferrer"><code>TUTORIAL.md</code></a>
-              in the repository, or try the <a href="./playground/index.html">live playground</a> first.
+              New to P2P? Follow these lessons. The full walkthrough is in
+              <a href="https://github.com/jose-compu/dignity.js/blob/main/TUTORIAL.md" target="_blank" rel="noopener noreferrer"><code>TUTORIAL.md</code></a>,
+              or try the <a href="./playground/index.html">live playground</a> — including three <strong>v0.13 verification</strong> demos.
             </p>
 
             <div class="section-jump" aria-label="Jump to lessons">
@@ -158,9 +165,9 @@
               <a href="#tutorial-lesson-2">Lesson 2</a>
               <a href="#tutorial-lesson-3">Lesson 3</a>
               <a href="#tutorial-lesson-4">Lesson 4</a>
+              <a href="#tutorial-lesson-4b">Lesson 4b</a>
               <a href="#tutorial-lesson-5">Lesson 5</a>
               <a href="#tutorial-lesson-6">Lesson 6</a>
-              <a href="#tutorial-lesson-6b">Lesson 6b</a>
               <a href="#tutorial-lesson-7">Lesson 7</a>
               <a href="#tutorial-lesson-8">Lesson 8</a>
             </div>
@@ -178,8 +185,13 @@
               </a>
               <a class="card card--link" href="#tutorial-lesson-3">
                 <h3>Lesson 3–5</h3>
-                <p>Ownership, collaborators, and version conflicts.</p>
+                <p>Ownership, collaborators, version conflicts.</p>
                 <span class="card__more">Lessons 3–5 →</span>
+              </a>
+              <a class="card card--link" href="#tutorial-lesson-4b">
+                <h3>Lesson 4b (v0.13)</h3>
+                <p>Verification policies, reflective hashing, publisher trust.</p>
+                <span class="card__more">Verification →</span>
               </a>
               <a class="card card--link" href="#tutorial-lesson-6">
                 <h3>Lesson 6–8</h3>
@@ -237,6 +249,52 @@ alice.on('change', (e) => console.log(e.kind, e.collection, e.id));</code></pre>
 });
 await bob.update('docs', 'd1', { body: 'Bob edited' }); // OK now</code></pre>
             </div>
+
+            <h3 id="tutorial-lesson-4b">Lesson 4b — Verification &amp; publisher trust (v0.13.0)</h3>
+            <p>
+              Bind each collection to the <strong>business logic version</strong> that produced writes.
+              Peers running different JS bundles are detected via <code>verificationHash</code> + semver
+              (<code>0.N.M</code>). Trust is <strong>decentralized</strong>: you choose which
+              <code>publisherId</code> is official — no central app store.
+            </p>
+            <ul>
+              <li><code>registerVerification(collection, { code, version, policy, reflective? })</code> — local rules</li>
+              <li><code>registerPublisherVerification(publisherId, collection, …)</code> — trust a publisher's official version</li>
+              <li><code>hashReflectiveLogic(rulesObject)</code> — fingerprint nested functions via <code>fn.toString()</code></li>
+              <li>Events: <code>verificationmismatch</code>, <code>policyrejected</code></li>
+            </ul>
+            <div class="code-block">
+              <pre><code class="language-javascript">const rules = {
+  max: 100,
+  validate(record) { return record.data.points &lt;= 100; }
+};
+
+// Publisher declares official timeline-demo 0.13.0
+alice.registerPublisherVerification('alice', 'scores', {
+  code: rules,
+  reflective: true,
+  version: '0.13.0',
+  dappId: 'timeline-demo',
+  policy: 'strict'
+});
+
+// Subscriber opts in to alice as official source
+bob.registerPublisherVerification('alice', 'scores', {
+  code: rules,
+  reflective: true,
+  version: '0.13.0',
+  policy: 'strict'
+});
+
+bob.on('policyrejected', (e) => console.warn('rejected', e.reason));</code></pre>
+            </div>
+            <p>
+              Try it live:
+              <a href="./playground/index.html#verification-policies">verification policies</a>,
+              <a href="./playground/index.html#reflective-logic-hashing">reflective hashing</a>,
+              <a href="./playground/index.html#publisher-official-version">publisher trust</a>.
+              Details: <a href="#verification-policies">Verification policies</a>.
+            </p>
 
             <h3 id="tutorial-lesson-5">Lesson 5 — Versions and conflicts</h3>
             <p>Each update increments <code>version</code>. Use <code>expectedVersion</code> or <code>updateWithRetry</code> to avoid overwriting concurrent edits (see <a href="#concurrency">Concurrency</a>).</p>
@@ -745,7 +803,10 @@ replica.verifyChain();  // hash-chain consistency</code></pre>
             </div>
 
             <h3>Roadmap</h3>
-            <p><strong>v0.12.0 (current)</strong> — Dignity Apps host error panel + iframe console capture (#106, #119–#120), timeline example app (#107), apps registry page (#109), delegated move proposals <code>proposeUpdate</code>/<code>acceptProposal</code> (#13).</p>
+            <p><strong>v0.14.0 (next)</strong> — Feature maintainability & consistency review (#124), TypeScript definitions (#14), production deployment runbook (#95).</p>
+            <p><strong>v1.0.0</strong> — API stability guarantee (#94), threat model (#96), migration guide (#97).</p>
+            <p><strong>v0.13.0 (current)</strong> — Verification hashing (#115), semver versioning (#116), compatibility policies (#117), reflective logic fingerprints + publisher-scoped official dapp trust (#123), security audit (#122).</p>
+            <p><strong>v0.12.0</strong> — Dignity Apps host error panel + iframe console capture (#106, #119–#120), timeline example app (#107), apps registry page (#109), delegated move proposals <code>proposeUpdate</code>/<code>acceptProposal</code> (#13).</p>
             <p><strong>v0.11.0</strong> — Dignity Apps: sandboxed iframe host (<code>DignityAppHost</code>), MessageChannel RPC bridge, read-only <code>query</code>/<code>list</code> via <code>DignityQueryReplica</code>, manifest stored commands (#100, #102–#105).</p>
             <p><strong>v0.10.1 (shipped)</strong> — README logo PNG aspect-ratio fix (export from SVG).</p>
             <p><strong>v0.10.0 (shipped)</strong> — cross-device chess resume, portable checkpoints, lobby seat-key import, browser tic-tac-toe demo, PeerJS <code>iceServers</code>, Playwright e2e smoke, Bauhaus branding, doc cross-links (#11, #22–#27, #36).</p>
@@ -760,6 +821,7 @@ replica.verifyChain();  // hash-chain consistency</code></pre>
             <p><strong>Future</strong> — publisher rate limits, partial snapshot / delta feeds, cross-group fan-in metrics.</p>
             <p>
               Tracking:
+              <a href="https://github.com/jose-compu/dignity.js/issues/87" target="_blank" rel="noopener noreferrer">#87 Roadmap</a>,
               <a href="https://github.com/jose-compu/dignity.js/issues/54" target="_blank" rel="noopener noreferrer">#54 PeerGroup core</a>,
               <a href="https://github.com/jose-compu/dignity.js/issues/55" target="_blank" rel="noopener noreferrer">#55 Chess spectators</a>.
             </p>
@@ -883,6 +945,140 @@ console.log(record.hash); // sha512:&lt;128-char hex&gt;</code></pre>
   }
 });</code></pre>
             </div>
+          </section>
+
+          <section id="verification-policies" class="section">
+            <h2>Verification policies (v0.13.0)</h2>
+            <p class="lead">
+              Detect when peers run different app logic. Each write carries a <code>verificationHash</code>
+              and optional semver <code>verificationVersion</code>. On ingest, dignity.js compares remote
+              metadata to your local registry and applies a compatibility <strong>policy</strong>.
+            </p>
+
+            <h3>What ships in v0.13.0</h3>
+            <ul>
+              <li><strong>Collection verification</strong> — <code>registerVerification</code> (#115–#117)</li>
+              <li><strong>Reflective hashing</strong> — <code>hashReflectiveLogic</code> + <code>reflective: true</code>; AST pretty-print canonicalization so equivalent functions hash the same (#123)</li>
+              <li><strong>Publisher trust</strong> — <code>registerPublisherVerification</code>; official <code>0.N.M</code> per <code>publisherId</code>, P2P only (#123)</li>
+              <li><strong>Dignity Apps</strong> — manifest <code>dappVersion</code> + <code>logicHash</code>; <code>storedLogic</code> registry for commands</li>
+            </ul>
+
+            <div class="code-block">
+              <pre><code class="language-javascript">const { hashReflectiveLogic } = require('dignity.js');
+
+const rules = {
+  currency: 'USD',
+  validateScore(record) {
+    return record.data.points >= 0;
+  }
+};
+
+const { hash, fingerprintList } = hashReflectiveLogic(rules, {
+  stripComments: true,
+  policy: 'strict'
+});
+
+node.registerVerification('ledger', {
+  code: rules,
+  reflective: true,
+  version: '0.13.0',
+  policy: 'patch-only'
+});
+
+publisher.registerPublisherVerification('alice', 'ledger', {
+  code: rules,
+  reflective: true,
+  version: '0.13.0',
+  dappId: 'timeline-demo',
+  policy: 'strict'
+});
+
+node.on('verificationmismatch', (e) => {
+  console.warn('hash drift', e.localHash, e.remoteHash);
+});
+
+node.on('policyrejected', (e) => {
+  console.warn('rejected', e.policy, e.reason);
+});</code></pre>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Policy</th>
+                    <th>Behavior on hash mismatch</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>advisory</code> (default)</td>
+                    <td>Accept with <code>warning</code> (<code>verification-hash-mismatch</code>)</td>
+                  </tr>
+                  <tr>
+                    <td><code>strict</code></td>
+                    <td>Reject; emit <code>policyrejected</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>patch-only</code></td>
+                    <td>Accept when remote semver shares major+minor</td>
+                  </tr>
+                  <tr>
+                    <td><code>minor-and-patch</code></td>
+                    <td>Accept when remote semver shares major</td>
+                  </tr>
+                  <tr>
+                    <td><code>backward-compatible</code></td>
+                    <td>Accept when remote version is older or equal</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p>
+              Playground:
+              <a href="./playground/index.html#verification-policies">strict reject</a> ·
+              <a href="./playground/index.html#reflective-logic-hashing">reflective hashing</a> ·
+              <a href="./playground/index.html#publisher-official-version">publisher trust</a>.
+              Tutorial: <a href="#tutorial-lesson-4b">Lesson 4b</a> ·
+              <a href="../TUTORIAL.md">TUTORIAL.md</a>.
+            </p>
+
+            <h3>Decentralized trust (no central registry)</h3>
+            <p>
+              Official dapp versions are <strong>publisher-scoped</strong>, not fetched from a central server.
+              Each peer chooses which <code>publisherId</code> is authoritative for a collection's
+              <code>0.N.M</code> semver and <code>verificationHash</code>. Writes are signed; ingest checks
+              hash/version against the registry for <em>that sender</em> via
+              <code>registerPublisherVerification(publisherId, collection, …)</code>.
+            </p>
+            <div class="code-block">
+              <pre><code class="language-javascript">// Official publisher for timeline-demo 0.13.0
+publisher.registerPublisherVerification('alice', 'posts', {
+  code: rulesWithFunctions,
+  version: '0.13.0',
+  dappId: 'timeline-demo',
+  policy: 'strict'
+});
+
+// Subscriber opts in to alice as official source
+subscriber.registerPublisherVerification('alice', 'posts', {
+  code: rulesWithFunctions,
+  version: '0.13.0',
+  policy: 'strict'
+});
+
+// Dignity App manifest pins official bundle (stored commands enforce on host)
+const { manifest } = validateDignityAppManifest({
+  id: 'timeline-demo',
+  publisherId: 'alice',
+  dappVersion: '0.13.0',
+  logicHash: 'sha512:…',
+  collections: ['posts'],
+  storedCommands: [/* … */]
+});</code></pre>
+            </div>
+            <p>Reflective function hashing: <a href="https://github.com/jose-compu/dignity.js/issues/123">#123</a>.</p>
           </section>
 
           <section id="persistence" class="section">
@@ -1256,7 +1452,7 @@ npm run example:chess</code></pre>
 
           <footer class="site-footer">
             <p>
-              dignity.js v0.12.0 ·
+              dignity.js v0.13.0 ·
               <a href="https://github.com/jose-compu/dignity.js/blob/main/LICENSE">Apache 2.0</a> ·
               <a href="https://github.com/jose-compu/dignity.js">GitHub</a> ·
               <a href="https://www.npmjs.com/package/dignity.js">npm</a>

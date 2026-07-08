@@ -1,16 +1,38 @@
 flowchart TB
-  subgraph Apps["Your app"]
-    UI["UI / game / notes app"]
+  subgraph Apps["Your application"]
+    UI["UI / game / feed"]
     React["dignity.js/react hooks"]
-    Examples["Examples: chess, tic-tac-toe"]
   end
 
-  subgraph Core["DignityP2P core"]
-    API["REST-like API\ncreate · read · list · update · remove"]
+  subgraph DignityApps["Dignity Apps"]
+    Iframe["Sandboxed iframe app"]
+    Bridge["MessageChannel RPC bridge"]
+    Host["DignityAppHost + CSP"]
+    Manifest["Manifest & stored commands"]
+  end
+
+  subgraph Command["DignityP2P command path"]
+    API["REST-like CRUD\ncreate · read · list · update · remove"]
     Repl["Operation log + replication"]
-    Disc["Discovery and presence\njoinDiscovery / listPeers"]
-    Snap["pushRecordSnapshot\nlate-joiner catch-up"]
-    Hash["record.hash\nsha512 over canonical data"]
+    Disc["Discovery & presence\njoinDiscovery · listPeers"]
+    Gossip["PeerGroup gossip\njoinPeerGroup · fan-out"]
+    Snap["Snapshots & hash chain\nlate-joiner catch-up"]
+    Propose["Delegated proposals\nproposeUpdate · acceptProposal"]
+    RecordHash["record.hash\nsha512 canonical payload"]
+  end
+
+  subgraph CQRS["CQRS read path"]
+    Events["Signed domain events\nauto-publish on writes"]
+    Replica["DignityQueryReplica\nread-only materialized view"]
+    Tiers["Live / bulk tiers\n5k live cap per publisher"]
+    Relay["Bulk relay election"]
+  end
+
+  subgraph Verify["Verification v0.13"]
+    VReg["registerVerification\nregisterPublisherVerification"]
+    VHash["Logic hash + semver policies"]
+    Reflect["Reflective fingerprints\nAST-canonical function sources"]
+    PubTrust["Publisher-scoped official dapp trust"]
   end
 
   subgraph Security["MessageSecurityService"]
@@ -19,6 +41,7 @@ flowchart TB
     Direct["Direct encryption\nrecipient public key"]
     PoW["Sloth VDF proof-of-work"]
     Canon["stableStringify\ncanonical payloads"]
+    Identity["Identity rotation & cold recovery"]
     Ban["Auto peer ban on bad sig/PoW"]
   end
 
@@ -26,6 +49,7 @@ flowchart TB
     PeerJS["PeerJS / WebRTC"]
     WS["WebSocket signaling pool"]
     Mem["InMemoryNetwork\nlocal / tests"]
+    Peers["Remote peers"]
   end
 
   subgraph Persist["Optional persistence"]
@@ -34,25 +58,50 @@ flowchart TB
 
   UI --> API
   React --> API
-  Examples --> API
+  Iframe --> Bridge
+  Bridge --> Host
+  Host --> Manifest
+  Host --> Replica
 
   API --> Repl
   API --> Disc
+  API --> Gossip
   API --> Snap
-  Repl --> Hash
+  API --> Propose
+  API --> Events
+  Repl --> RecordHash
+
+  Gossip --> Tiers
+  Events --> Replica
+  Tiers --> Relay
+
+  Repl --> VReg
+  VReg --> VHash
+  VHash --> Reflect
+  VHash --> PubTrust
 
   Repl --> Security
   Disc --> Security
   Snap --> Security
+  Gossip --> Security
+  Events --> Security
+  Propose --> Security
 
   Canon --> Sign
   Canon --> PoW
-  Canon --> Hash
+  Canon --> RecordHash
+  Canon --> VHash
 
+  Sign --> Identity
   Security --> Network
   Network --> PeerJS
   Network --> WS
   Network --> Mem
+  PeerJS --> Peers
+  WS --> Peers
+  Mem --> Peers
 
   Repl --> IDB
+  Replica --> IDB
   IDB --> Repl
+  IDB --> Replica

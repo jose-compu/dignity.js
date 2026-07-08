@@ -33,6 +33,15 @@ const {
   filterPeersByTier
 } = require('../cqrs/peer-group-tiers');
 const { electBulkRelays } = require('../cqrs/bulk-relay');
+const {
+  COMPATIBILITY_POLICIES,
+  DEFAULT_COMPATIBILITY_POLICY,
+  buildVerificationEntry,
+  buildPublisherVerificationKey,
+  evaluateVerificationCompatibility,
+  buildVerificationPresenceMetadata,
+  buildPublisherVerificationPresenceMetadata
+} = require('../security/verification-code');
 
 function computeContentHash(data) {
   const canonical = stableStringify(data || {});
@@ -134,6 +143,8 @@ class DignityP2P extends EventEmitter {
 
     this.state = new Map(); // collection -> Map(id -> record)
     this.appliedOperations = new Map(); // opId -> appliedAt
+    this.verificationRegistry = new Map(); // collection -> verification entry
+    this.publisherVerificationRegistry = new Map(); // publisherId:collection -> verification entry
     this.boundMessageHandler = this.handleIncomingMessage.bind(this);
   }
 
@@ -299,6 +310,7 @@ class DignityP2P extends EventEmitter {
       timestamp,
       payload: { ...(data || {}) }
     };
+    this.attachVerificationMetadata(operation);
 
     this.applyOperation(operation);
     await this.maybePublishDomainEvent(operation, options);
@@ -394,6 +406,7 @@ class DignityP2P extends EventEmitter {
       operation.collaboratorIds = this.normalizeCollaboratorIds(options.collaborators);
     }
 
+    this.attachVerificationMetadata(operation);
     this.applyOperation(operation);
     await this.maybePublishDomainEvent(operation, options);
     await this.broadcastMessage('operation', operation, {
@@ -496,6 +509,11 @@ class DignityP2P extends EventEmitter {
       throw new Error('Proposer is banned');
     }
 
+    if (!proposal.patch || typeof proposal.patch !== 'object' || Array.isArray(proposal.patch)) {
+      await this.rejectProposal(proposal, 'invalid-patch');
+      throw new Error('Proposal patch must be a plain object');
+    }
+
     try {
       const record = await this.update(proposal.collection, proposal.id, proposal.patch, {
         ...options,
@@ -565,6 +583,7 @@ class DignityP2P extends EventEmitter {
       keepPreviousOwnerAsCollaborator: options.keepAsCollaborator !== false
     };
 
+    this.attachVerificationMetadata(operation);
     this.applyOperation(operation);
     await this.maybePublishDomainEvent(operation, options);
     await this.broadcastMessage('operation', operation, {
@@ -603,6 +622,7 @@ class DignityP2P extends EventEmitter {
       baseVersion: existing.version
     };
 
+    this.attachVerificationMetadata(operation);
     this.applyOperation(operation);
     await this.maybePublishDomainEvent(operation, options);
     await this.broadcastMessage('operation', operation, {
@@ -613,6 +633,206 @@ class DignityP2P extends EventEmitter {
       }),
       connectToPeers: this.resolveReplicationPeers(collectionName, id, options, { fromRecord: existing })
     });
+  }
+
+  /**
+   * Register verification code and optional compatibility policy for a collection (#115–#117).
+   * @param {string} collectionName
+   * @param {object} options
+   * @param {Function|string|object} options.code
+   * @param {string} [options.version] semver
+   * @param {string} [options.policy]
+   * @returns {object} entry summary
+   */
+  registerVerification(collectionName, options = {}) {
+    if (!collectionName) {
+      throw new Error('registerVerification requires collectionName');
+    }
+    if (!options.code) {
+      throw new Error('registerVerification requires code');
+    }
+
+    const entry = buildVerificationEntry({
+      code: options.code,
+      version: options.version || null,
+      policy: options.policy || DEFAULT_COMPATIBILITY_POLICY,
+      reflective: options.reflective === true,
+      stripComments: options.stripComments,
+      collapseWhitespace: options.collapseWhitespace,
+      allowNative: options.allowNative === true
+    });
+    this.verificationRegistry.set(collectionName, entry);
+
+    this._refreshDiscoveryVerificationMetadata();
+
+    return {
+      collection: collectionName,
+      verificationHash: entry.hash,
+      verificationVersion: entry.version,
+      policy: entry.policy,
+      reflective: entry.reflective,
+      logicFingerprints: entry.fingerprintList || []
+    };
+  }
+
+  /**
+   * Register official dapp logic for a specific publisher + collection (#123 decentralized trust).
+   * Subscribers opt in to this publisher's semver + hash as the official version for that collection.
+   * No central registry — trust is peer-to-peer, keyed by publisherId (signed mesh identity).
+   *
+   * @param {string} publisherId official publisher peer id
+   * @param {string} collectionName
+   * @param {object} options
+   * @param {Function|string|object} options.code
+   * @param {string} [options.version] official dapp semver (e.g. 0.13.0)
+   * @param {string} [options.policy]
+   * @param {string} [options.dappId] manifest id for the decentralized app
+   * @returns {object}
+   */
+  registerPublisherVerification(publisherId, collectionName, options = {}) {
+    if (!publisherId) {
+      throw new Error('registerPublisherVerification requires publisherId');
+    }
+    if (!collectionName) {
+      throw new Error('registerPublisherVerification requires collectionName');
+    }
+    if (!options.code) {
+      throw new Error('registerPublisherVerification requires code');
+    }
+
+    const entry = buildVerificationEntry({
+      code: options.code,
+      version: options.version || null,
+      policy: options.policy || DEFAULT_COMPATIBILITY_POLICY,
+      publisherId,
+      dappId: options.dappId || null,
+      reflective: options.reflective === true,
+      stripComments: options.stripComments,
+      collapseWhitespace: options.collapseWhitespace,
+      allowNative: options.allowNative === true
+    });
+    const key = buildPublisherVerificationKey(publisherId, collectionName);
+    this.publisherVerificationRegistry.set(key, entry);
+
+    if (publisherId === this.nodeId) {
+      this._refreshDiscoveryVerificationMetadata();
+    }
+
+    return {
+      publisherId,
+      collection: collectionName,
+      dappId: entry.dappId,
+      verificationHash: entry.hash,
+      verificationVersion: entry.version,
+      policy: entry.policy,
+      reflective: entry.reflective,
+      logicFingerprints: entry.fingerprintList || []
+    };
+  }
+
+  getVerificationEntry(collectionName) {
+    return this.verificationRegistry.get(collectionName) || null;
+  }
+
+  getPublisherVerificationEntry(publisherId, collectionName) {
+    if (!publisherId || !collectionName) {
+      return null;
+    }
+    return this.publisherVerificationRegistry.get(
+      buildPublisherVerificationKey(publisherId, collectionName)
+    ) || null;
+  }
+
+  resolveVerificationEntry(collectionName, senderId = null) {
+    if (senderId) {
+      const publisherEntry = this.getPublisherVerificationEntry(senderId, collectionName);
+      if (publisherEntry) {
+        return publisherEntry;
+      }
+    }
+    return this.getVerificationEntry(collectionName);
+  }
+
+  _buildDiscoveryVerificationMetadata() {
+    const verification = buildVerificationPresenceMetadata(this.verificationRegistry);
+    const officialPublishers = buildPublisherVerificationPresenceMetadata(
+      this.publisherVerificationRegistry
+    );
+    if (Object.keys(officialPublishers).length === 0) {
+      return { verification };
+    }
+    return { verification, officialPublishers };
+  }
+
+  _refreshDiscoveryVerificationMetadata() {
+    const verificationMeta = this._buildDiscoveryVerificationMetadata();
+    for (const [scope, room] of this.discoveryRooms.entries()) {
+      if (room) {
+        room.metadata = {
+          ...(room.metadata || {}),
+          ...verificationMeta
+        };
+        this.upsertPresence(scope, this.nodeId, room.metadata, room.ttlMs, this.now());
+      }
+    }
+  }
+
+  attachVerificationMetadata(target) {
+    if (!target || !target.collectionName) {
+      return target;
+    }
+
+    const entry = this.resolveVerificationEntry(target.collectionName, this.nodeId);
+    if (!entry) {
+      return target;
+    }
+
+    target.verificationHash = entry.hash;
+    if (entry.version) {
+      target.verificationVersion = entry.version;
+    }
+    return target;
+  }
+
+  _listOfficialPublisherIdsForCollection(collectionName) {
+    const publisherIds = [];
+    for (const key of this.publisherVerificationRegistry.keys()) {
+      const separator = key.indexOf(':');
+      if (separator === -1) {
+        continue;
+      }
+      const collection = key.slice(separator + 1);
+      if (collection === collectionName) {
+        publisherIds.push(key.slice(0, separator));
+      }
+    }
+    return publisherIds;
+  }
+
+  checkVerificationOnIngest(collectionName, remoteMeta = {}, senderId = null) {
+    const officialPublishers = this._listOfficialPublisherIdsForCollection(collectionName);
+    if (officialPublishers.length > 0 && senderId && !officialPublishers.includes(senderId)) {
+      this.emit('policyrejected', {
+        policy: 'official-publisher-only',
+        collection: collectionName,
+        senderId,
+        officialPublishers,
+        reason: 'untrusted-publisher'
+      });
+      return false;
+    }
+
+    const entry = this.resolveVerificationEntry(collectionName, senderId);
+    const result = evaluateVerificationCompatibility(entry, remoteMeta, {
+      collection: collectionName,
+      senderId
+    });
+
+    for (const evt of result.events || []) {
+      this.emit(evt.type, evt.payload);
+    }
+
+    return result.action !== 'reject';
   }
 
   registerPeerPublicKey(peerId, publicKey, options = {}) {
@@ -1417,6 +1637,13 @@ class DignityP2P extends EventEmitter {
       return false;
     }
 
+    if (!this.checkVerificationOnIngest(event.collectionName, {
+      verificationHash: event.verificationHash,
+      verificationVersion: event.verificationVersion
+    }, context.senderId || publisherId)) {
+      return false;
+    }
+
     const log = this.domainEventLogs.get(groupId) || [];
     if (log.some((entry) => entry.eventId === event.eventId)) {
       return false;
@@ -1579,7 +1806,7 @@ class DignityP2P extends EventEmitter {
         context.publisherId || context.senderId
       );
       if (operation) {
-        this.applyOperation(operation);
+        this.applyOperation(operation, { senderId: context.senderId });
       }
       return;
     }
@@ -1605,7 +1832,8 @@ class DignityP2P extends EventEmitter {
         const applied = this.restoreRecord(collectionName, record, {
           rejectOnHashMismatch: true,
           rejectOnOwnershipMismatch: true,
-          via: 'peer-group'
+          via: 'peer-group',
+          senderId: context.senderId
         });
         if (applied) {
           this.emit('change', {
@@ -1686,6 +1914,7 @@ class DignityP2P extends EventEmitter {
     const ttlMs = options.ttlMs || this.defaultPresenceTtlMs;
     const metadata = {
       publicKey: this.getPublicKey(),
+      ...this._buildDiscoveryVerificationMetadata(),
       ...(options.metadata || {})
     };
     const bootstrapPeerIds = Array.isArray(options.bootstrapPeerIds)
@@ -1871,7 +2100,7 @@ class DignityP2P extends EventEmitter {
     }
 
     if (decrypted.messageType === 'operation') {
-      this.applyOperation(decrypted.payload);
+      this.applyOperation(decrypted.payload, { senderId: decrypted.senderId });
       return;
     }
 
@@ -1882,7 +2111,8 @@ class DignityP2P extends EventEmitter {
       if (collectionName && record) {
         const applied = this.restoreRecord(collectionName, record, {
           rejectOnHashMismatch: true,
-          via: 'direct-mesh'
+          via: 'direct-mesh',
+          senderId: decrypted.senderId
         });
         if (applied) {
           this.emit('change', {
@@ -1965,6 +2195,10 @@ class DignityP2P extends EventEmitter {
     if (decrypted.messageType === 'proposal') {
       const payload = decrypted.payload || {};
       if (!payload.proposalId || payload.proposerId !== decrypted.senderId) {
+        return;
+      }
+
+      if (!payload.patch || typeof payload.patch !== 'object' || Array.isArray(payload.patch)) {
         return;
       }
 
@@ -2056,6 +2290,13 @@ class DignityP2P extends EventEmitter {
       return false;
     }
 
+    if (options.senderId && !this.checkVerificationOnIngest(collectionName, {
+      verificationHash: record.verificationHash,
+      verificationVersion: record.verificationVersion
+    }, options.senderId)) {
+      return false;
+    }
+
     const collection = this.getCollection(collectionName);
     const current = collection.get(record.id);
     if (current && current.version >= record.version) {
@@ -2144,6 +2385,14 @@ class DignityP2P extends EventEmitter {
       version: raw.version
     };
 
+    const verificationEntry = this.resolveVerificationEntry(collectionName, this.nodeId);
+    if (verificationEntry) {
+      record.verificationHash = verificationEntry.hash;
+      if (verificationEntry.version) {
+        record.verificationVersion = verificationEntry.version;
+      }
+    }
+
     await this.broadcastMessage('record:snapshot', { collectionName, record }, {
       broadcastScope: options.broadcastScope || this.resolveBroadcastScope({
         messageType: 'record:snapshot',
@@ -2166,8 +2415,15 @@ class DignityP2P extends EventEmitter {
     }
   }
 
-  applyOperation(operation) {
+  applyOperation(operation, options = {}) {
     if (!operation || !operation.opId || this.appliedOperations.has(operation.opId)) {
+      return false;
+    }
+
+    if (options.senderId && !this.checkVerificationOnIngest(operation.collectionName, {
+      verificationHash: operation.verificationHash,
+      verificationVersion: operation.verificationVersion
+    }, options.senderId)) {
       return false;
     }
 

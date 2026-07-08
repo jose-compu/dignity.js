@@ -101,6 +101,24 @@ const {
   sanitizeCaptureMessage,
   sanitizeCaptureValue
 } = require('./apps/capture-sanitize');
+const {
+  COMPATIBILITY_POLICIES,
+  DEFAULT_COMPATIBILITY_POLICY,
+  hashVerificationCode,
+  normalizeVerificationCode,
+  parseSemver,
+  compareSemver,
+  buildVerificationEntry,
+  evaluateVerificationCompatibility,
+  buildVerificationPresenceMetadata,
+  buildPublisherVerificationKey,
+  buildPublisherVerificationPresenceMetadata
+} = require('./security/verification-code');
+const {
+  hashReflectiveLogic,
+  normalizeFunctionSource,
+  collectReflectiveFingerprints
+} = require('./security/reflective-logic');
 
 module.exports = {
   DignityP2P,
@@ -170,5 +188,19 @@ module.exports = {
   HANDSHAKE_TYPE,
   attachErrorPanel,
   sanitizeCaptureMessage,
-  sanitizeCaptureValue
+  sanitizeCaptureValue,
+  COMPATIBILITY_POLICIES,
+  DEFAULT_COMPATIBILITY_POLICY,
+  hashVerificationCode,
+  normalizeVerificationCode,
+  parseSemver,
+  compareSemver,
+  buildVerificationEntry,
+  buildPublisherVerificationKey,
+  evaluateVerificationCompatibility,
+  buildVerificationPresenceMetadata,
+  buildPublisherVerificationPresenceMetadata,
+  hashReflectiveLogic,
+  normalizeFunctionSource,
+  collectReflectiveFingerprints
 };

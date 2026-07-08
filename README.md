@@ -6,9 +6,38 @@
 [![npm version](https://img.shields.io/npm/v/dignity.js?color=cb3837&label=npm)](https://www.npmjs.com/package/dignity.js)
 [![npm downloads](https://img.shields.io/npm/dm/dignity.js?color=blue)](https://www.npmjs.com/package/dignity.js)
 [![CI](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml/badge.svg)](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-414%2B%20passing-brightgreen)
-![coverage](https://img.shields.io/badge/coverage-92%25-brightgreen)
+![tests](https://img.shields.io/badge/tests-530%2B%20passing-brightgreen)
+![coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)
 ![license](https://img.shields.io/badge/license-Apache%202.0-black)
+
+<p align="center">
+  <a href="#highlights">Highlights</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#tutorial">Tutorial</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#peergroup-gossip-scalable-pubsub">PeerGroups</a> ·
+  <a href="#credential-derived-identity-keys">Identity</a> ·
+  <a href="#record-content-hashes">Hashes</a> ·
+  <a href="#security-model">Security</a> ·
+  <a href="#dignity-apps-v0130">Apps</a> ·
+  <a href="#verification-policies-v0130">Verification</a> ·
+  <a href="#docs-and-examples">Docs</a> ·
+  <a href="#development">Dev</a>
+</p>
+
+<p align="center">
+  <strong>Docs:</strong>
+  <a href="https://jose-compu.github.io/dignity.js/">Site</a> ·
+  <a href="https://jose-compu.github.io/dignity.js/#tutorial">Tutorial</a> ·
+  <a href="https://jose-compu.github.io/dignity.js/#api-reference">API</a> ·
+  <a href="https://jose-compu.github.io/dignity.js/playground/">Playground</a> ·
+  <a href="https://jose-compu.github.io/dignity.js/chess/">Chess</a> ·
+  <a href="https://jose-compu.github.io/dignity.js/tictactoe/">Tic-tac-toe</a> ·
+  <a href="https://jose-compu.github.io/dignity.js/apps/">Apps registry</a> ·
+  <a href="./docs/api-reference.md">API (MD)</a> ·
+  <a href="./docs/browser-compatibility.md">Browsers</a> ·
+  <a href="./TUTORIAL.md">Tutorial (MD)</a>
+</p>
 
 The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 
@@ -35,6 +64,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Optional React hooks via `dignity.js/react`
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **v0.13.0** — Verification code hashing (#115), optional semver versioning (#116), compatibility policies (#117), security audit v0.7–v0.13 (#122)
 - **v0.12.0** — Dignity Apps error panel + console capture (#106), timeline example app (#107), apps registry (#109), delegated move proposals (#13)
 - **v0.11.0** — Dignity Apps: sandboxed iframe host, MessageChannel RPC bridge, read-only query API, stored commands (#100, #102–#105)
 - **v0.10.1** — README logo PNG aspect-ratio fix (export from SVG)
@@ -51,7 +81,7 @@ npm install dignity.js
 
 ## Tutorial
 
-**New to dignity.js?** Start with [TUTORIAL.md](./TUTORIAL.md) — eight short lessons from two in-memory peers to browser PeerJS and PeerGroup spectators. The [docs site tutorial](https://jose-compu.github.io/dignity.js/#tutorial) covers the same path.
+**New to dignity.js?** Start with [TUTORIAL.md](./TUTORIAL.md) — short lessons from two in-memory peers through verification policies, browser PeerJS, PeerGroup spectators, and Dignity Apps. The [docs site tutorial](https://jose-compu.github.io/dignity.js/#tutorial) covers the same path.
 
 ## Quick Start
 
@@ -553,7 +583,7 @@ npm run docs:dev
 
 If 4173 is busy, `docs:dev` auto-picks the next free port (4174, 4175, …) and prints the URLs.
 
-## Dignity Apps (v0.12.0)
+## Dignity Apps (v0.13.0)
 
 Self-contained HTML apps in a sandboxed iframe, inspired by [Datasette Apps](https://datasette.io/blog/2026/datasette-apps/). Track: [#100](https://github.com/jose-compu/dignity.js/issues/100).
 
@@ -635,6 +665,64 @@ joiner.on('proposalresult', (result) => {
 ```
 
 See `docs/tictactoe/` for a full PeerJS demo. `transferOwnership` remains available when you want to hand off the record entirely.
+
+## Verification policies (v0.13.0)
+
+Bind each collection to canonical validation logic so peers loaded from different webs cannot silently diverge (#115–#117). Full guide: [docs — verification policies](https://jose-compu.github.io/dignity.js/#verification-policies).
+
+```js
+const { hashReflectiveLogic } = require('dignity.js');
+
+const rules = {
+  currency: 'USD',
+  maxAmount: 1000,
+  validate(record) { return record.data.amount <= 1000; }
+};
+
+const { hash } = hashReflectiveLogic(rules, { policy: 'strict' });
+
+node.registerVerification('ledger', {
+  code: rules,
+  reflective: true,   // fingerprint nested functions via AST canonicalization (#123)
+  version: '1.2.0',
+  policy: 'patch-only'
+});
+
+node.on('verificationmismatch', (e) => {
+  console.warn('hash drift', e.localHash, e.remoteHash);
+});
+
+node.on('policyrejected', (e) => {
+  console.warn('rejected by policy', e.policy, e.reason);
+});
+```
+
+Policies default to `advisory` (warn-only). Use `strict` for high-integrity state (balances, game moves). Presence metadata advertises registered versions at join time.
+
+### Decentralized trust: official publisher versions
+
+There is **no central version registry**. Each peer opts in to which **publisher** (`peerId`) ships the official dapp semver (`0.N.M`) and logic hash for a collection. Trust flows from signed mesh identity + publisher-scoped verification — the same model as CQRS `publisherId` on PeerGroups.
+
+```js
+// Publisher declares official dapp 0.13.0 logic for this collection
+alice.registerPublisherVerification('alice', 'posts', {
+  code: businessRulesObject,   // reflective hash in #123
+  version: '0.13.0',
+  dappId: 'timeline-demo',
+  policy: 'strict'
+});
+
+// Subscriber trusts alice as the official publisher for posts
+bob.registerPublisherVerification('alice', 'posts', {
+  code: businessRulesObject,
+  version: '0.13.0',
+  policy: 'strict'
+});
+
+// Ingest from alice uses alice:posts registry; other senders fall back to local policy
+```
+
+Dignity App manifests may pin `dappVersion` + `logicHash` + `publisherId`. Stored commands refuse execution unless the host publisher's registered hash matches — fully P2P, no npm or central server required. Track: [#123](https://github.com/jose-compu/dignity.js/issues/123).
 
 ## Docs and Examples
 
