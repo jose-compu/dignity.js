@@ -1,5 +1,7 @@
 const { getStoredCommand } = require('./manifest');
 
+const DANGEROUS_PATCH_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 function emitStoredCommandRejection(node, reason, commandId, args) {
   if (node && typeof node.emit === 'function') {
     node.emit('warning', {
@@ -9,6 +11,68 @@ function emitStoredCommandRejection(node, reason, commandId, args) {
       args
     });
   }
+}
+
+function verifyStoredCommandLogic(node, manifest, command) {
+  const expectedHash = command.logicHash
+    || (command.logicRef && manifest.storedLogic?.[command.logicRef]?.hash)
+    || null;
+  const expectedVersion = command.logicVersion
+    || (command.logicRef && manifest.storedLogic?.[command.logicRef]?.version)
+    || null;
+
+  if (!expectedHash && !expectedVersion) {
+    return null;
+  }
+
+  const publisherId = manifest.publisherId || node?.nodeId;
+  const entry = node.getPublisherVerificationEntry(publisherId, command.collection)
+    || node.getVerificationEntry(command.collection);
+
+  if (!entry) {
+    return 'logic-hash-not-registered';
+  }
+  if (expectedHash && entry.hash !== expectedHash) {
+    return 'logic-hash-mismatch';
+  }
+  if (expectedVersion && entry.version && entry.version !== expectedVersion) {
+    return 'logic-version-mismatch';
+  }
+  return null;
+}
+
+function verifyOfficialDappManifest(node, manifest) {
+  if (!manifest?.dappVersion || !manifest?.logicHash) {
+    return null;
+  }
+
+  const publisherId = manifest.publisherId || node?.nodeId;
+  if (!publisherId) {
+    return 'official-publisher-missing';
+  }
+
+  const primaryCollection = manifest.collections?.[0];
+  if (!primaryCollection) {
+    return 'official-collection-missing';
+  }
+
+  const entry = node.getPublisherVerificationEntry(publisherId, primaryCollection)
+    || node.getVerificationEntry(primaryCollection);
+
+  if (!entry) {
+    return 'official-dapp-not-registered';
+  }
+  if (entry.hash !== manifest.logicHash) {
+    return 'official-dapp-hash-mismatch';
+  }
+  if (entry.version && entry.version !== manifest.dappVersion) {
+    return 'official-dapp-version-mismatch';
+  }
+  if (manifest.id && entry.dappId && entry.dappId !== manifest.id) {
+    return 'official-dapp-id-mismatch';
+  }
+
+  return null;
 }
 
 /**
@@ -45,13 +109,21 @@ function isPublisherCommandCapable(node, manifest) {
  * @returns {string|null} rejection reason or null if ok
  */
 function validateAllowedFields(command, patch) {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+    return 'invalid-args';
+  }
+
   if (!Array.isArray(command.allowedFields)) {
     return null;
   }
 
   const allowed = new Set(command.allowedFields);
-  for (const key of Object.keys(patch || {})) {
-    if (!allowed.has(key)) {
+  for (const key of Reflect.ownKeys(patch)) {
+    const name = String(key);
+    if (DANGEROUS_PATCH_KEYS.has(name)) {
+      return 'field-not-allowed';
+    }
+    if (!allowed.has(name)) {
       return 'field-not-allowed';
     }
   }
@@ -82,6 +154,18 @@ async function executeStoredCommand(node, manifest, commandId, args = {}) {
   if (!isPublisherCommandCapable(node, manifest)) {
     emitStoredCommandRejection(node, 'not-command-capable', commandId, args);
     return { ok: false, reason: 'not-command-capable' };
+  }
+
+  const officialError = verifyOfficialDappManifest(node, manifest);
+  if (officialError) {
+    emitStoredCommandRejection(node, officialError, commandId, args);
+    return { ok: false, reason: officialError };
+  }
+
+  const logicError = verifyStoredCommandLogic(node, manifest, command);
+  if (logicError) {
+    emitStoredCommandRejection(node, logicError, commandId, args);
+    return { ok: false, reason: logicError };
   }
 
   const collection = command.collection;
@@ -145,6 +229,8 @@ async function executeStoredCommand(node, manifest, commandId, args = {}) {
 module.exports = {
   isPublisherCommandCapable,
   validateAllowedFields,
+  verifyOfficialDappManifest,
+  verifyStoredCommandLogic,
   executeStoredCommand,
   emitStoredCommandRejection
 };

@@ -3,8 +3,10 @@
 This tutorial walks you through dignity.js from zero to a working multi-peer app. No prior P2P experience required.
 
 **Time:** ~35 minutes  
-**Version:** 0.12.0  
+**Version:** 0.13.0  
 **Full docs:** [docs site](https://jose-compu.github.io/dignity.js/) · [README](./README.md)
+
+**Lessons:** [1](#lesson-1--two-peers-one-shared-note) · [2](#lesson-2--rooms-and-discovery) · [3](#lesson-3--ownership-and-updates) · [4](#lesson-4--collaborators) · [4b](#lesson-4b--verification-policies-115117) · [5](#lesson-5--versions-and-conflicts) · [6](#lesson-6--browser-and-real-networks) · [7](#lesson-7--small-groups-vs-big-audiences) · [8](#lesson-8--big-feeds-with-cqrs-v08) · [9](#lesson-9--persist-across-reloads-browser) · [Cheat sheet](#cheat-sheet)
 
 ---
 
@@ -183,6 +185,70 @@ await bob.proposeUpdate('games', 'g1', { board: ['X'], nextPlayer: 'host' }, {
   connectToPeers: ['host']
 });
 ```
+
+---
+
+## Lesson 4b — Verification & publisher trust (v0.13.0)
+
+v0.13.0 adds **logic versioning** for decentralized dapps. Each collection can be bound to:
+
+1. **Rules** — object, string, or functions (`reflective: true` fingerprints nested functions via AST pretty-print, so whitespace/comments/formatting variants hash the same)
+2. **Semver** — official bundle version, e.g. `0.13.0`
+3. **Policy** — what to do when a remote peer's hash differs
+
+Trust is **decentralized**: there is no central registry. You opt in to which `publisherId` ships the official `0.N.M` version via `registerPublisherVerification`.
+
+| Policy | On hash mismatch |
+|--------|------------------|
+| `advisory` (default) | Accept with warning |
+| `strict` | Reject write |
+| `patch-only` | Accept if same major.minor |
+| `minor-and-patch` | Accept if same major |
+| `backward-compatible` | Accept older remote semver |
+
+```js
+const rules = {
+  max: 100,
+  validate(record) { return record.data.points <= 100; }
+};
+
+// Publisher: official timeline-demo 0.13.0
+alice.registerPublisherVerification('alice', 'scores', {
+  code: rules,
+  reflective: true,
+  version: '0.13.0',
+  dappId: 'timeline-demo',
+  policy: 'strict'
+});
+
+// Subscriber: trust alice as official source for this collection
+bob.registerPublisherVerification('alice', 'scores', {
+  code: rules,
+  reflective: true,
+  version: '0.13.0',
+  policy: 'strict'
+});
+
+// Or local-only rules without publisher trust:
+alice.registerVerification('scores', {
+  code: rules,
+  reflective: true,
+  version: '0.13.0',
+  policy: 'strict'
+});
+
+alice.on('policyrejected', (event) => {
+  console.warn('rejected remote write', event.remoteVersion, event.reason);
+});
+
+alice.on('verificationmismatch', (event) => {
+  console.warn('hash drift', event.localHash, event.remoteHash);
+});
+```
+
+**Playground:** [verification policies](https://jose-compu.github.io/dignity.js/playground/#verification-policies) · [reflective hashing](https://jose-compu.github.io/dignity.js/playground/#reflective-logic-hashing) · [publisher trust](https://jose-compu.github.io/dignity.js/playground/#publisher-official-version)
+
+**Docs:** [verification policies](https://jose-compu.github.io/dignity.js/#verification-policies)
 
 ---
 
@@ -372,6 +438,15 @@ await replica.start({ bootstrapPeerIds: ['alice'] });
 replica.read(collection, id);
 replica.verifyChain();
 
+// Verification policies (v0.13+)
+node.registerVerification(collection, { code: rulesObject, version: '1.0.0', policy: 'strict' });
+node.on('verificationmismatch', handler);
+node.on('policyrejected', handler);
+
+// Delegated move proposals (v0.12+)
+await joiner.proposeUpdate(collection, id, patch, { broadcastScope });
+await owner.acceptProposal(proposal, { broadcastScope });
+
 // Events
 node.on('change', handler);
 node.on('domainevent', handler);
@@ -385,15 +460,16 @@ node.on('warning', handler);
 
 | Resource | What it covers |
 |----------|----------------|
-| [docs/index.html](./docs/index.html) | Full docs site (CQRS, security, v0.10 reference) |
+| [docs site](https://jose-compu.github.io/dignity.js/) | Full guide: CQRS, security, verification, API reference |
+| [docs/playground/](https://jose-compu.github.io/dignity.js/playground/) | Live demos: v0.13 verification, reflective hashing, publisher trust, CQRS |
 | [docs/api-reference.md](./docs/api-reference.md) | Generated API reference from `openapi-like.json` |
 | [docs/browser-compatibility.md](./docs/browser-compatibility.md) | Supported browsers and platform requirements |
+| [docs/apps/](https://jose-compu.github.io/dignity.js/apps/) | Dignity Apps registry + timeline demo |
 | [docs/benchmarks/results.json](./docs/benchmarks/results.json) | Gossip latency and IndexedDB hydration benchmarks |
-| [docs/playground/](./docs/playground/) | Live in-browser demos, including CQRS replica |
+| [docs/tictactoe/](https://jose-compu.github.io/dignity.js/tictactoe/) | Browser tic-tac-toe (PeerJS + delegated proposals) |
+| [docs/chess/](https://jose-compu.github.io/dignity.js/chess/) | Full 3D chess + spectators + dual-signed resume |
 | [examples/decentralized-tictactoe.js](./examples/decentralized-tictactoe.js) | Small multiplayer game (Node CLI) |
-| [docs/tictactoe/](./docs/tictactoe/) | Browser tic-tac-toe (PeerJS onboarding demo) |
-| [docs/chess/](./docs/chess/) | Full 3D chess + spectators + dual-signed resume |
-| [README.md](./README.md) | Security model, React hooks, signaling |
+| [README.md](./README.md) | Security model, React hooks, signaling, verification |
 
 ## Common beginner mistakes
 

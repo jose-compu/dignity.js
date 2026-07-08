@@ -1,0 +1,82 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '24px', 'fontFamily': 'Arial, sans-serif' }, 'architecture': { 'idealEdgeLengthMultiplier': 2.0, 'nodeSeparation': 85 }}}%%
+architecture-beta
+    group apps(internet)[Your Application]
+
+    service ui(server)[UI / Game / Feed] in apps
+    service hooks(server)[React Hooks] in apps
+    service iframe(server)[Sandboxed Dignity App] in apps
+
+    group core(cloud)[DignityP2P Command Path]
+
+    service api(server)[REST-like CRUD] in core
+    service repl(server)[Replication Engine] in core
+    service disc(server)[Discovery & Presence] in core
+    service gossip(server)[PeerGroup Gossip] in core
+    service snap(server)[Snapshots & Hash Chain] in core
+    service propose(server)[Delegated Proposals] in core
+
+    group cqrs(cloud)[CQRS Read Path]
+
+    service events(server)[Domain Events] in cqrs
+    service replica(server)[DignityQueryReplica] in cqrs
+    service tiers(server)[Live / Bulk Tiers] in cqrs
+    service relay(server)[Bulk Relay Election] in cqrs
+
+    group dignityapps(cloud)[Dignity Apps]
+
+    service host(server)[DignityAppHost + CSP] in dignityapps
+    service bridge(server)[MessageChannel RPC] in dignityapps
+    service manifest(disk)[Manifest & Stored Commands] in dignityapps
+
+    group verify(cloud)[Verification v0.13]
+
+    service vhash(server)[Logic Hash & Policies] in verify
+    service reflect(disk)[Reflective Fingerprints] in verify
+    service pubtrust(server)[Publisher-Scoped Trust] in verify
+
+    group security(cloud)[Security]
+
+    service sign(server)[Ed25519 Signatures] in security
+    service enc(disk)[Encrypt & Sloth VDF PoW] in security
+    service identity(server)[Identity Rotation] in security
+    service canon(disk)[stableStringify] in security
+
+    group network(internet)[Network]
+
+    service peerjs(internet)[PeerJS WebRTC] in network
+    service wspool(cloud)[Signaling Pool] in network
+
+    group persist(database)[Persistence]
+
+    service idb(database)[IndexedDB] in persist
+
+    service peers(internet)[Remote Peers]
+
+    ui:B -- T:api
+    hooks:B -- T:api
+    iframe:B -- T:bridge
+    bridge:B -- T:host
+    host:B -- T:manifest
+    host:B -- T:replica
+    api:B -- T:repl
+    api:B -- T:gossip
+    api:B -- T:propose
+    api:B -- T:events
+    repl:R -- L:disc
+    repl:R -- L:snap
+    gossip:B -- T:tiers
+    events:B -- T:replica
+    tiers:B -- T:relay
+    repl:B -- T:vhash
+    vhash:B -- T:reflect
+    vhash:B -- T:pubtrust
+    repl:B -- T:sign
+    canon:T -- B:sign
+    canon:T -- B:enc
+    sign:B -- T:identity
+    enc:B -- T:peerjs
+    enc:B -- T:wspool
+    peerjs:B -- T:peers
+    wspool:B -- T:peers
+    repl:B -- T:idb
+    idb:T -- B:repl

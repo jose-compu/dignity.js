@@ -1,7 +1,7 @@
 {
   "name": "dignity.js",
-  "version": "0.12.0",
-  "description": "REST-like object API over peer-to-peer replication",
+  "version": "0.13.0",
+  "description": "REST-like object API over peer-to-peer replication with CQRS read replicas, Dignity Apps, and verification policies",
   "lifecycle": {
     "start": "attach network message handler and begin receiving",
     "stop": "leave discovery scopes and detach handler"
@@ -30,7 +30,8 @@
           "expectedVersion": "optional number; throws VERSION_CONFLICT when mismatched",
           "broadcastScope": "optional scoped broadcast password namespace",
           "collaborators": "owner may replace collaborator list",
-          "connectToPeers": "optional; defaults to owner + collaborators"
+          "connectToPeers": "optional; defaults to owner + collaborators",
+          "peerGroupId": "optional; auto-publish domain event when publisher (v0.8+)"
         }
       },
       "updateWithRetry": {
@@ -78,19 +79,48 @@
         "method": "rejectProposal(proposal, reason)",
         "authorization": "owner-only",
         "description": "reject without applying patch; sends proposal:result to proposer"
+      },
+      "registerVerification": {
+        "method": "registerVerification(collection, { code, version?, policy?, reflective? })",
+        "description": "local collection rules; embeds verificationHash/verificationVersion on operations and snapshots (#115–#117)",
+        "options": {
+          "code": "string, object, or function business rules",
+          "version": "optional semver for version-to-hash registry (#116)",
+          "policy": "strict | backward-compatible | patch-only | minor-and-patch | advisory (default)",
+          "reflective": "when true, fingerprint nested functions via AST-canonical toString (#123)"
+        }
+      },
+      "registerPublisherVerification": {
+        "method": "registerPublisherVerification(publisherId, collection, { code, version?, policy?, dappId?, reflective? })",
+        "description": "decentralized official dapp version trust keyed by publisherId (#123); no central registry"
+      },
+      "getVerificationEntry": {
+        "method": "getVerificationEntry(collection)",
+        "description": "returns local verification registry entry for collection, or null"
+      },
+      "getPublisherVerificationEntry": {
+        "method": "getPublisherVerificationEntry(publisherId, collection)",
+        "description": "returns publisher-scoped verification entry trusted locally for that publisher + collection"
+      },
+      "resolveVerificationEntry": {
+        "method": "resolveVerificationEntry(collection, senderId?)",
+        "description": "publisher entry when senderId matches a registered official publisher; otherwise local entry"
       }
     },
     "collections/{collection}": {
       "list": {
         "method": "list(collection, options)",
-        "returns": "active records with hash; deleted stubs omit hash when includeDeleted is true"
+        "returns": "active records with hash; deleted stubs omit hash when includeDeleted is true",
+        "options": {
+          "includeDeleted": "include tombstone stubs in list results"
+        }
       }
     },
     "peers": {
       "connectToPeer": "open PeerJS data channel to peer id",
       "getConnectionStats": "{ openCount, peerIds }",
       "ensureConnectedToPeers": "connect to many peers before broadcast",
-      "joinDiscovery": "scoped presence; options.bootstrapPeerIds connects before announce",
+      "joinDiscovery": "scoped presence; options.bootstrapPeerIds connects before announce; advertises verification metadata when registered",
       "leaveDiscovery": "stop heartbeat and remove local presence from scope",
       "listPeers": "list presence entries in a discovery scope",
       "announcePresence": "manual presence heartbeat for a joined scope",
@@ -125,14 +155,30 @@
       "getPeerGroupConfig": "returns joined group config including tier and domainEvents flags",
       "getPeerGroupStats": "{ joinedGroups, seenGossipCount, openConnectionCount, globalMaxOpenConnections }"
     },
+    "verification": {
+      "hashVerificationCode": "canonical sha512 hash of verification code + compatibility policy",
+      "hashReflectiveLogic": "walk object graphs with Reflect.ownKeys; AST-canonicalize nested functions before hashing (#123)",
+      "normalizeFunctionSource": "parse function.toString() via acorn/astring when possible; fallback whitespace strip",
+      "collectReflectiveFingerprints": "return { canonical, fingerprints } map of paths to normalized function sources",
+      "normalizeVerificationCode": "stable canonical form for functions, strings, or rule objects",
+      "parseSemver": "validate semver string",
+      "compareSemver": "compare two semver strings",
+      "buildVerificationEntry": "build registry entry with version-to-hash map and optional fingerprintList",
+      "buildPublisherVerificationKey": "stable key for publisherId + collection registry slot",
+      "evaluateVerificationCompatibility": "policy engine for remote hash/version acceptance on ingest",
+      "buildVerificationPresenceMetadata": "local verification summary for joinDiscovery presence",
+      "buildPublisherVerificationPresenceMetadata": "publisher-scoped verification summary for presence",
+      "COMPATIBILITY_POLICIES": "strict | backward-compatible | patch-only | minor-and-patch | advisory",
+      "DEFAULT_COMPATIBILITY_POLICY": "advisory"
+    },
     "cqrs": {
       "DignityQueryReplica": "read-only materialized view from domain events; methods: start, stop, read, list, verifyChain, getViewStats",
-      "domainEvents": "operationToDomainEvent, verifyDomainEvent, verifyEventChain, DOMAIN_EVENT_SCHEMA_VERSION",
-      "tiers": "assignPeerGroupTier, DEFAULT_LIVE_CAP (5000), filterPeersByTier",
+      "domainEvents": "operationToDomainEvent, signDomainEvent, verifyDomainEvent, verifyEventChain, buildCheckpoint, createEmptyView, applyDomainEventToView, DOMAIN_EVENT_SCHEMA_VERSION",
+      "tiers": "assignPeerGroupTier, DEFAULT_LIVE_CAP (5000), DEFAULT_BULK_INTERVAL_MS, filterPeersByTier",
       "bulkRelay": "electBulkRelays, DEFAULT_BULK_RELAY_COUNT"
     },
     "dignityApps": {
-      "validateDignityAppManifest": "validate manifest; returns { ok, manifest | reason }",
+      "validateDignityAppManifest": "validate manifest; returns { ok, manifest | reason }; supports dappVersion, logicHash, publisherId, storedLogic (#123)",
       "collectionAllowed": "check collection against manifest allowlist",
       "getStoredCommand": "lookup pre-declared stored command by id",
       "buildAppCsp": "build immutable CSP content from manifest allowedCspOrigins",
@@ -145,17 +191,33 @@
       "createDignityAppClient": "app-side SDK bound to transferred MessagePort",
       "connectDignityAppClient": "wait for parent handshake postMessage in iframe",
       "buildClientBootstrapScript": "self-contained iframe bootstrap; auto-captures console.error, onerror, unhandledrejection (#106)",
+      "HANDSHAKE_TYPE": "postMessage type string for parent ↔ iframe port transfer",
       "attachErrorPanel": "host DOM error/log panel; subscribes to applog, apperror, apprpcerror (#106)",
       "sanitizeCaptureMessage": "cap and sanitize forwarded log/error strings",
       "sanitizeCaptureValue": "redact sensitive keys in forwarded capture payloads",
-      "executeStoredCommand": "run manifest-declared write on publisher node only",
+      "executeStoredCommand": "run manifest-declared write on publisher node; enforces publisher verification when manifest pins logic (#123)",
       "isPublisherCommandCapable": "true when attached node can execute stored commands"
+    },
+    "network": {
+      "InMemoryNetworkHub": "test/local hub wiring multiple InMemoryNetworkAdapter instances",
+      "InMemoryNetworkAdapter": "synchronous in-process transport for unit tests",
+      "PeerJSNetworkAdapter": "browser WebRTC mesh adapter",
+      "createPeerJSNetworkAdapter": "factory; options: urls, iceServers, peerOptions, maxOpenConnections",
+      "parsePeerJsServerUrl": "normalize PeerJS signaling URL"
+    },
+    "signalingExports": {
+      "createDefaultSignalingPool": "Cloudflare + fallback WebSocket providers",
+      "SignalingPool": "multi-provider signaling with failover",
+      "WebSocketSignalingProvider": "raw WebSocket signaling transport",
+      "PeerJSSignalingProvider": "PeerJS-compatible signaling transport",
+      "DEFAULT_CLOUDFLARE_SIGNALING_URLS": "default Cloudflare relay URLs",
+      "DEFAULT_SIGNALING_FALLBACK_URLS": "default public fallback URLs"
     }
   },
   "events": {
     "change": "object create/update/delete/snapshot applied",
     "conflict": "local or remote version mismatch",
-    "warning": "orphan-operation, peer-connect-failed, presence failures, content-hash-mismatch, domain-event-rejected",
+    "warning": "orphan-operation, peer-connect-failed, presence failures, content-hash-mismatch, domain-event-rejected, tier-announce-failed",
     "domainevent": "signed domain event applied or emitted locally",
     "chainbroken": "domain event hash chain verification failed",
     "bulkrelaychanged": "bulk relay peer set changed for a tiered group",
@@ -163,10 +225,17 @@
     "peerdiscovered": "peer joined discovery scope",
     "peergroupjoined": "local node joined a PeerGroup",
     "peergroupleft": "local node left a PeerGroup",
+    "peergroupmessage": "raw inner message received on a joined PeerGroup (used by DignityQueryReplica)",
     "peerleft": "peer left or timed out",
+    "peerbanned": "peer auto- or manually banned",
+    "peerunbanned": "peer ban cleared",
+    "identityrotated": "local or remote identity rotation applied",
+    "coldrecoveryenrolled": "cold recovery enrollment applied",
     "message": "custom decrypted message received",
     "proposal": "owner received signed update proposal from non-owner (#13)",
     "proposalresult": "proposer received accept/reject result for a proposal (#13)",
+    "verificationmismatch": "remote verificationHash differs from local registry (#115); advisory unless policy is strict",
+    "policyrejected": "operation/snapshot/event rejected by compatibility policy or untrusted publisher (#117, #123)",
     "securityerror": "signature, PoW, or decrypt failure on incoming message",
     "messageignored": "message dropped (wrong target, banned peer, etc.)"
   },
@@ -187,7 +256,9 @@
       "hash": "sha512:<hex>; computed from canonicalized data only",
       "createdAt": "unix ms timestamp",
       "updatedAt": "unix ms timestamp",
-      "version": "monotonic integer"
+      "version": "monotonic integer",
+      "verificationHash": "optional; present when collection has registerVerification (#115)",
+      "verificationVersion": "optional semver bound to verificationHash (#116)"
     },
     "deletedStub": {
       "id": "string",
@@ -197,7 +268,31 @@
     },
     "notes": [
       "hash uses stableStringify(data) so object key order does not change the digest",
-      "restoreRecord recomputes hash locally and emits warning.type=content-hash-mismatch on mismatch"
+      "restoreRecord recomputes hash locally and emits warning.type=content-hash-mismatch on mismatch",
+      "remote ingest runs checkVerificationOnIngest against local or publisher-scoped registry"
+    ]
+  },
+  "manifestShape": {
+    "required": [
+      "id",
+      "title",
+      "collections"
+    ],
+    "optional": {
+      "schemaVersion": "1",
+      "description": "human-readable summary",
+      "peerGroupId": "CQRS publisher group for stored commands",
+      "publisherId": "official logic publisher peer id (#123)",
+      "dappVersion": "semver for official bundle (#123)",
+      "logicHash": "sha512:<hex> reflective or code hash (#123)",
+      "storedLogic": "map of logicRef → { version, hash, validate? }",
+      "storedCommands": "pre-declared writes with optional logicRef/logicVersion/logicHash",
+      "allowedCspOrigins": "https origins allowed in iframe connect-src",
+      "forwardConsoleLog": "forward iframe console.log to host applog events"
+    },
+    "notes": [
+      "dappVersion and logicHash must be set together",
+      "stored command logic pins are enforced against registerPublisherVerification on the host publisher node"
     ]
   },
   "persistence": {

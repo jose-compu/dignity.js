@@ -67,6 +67,8 @@ function operationToDomainEvent(operation, { publisherId, groupId, prevHash, eve
     baseVersion: operation.baseVersion || null,
     prevHash: prevHash || null,
     newOwnerId: operation.newOwnerId || null,
+    verificationHash: operation.verificationHash || null,
+    verificationVersion: operation.verificationVersion || null,
     eventHash: null,
     signature: null
   };

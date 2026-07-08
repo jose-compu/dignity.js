@@ -916,5 +916,182 @@ log('joiner result ok:', results.some((r) => r.ok));
 
 await host.stop();
 await joiner.stop();`
+  },
+  {
+    id: 'verification-policies',
+    group: 'v013',
+    title: 'Verification policies — strict reject',
+    description: 'v0.13.0: registerVerification binds collection logic; strict policy rejects remote hash drift.',
+    code: `const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = dignity;
+
+const hub = new InMemoryNetworkHub();
+const security = helpers.fastSecurity();
+
+const alice = new DignityP2P({
+  nodeId: 'alice',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+const bob = new DignityP2P({
+  nodeId: 'bob',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+helpers.track(alice, bob);
+await alice.start();
+await bob.start();
+
+// Same semver, different rule objects → different verificationHash
+alice.registerVerification('scores', {
+  code: { min: 0 },
+  version: '1.0.0',
+  policy: 'strict'
+});
+bob.registerVerification('scores', {
+  code: { min: 100 },
+  version: '1.0.0',
+  policy: 'strict'
+});
+
+const rejected = [];
+bob.on('policyrejected', (e) => rejected.push(e));
+
+await alice.create('scores', { points: 5 }, {
+  id: 's1',
+  broadcastScope: 'room:verify'
+});
+await helpers.sleep(40);
+
+log('bob accepted record?', bob.read('scores', 's1') !== null);
+log('policy rejections:', rejected.length);
+
+await alice.stop();
+await bob.stop();`
+  },
+  {
+    id: 'reflective-logic-hashing',
+    group: 'v013',
+    title: 'Reflective logic hashing',
+    description: 'v0.13.0 (#123): fingerprint nested functions with reflective: true — detects tampered business logic.',
+    code: `const { DignityP2P, hashReflectiveLogic, InMemoryNetworkHub, InMemoryNetworkAdapter } = dignity;
+
+const hub = new InMemoryNetworkHub();
+const security = helpers.fastSecurity();
+
+const rulesV1 = {
+  currency: 'USD',
+  validate(record) {
+    return record.data.amount >= 0;
+  }
+};
+const rulesV2 = {
+  currency: 'USD',
+  validate(record) {
+    return record.data.amount >= 999;
+  }
+};
+
+const hash1 = hashReflectiveLogic(rulesV1, { policy: 'strict' });
+const hash2 = hashReflectiveLogic(rulesV2, { policy: 'strict' });
+log('hash1 path:', hash1.fingerprintList[0]?.path);
+log('hashes differ?', hash1.hash !== hash2.hash);
+
+const alice = new DignityP2P({ nodeId: 'alice', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+const bob = new DignityP2P({ nodeId: 'bob', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+helpers.track(alice, bob);
+await alice.start();
+await bob.start();
+
+alice.registerVerification('ledger', {
+  code: rulesV1,
+  reflective: true,
+  version: '0.13.0',
+  policy: 'strict'
+});
+bob.registerVerification('ledger', {
+  code: rulesV2,
+  reflective: true,
+  version: '0.13.0',
+  policy: 'strict'
+});
+
+await alice.create('ledger', { amount: 10 }, { id: 'a1', broadcastScope: 'room:reflective' });
+await helpers.sleep(40);
+log('bob accepted?', bob.read('ledger', 'a1') !== null);
+
+await alice.stop();
+await bob.stop();`
+  },
+  {
+    id: 'publisher-official-version',
+    group: 'v013',
+    title: 'Publisher official version (decentralized)',
+    description: 'v0.13.0 (#123): trust official dapp 0.N.M + hash per publisherId — no central registry.',
+    code: `const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = dignity;
+
+const hub = new InMemoryNetworkHub();
+const security = helpers.fastSecurity();
+
+const rules = {
+  max: 100,
+  validate(record) {
+    return record.data.points <= 100;
+  }
+};
+
+const alice = new DignityP2P({ nodeId: 'alice', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+const bob = new DignityP2P({ nodeId: 'bob', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+const carol = new DignityP2P({ nodeId: 'carol', networkAdapter: new InMemoryNetworkAdapter(hub), security });
+helpers.track(alice, bob, carol);
+await alice.start();
+await bob.start();
+await carol.start();
+
+// Publisher declares official timeline-demo 0.13.0
+alice.registerPublisherVerification('alice', 'posts', {
+  code: rules,
+  reflective: true,
+  version: '0.13.0',
+  dappId: 'timeline-demo',
+  policy: 'strict'
+});
+
+// Bob opts in: alice is the official publisher for posts
+bob.registerPublisherVerification('alice', 'posts', {
+  code: rules,
+  reflective: true,
+  version: '0.13.0',
+  policy: 'strict'
+});
+
+await alice.joinDiscovery('room:official');
+await bob.joinDiscovery('room:official', { bootstrapPeerIds: ['alice'] });
+await helpers.sleep(40);
+
+const meta = bob.listPeers('room:official', { includeSelf: false })[0]?.metadata?.officialPublishers?.alice?.posts;
+log('advertised version:', meta?.verificationVersion);
+log('reflective?', meta?.reflective);
+
+await alice.create('posts', { text: 'official write' }, {
+  id: 'p1',
+  broadcastScope: 'room:official'
+});
+await helpers.sleep(40);
+log('bob replicated?', bob.read('posts', 'p1')?.data?.text);
+
+// Carol is not a trusted official publisher for posts
+const carolRejected = [];
+bob.on('policyrejected', (e) => carolRejected.push(e));
+await carol.create('posts', { text: 'impostor' }, {
+  id: 'p2',
+  broadcastScope: 'room:official'
+});
+await helpers.sleep(40);
+log('carol write accepted?', bob.read('posts', 'p2') !== null);
+log('bob rejections:', carolRejected.length);
+
+await alice.stop();
+await bob.stop();
+await carol.stop();`
   }
 ];

@@ -3613,6 +3613,8 @@ var require_domain_events = __commonJS({
         baseVersion: operation.baseVersion || null,
         prevHash: prevHash || null,
         newOwnerId: operation.newOwnerId || null,
+        verificationHash: operation.verificationHash || null,
+        verificationVersion: operation.verificationVersion || null,
         eventHash: null,
         signature: null
       };
@@ -3870,6 +3872,302 @@ var require_bulk_relay = __commonJS({
   }
 });
 
+// src/security/verification-code.js
+var require_verification_code = __commonJS({
+  "src/security/verification-code.js"(exports, module) {
+    var nacl = require_nacl_fast();
+    var naclUtil = require_nacl_util();
+    var { stableStringify } = require_message_security_service();
+    var COMPATIBILITY_POLICIES = Object.freeze([
+      "strict",
+      "backward-compatible",
+      "patch-only",
+      "minor-and-patch",
+      "advisory"
+    ]);
+    var DEFAULT_COMPATIBILITY_POLICY = "advisory";
+    var SEMVER_PATTERN = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+([0-9A-Za-z.-]+))?$/;
+    function normalizeVerificationCode(codeOrRules) {
+      if (codeOrRules === null || codeOrRules === void 0) {
+        throw new Error("verification code is required");
+      }
+      if (typeof codeOrRules === "function") {
+        return codeOrRules.toString().replace(/\s+/g, " ").trim();
+      }
+      if (typeof codeOrRules === "string") {
+        return codeOrRules.replace(/\s+/g, " ").trim();
+      }
+      if (typeof codeOrRules === "object") {
+        return stableStringify(codeOrRules);
+      }
+      return String(codeOrRules);
+    }
+    function hashVerificationCode(codeOrRules, options = {}) {
+      const policy = options.policy || DEFAULT_COMPATIBILITY_POLICY;
+      if (!COMPATIBILITY_POLICIES.includes(policy)) {
+        throw new Error(`invalid compatibility policy: ${policy}`);
+      }
+      const canonical = stableStringify({
+        code: normalizeVerificationCode(codeOrRules),
+        policy
+      });
+      const bytes = naclUtil.decodeUTF8(canonical);
+      const hash = nacl.hash(bytes);
+      const hex = Array.from(hash, (b) => b.toString(16).padStart(2, "0")).join("");
+      return `sha512:${hex}`;
+    }
+    function parseSemver(version) {
+      if (typeof version !== "string" || !version.trim()) {
+        throw new Error("verificationVersion must be a non-empty semver string");
+      }
+      const match = version.trim().match(SEMVER_PATTERN);
+      if (!match) {
+        throw new Error(`invalid semver: ${version}`);
+      }
+      return {
+        major: Number(match[1]),
+        minor: Number(match[2]),
+        patch: Number(match[3]),
+        prerelease: match[4] || null,
+        build: match[5] || null
+      };
+    }
+    function compareSemver(a, b) {
+      const left = parseSemver(a);
+      const right = parseSemver(b);
+      if (left.major !== right.major) {
+        return left.major > right.major ? 1 : -1;
+      }
+      if (left.minor !== right.minor) {
+        return left.minor > right.minor ? 1 : -1;
+      }
+      if (left.patch !== right.patch) {
+        return left.patch > right.patch ? 1 : -1;
+      }
+      return 0;
+    }
+    function buildVerificationEntry({ code, version = null, policy = DEFAULT_COMPATIBILITY_POLICY }) {
+      const normalizedPolicy = policy || DEFAULT_COMPATIBILITY_POLICY;
+      if (!COMPATIBILITY_POLICIES.includes(normalizedPolicy)) {
+        throw new Error(`invalid compatibility policy: ${normalizedPolicy}`);
+      }
+      const hash = hashVerificationCode(code, { policy: normalizedPolicy });
+      const versionRegistry = /* @__PURE__ */ new Map();
+      if (version) {
+        parseSemver(version);
+        versionRegistry.set(version, hash);
+      }
+      return {
+        code,
+        policy: normalizedPolicy,
+        hash,
+        version: version || null,
+        versionRegistry
+      };
+    }
+    function evaluateVerificationCompatibility(localEntry, remoteMeta = {}, context = {}) {
+      if (!localEntry) {
+        return { action: "accept" };
+      }
+      const events = [];
+      const remoteHash = remoteMeta.verificationHash || null;
+      const remoteVersion = remoteMeta.verificationVersion || null;
+      const localHash = localEntry.hash;
+      const localVersion = localEntry.version;
+      const policy = localEntry.policy || DEFAULT_COMPATIBILITY_POLICY;
+      if (remoteVersion && localEntry.versionRegistry) {
+        const registeredHash = localEntry.versionRegistry.get(remoteVersion);
+        if (registeredHash && remoteHash && registeredHash !== remoteHash) {
+          events.push({
+            type: "warning",
+            payload: {
+              type: "verification-version-spoof",
+              collection: context.collection,
+              senderId: context.senderId,
+              declaredVersion: remoteVersion,
+              declaredHash: remoteHash,
+              registeredHash
+            }
+          });
+          if (policy !== "advisory") {
+            return {
+              action: "reject",
+              reason: "verification-version-spoof",
+              events: events.concat([{
+                type: "policyrejected",
+                payload: {
+                  policy,
+                  collection: context.collection,
+                  senderId: context.senderId,
+                  localVersion,
+                  remoteVersion,
+                  localHash,
+                  remoteHash,
+                  reason: "verification-version-spoof"
+                }
+              }])
+            };
+          }
+        }
+      }
+      if (!remoteHash) {
+        if (policy === "advisory") {
+          events.push({
+            type: "warning",
+            payload: {
+              type: "verification-hash-missing",
+              collection: context.collection,
+              senderId: context.senderId,
+              localHash
+            }
+          });
+          return { action: "accept", events };
+        }
+        return {
+          action: "reject",
+          reason: "verification-hash-missing",
+          events: events.concat([{
+            type: "policyrejected",
+            payload: {
+              policy,
+              collection: context.collection,
+              senderId: context.senderId,
+              localVersion,
+              remoteVersion,
+              localHash,
+              remoteHash: null,
+              reason: "verification-hash-missing"
+            }
+          }])
+        };
+      }
+      if (remoteHash === localHash) {
+        return { action: "accept", events };
+      }
+      events.push({
+        type: "verificationmismatch",
+        payload: {
+          collection: context.collection,
+          senderId: context.senderId,
+          localHash,
+          remoteHash,
+          localVersion,
+          remoteVersion
+        }
+      });
+      if (policy === "advisory") {
+        events.push({
+          type: "warning",
+          payload: {
+            type: "verification-hash-mismatch",
+            collection: context.collection,
+            senderId: context.senderId,
+            localHash,
+            remoteHash
+          }
+        });
+        return { action: "accept", events };
+      }
+      if (policy === "strict") {
+        return {
+          action: "reject",
+          reason: "strict-hash-mismatch",
+          events: events.concat([{
+            type: "policyrejected",
+            payload: {
+              policy,
+              collection: context.collection,
+              senderId: context.senderId,
+              localVersion,
+              remoteVersion,
+              localHash,
+              remoteHash,
+              reason: "strict-hash-mismatch"
+            }
+          }])
+        };
+      }
+      if (!localVersion || !remoteVersion) {
+        return {
+          action: "reject",
+          reason: "version-required-for-policy",
+          events: events.concat([{
+            type: "policyrejected",
+            payload: {
+              policy,
+              collection: context.collection,
+              senderId: context.senderId,
+              localVersion,
+              remoteVersion,
+              localHash,
+              remoteHash,
+              reason: "version-required-for-policy"
+            }
+          }])
+        };
+      }
+      const localParsed = parseSemver(localVersion);
+      const remoteParsed = parseSemver(remoteVersion);
+      let compatible = false;
+      if (policy === "backward-compatible") {
+        compatible = compareSemver(localVersion, remoteVersion) >= 0;
+      } else if (policy === "patch-only") {
+        compatible = localParsed.major === remoteParsed.major && localParsed.minor === remoteParsed.minor;
+      } else if (policy === "minor-and-patch") {
+        compatible = localParsed.major === remoteParsed.major;
+      }
+      if (compatible) {
+        return { action: "accept", events };
+      }
+      return {
+        action: "reject",
+        reason: "policy-version-incompatible",
+        events: events.concat([{
+          type: "policyrejected",
+          payload: {
+            policy,
+            collection: context.collection,
+            senderId: context.senderId,
+            localVersion,
+            remoteVersion,
+            localHash,
+            remoteHash,
+            reason: "policy-version-incompatible"
+          }
+        }])
+      };
+    }
+    function buildVerificationPresenceMetadata(registry) {
+      const out = {};
+      if (!registry || registry.size === 0) {
+        return out;
+      }
+      for (const [collection, entry] of registry.entries()) {
+        if (entry.version) {
+          out[collection] = {
+            verificationVersion: entry.version,
+            verificationHash: entry.hash
+          };
+        } else if (entry.hash) {
+          out[collection] = { verificationHash: entry.hash };
+        }
+      }
+      return out;
+    }
+    module.exports = {
+      COMPATIBILITY_POLICIES,
+      DEFAULT_COMPATIBILITY_POLICY,
+      normalizeVerificationCode,
+      hashVerificationCode,
+      parseSemver,
+      compareSemver,
+      buildVerificationEntry,
+      evaluateVerificationCompatibility,
+      buildVerificationPresenceMetadata
+    };
+  }
+});
+
 // src/core/dignity-p2p.js
 var require_dignity_p2p = __commonJS({
   "src/core/dignity-p2p.js"(exports, module) {
@@ -3908,6 +4206,13 @@ var require_dignity_p2p = __commonJS({
       filterPeersByTier
     } = require_peer_group_tiers();
     var { electBulkRelays } = require_bulk_relay();
+    var {
+      COMPATIBILITY_POLICIES,
+      DEFAULT_COMPATIBILITY_POLICY,
+      buildVerificationEntry,
+      evaluateVerificationCompatibility,
+      buildVerificationPresenceMetadata
+    } = require_verification_code();
     function computeContentHash(data) {
       const canonical = stableStringify(data || {});
       const bytes = naclUtil.decodeUTF8(canonical);
@@ -3957,6 +4262,7 @@ var require_dignity_p2p = __commonJS({
         this.replicaViews = /* @__PURE__ */ new Map();
         this.state = /* @__PURE__ */ new Map();
         this.appliedOperations = /* @__PURE__ */ new Map();
+        this.verificationRegistry = /* @__PURE__ */ new Map();
         this.boundMessageHandler = this.handleIncomingMessage.bind(this);
       }
       async start() {
@@ -4092,6 +4398,7 @@ var require_dignity_p2p = __commonJS({
           timestamp,
           payload: { ...data || {} }
         };
+        this.attachVerificationMetadata(operation);
         this.applyOperation(operation);
         await this.maybePublishDomainEvent(operation, options);
         await this.broadcastMessage("operation", operation, {
@@ -4170,6 +4477,7 @@ var require_dignity_p2p = __commonJS({
         if (options.collaborators !== void 0) {
           operation.collaboratorIds = this.normalizeCollaboratorIds(options.collaborators);
         }
+        this.attachVerificationMetadata(operation);
         this.applyOperation(operation);
         await this.maybePublishDomainEvent(operation, options);
         await this.broadcastMessage("operation", operation, {
@@ -4255,6 +4563,10 @@ var require_dignity_p2p = __commonJS({
           await this.rejectProposal(proposal, "proposer-banned");
           throw new Error("Proposer is banned");
         }
+        if (!proposal.patch || typeof proposal.patch !== "object" || Array.isArray(proposal.patch)) {
+          await this.rejectProposal(proposal, "invalid-patch");
+          throw new Error("Proposal patch must be a plain object");
+        }
         try {
           const record = await this.update(proposal.collection, proposal.id, proposal.patch, {
             ...options,
@@ -4316,6 +4628,7 @@ var require_dignity_p2p = __commonJS({
           newOwnerId,
           keepPreviousOwnerAsCollaborator: options.keepAsCollaborator !== false
         };
+        this.attachVerificationMetadata(operation);
         this.applyOperation(operation);
         await this.maybePublishDomainEvent(operation, options);
         await this.broadcastMessage("operation", operation, {
@@ -4348,6 +4661,7 @@ var require_dignity_p2p = __commonJS({
           timestamp: this.now(),
           baseVersion: existing.version
         };
+        this.attachVerificationMetadata(operation);
         this.applyOperation(operation);
         await this.maybePublishDomainEvent(operation, options);
         await this.broadcastMessage("operation", operation, {
@@ -4358,6 +4672,72 @@ var require_dignity_p2p = __commonJS({
           }),
           connectToPeers: this.resolveReplicationPeers(collectionName, id, options, { fromRecord: existing })
         });
+      }
+      /**
+       * Register verification code and optional compatibility policy for a collection (#115–#117).
+       * @param {string} collectionName
+       * @param {object} options
+       * @param {Function|string|object} options.code
+       * @param {string} [options.version] semver
+       * @param {string} [options.policy]
+       * @returns {object} entry summary
+       */
+      registerVerification(collectionName, options = {}) {
+        if (!collectionName) {
+          throw new Error("registerVerification requires collectionName");
+        }
+        if (!options.code) {
+          throw new Error("registerVerification requires code");
+        }
+        const entry = buildVerificationEntry({
+          code: options.code,
+          version: options.version || null,
+          policy: options.policy || DEFAULT_COMPATIBILITY_POLICY
+        });
+        this.verificationRegistry.set(collectionName, entry);
+        for (const [scope, room] of this.discoveryRooms.entries()) {
+          if (room) {
+            room.metadata = {
+              ...room.metadata || {},
+              verification: buildVerificationPresenceMetadata(this.verificationRegistry)
+            };
+            this.upsertPresence(scope, this.nodeId, room.metadata, room.ttlMs, this.now());
+          }
+        }
+        return {
+          collection: collectionName,
+          verificationHash: entry.hash,
+          verificationVersion: entry.version,
+          policy: entry.policy
+        };
+      }
+      getVerificationEntry(collectionName) {
+        return this.verificationRegistry.get(collectionName) || null;
+      }
+      attachVerificationMetadata(target) {
+        if (!target || !target.collectionName) {
+          return target;
+        }
+        const entry = this.verificationRegistry.get(target.collectionName);
+        if (!entry) {
+          return target;
+        }
+        target.verificationHash = entry.hash;
+        if (entry.version) {
+          target.verificationVersion = entry.version;
+        }
+        return target;
+      }
+      checkVerificationOnIngest(collectionName, remoteMeta = {}, senderId = null) {
+        const entry = this.verificationRegistry.get(collectionName);
+        const result = evaluateVerificationCompatibility(entry, remoteMeta, {
+          collection: collectionName,
+          senderId
+        });
+        for (const evt of result.events || []) {
+          this.emit(evt.type, evt.payload);
+        }
+        return result.action !== "reject";
       }
       registerPeerPublicKey(peerId, publicKey, options = {}) {
         this.securityService.registerPeerPublicKey(peerId, publicKey, options);
@@ -5011,6 +5391,12 @@ var require_dignity_p2p = __commonJS({
           });
           return false;
         }
+        if (!this.checkVerificationOnIngest(event.collectionName, {
+          verificationHash: event.verificationHash,
+          verificationVersion: event.verificationVersion
+        }, context.senderId || publisherId)) {
+          return false;
+        }
         const log2 = this.domainEventLogs.get(groupId) || [];
         if (log2.some((entry) => entry.eventId === event.eventId)) {
           return false;
@@ -5145,7 +5531,7 @@ var require_dignity_p2p = __commonJS({
             context.publisherId || context.senderId
           );
           if (operation) {
-            this.applyOperation(operation);
+            this.applyOperation(operation, { senderId: context.senderId });
           }
           return;
         }
@@ -5168,7 +5554,8 @@ var require_dignity_p2p = __commonJS({
             const applied = this.restoreRecord(collectionName, record, {
               rejectOnHashMismatch: true,
               rejectOnOwnershipMismatch: true,
-              via: "peer-group"
+              via: "peer-group",
+              senderId: context.senderId
             });
             if (applied) {
               this.emit("change", {
@@ -5238,6 +5625,7 @@ var require_dignity_p2p = __commonJS({
         const ttlMs = options.ttlMs || this.defaultPresenceTtlMs;
         const metadata = {
           publicKey: this.getPublicKey(),
+          verification: buildVerificationPresenceMetadata(this.verificationRegistry),
           ...options.metadata || {}
         };
         const bootstrapPeerIds = Array.isArray(options.bootstrapPeerIds) ? [...new Set(options.bootstrapPeerIds.filter(Boolean))] : [];
@@ -5393,7 +5781,7 @@ var require_dignity_p2p = __commonJS({
           this.trustPeerPublicKey(message.senderId, message.senderPublicKey);
         }
         if (decrypted.messageType === "operation") {
-          this.applyOperation(decrypted.payload);
+          this.applyOperation(decrypted.payload, { senderId: decrypted.senderId });
           return;
         }
         if (decrypted.messageType === "record:snapshot") {
@@ -5402,7 +5790,8 @@ var require_dignity_p2p = __commonJS({
           if (collectionName && record) {
             const applied = this.restoreRecord(collectionName, record, {
               rejectOnHashMismatch: true,
-              via: "direct-mesh"
+              via: "direct-mesh",
+              senderId: decrypted.senderId
             });
             if (applied) {
               this.emit("change", {
@@ -5472,6 +5861,9 @@ var require_dignity_p2p = __commonJS({
         if (decrypted.messageType === "proposal") {
           const payload = decrypted.payload || {};
           if (!payload.proposalId || payload.proposerId !== decrypted.senderId) {
+            return;
+          }
+          if (!payload.patch || typeof payload.patch !== "object" || Array.isArray(payload.patch)) {
             return;
           }
           const record = this.read(payload.collection, payload.id);
@@ -5545,6 +5937,12 @@ var require_dignity_p2p = __commonJS({
       }
       restoreRecord(collectionName, record, options = {}) {
         if (!record || !record.id) {
+          return false;
+        }
+        if (options.senderId && !this.checkVerificationOnIngest(collectionName, {
+          verificationHash: record.verificationHash,
+          verificationVersion: record.verificationVersion
+        }, options.senderId)) {
           return false;
         }
         const collection = this.getCollection(collectionName);
@@ -5621,6 +6019,13 @@ var require_dignity_p2p = __commonJS({
           deletedAt: raw.deletedAt || null,
           version: raw.version
         };
+        const verificationEntry = this.verificationRegistry.get(collectionName);
+        if (verificationEntry) {
+          record.verificationHash = verificationEntry.hash;
+          if (verificationEntry.version) {
+            record.verificationVersion = verificationEntry.version;
+          }
+        }
         await this.broadcastMessage("record:snapshot", { collectionName, record }, {
           broadcastScope: options.broadcastScope || this.resolveBroadcastScope({
             messageType: "record:snapshot",
@@ -5640,8 +6045,14 @@ var require_dignity_p2p = __commonJS({
           this.appliedOperations.delete(oldestOpId);
         }
       }
-      applyOperation(operation) {
+      applyOperation(operation, options = {}) {
         if (!operation || !operation.opId || this.appliedOperations.has(operation.opId)) {
+          return false;
+        }
+        if (options.senderId && !this.checkVerificationOnIngest(operation.collectionName, {
+          verificationHash: operation.verificationHash,
+          verificationVersion: operation.verificationVersion
+        }, options.senderId)) {
           return false;
         }
         const collection = this.getCollection(operation.collectionName);
@@ -13379,6 +13790,12 @@ var require_query_replica = __commonJS({
           this.emit("warning", { type: "domain-event-rejected", reason: verified.reason, event });
           return false;
         }
+        if (this.dignity && typeof this.dignity.checkVerificationOnIngest === "function" && !this.dignity.checkVerificationOnIngest(event.collectionName, {
+          verificationHash: event.verificationHash,
+          verificationVersion: event.verificationVersion
+        }, event.publisherId)) {
+          return false;
+        }
         if (!skipChainCheck && this.eventLog.length > 0) {
           const lastHash = this.eventLog[this.eventLog.length - 1].eventHash;
           if (event.prevHash !== lastHash) {
@@ -13675,6 +14092,7 @@ document.addEventListener('securitypolicyviolation', function(e) {
 var require_stored_commands = __commonJS({
   "src/apps/stored-commands.js"(exports, module) {
     var { getStoredCommand } = require_manifest();
+    var DANGEROUS_PATCH_KEYS = /* @__PURE__ */ new Set(["__proto__", "constructor", "prototype"]);
     function emitStoredCommandRejection(node, reason, commandId, args) {
       if (node && typeof node.emit === "function") {
         node.emit("warning", {
@@ -13702,12 +14120,19 @@ var require_stored_commands = __commonJS({
       return false;
     }
     function validateAllowedFields(command, patch) {
+      if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+        return "invalid-args";
+      }
       if (!Array.isArray(command.allowedFields)) {
         return null;
       }
       const allowed = new Set(command.allowedFields);
-      for (const key of Object.keys(patch || {})) {
-        if (!allowed.has(key)) {
+      for (const key of Reflect.ownKeys(patch)) {
+        const name = String(key);
+        if (DANGEROUS_PATCH_KEYS.has(name)) {
+          return "field-not-allowed";
+        }
+        if (!allowed.has(name)) {
           return "field-not-allowed";
         }
       }
@@ -14626,6 +15051,17 @@ var require_src = __commonJS({
       sanitizeCaptureMessage,
       sanitizeCaptureValue
     } = require_capture_sanitize();
+    var {
+      COMPATIBILITY_POLICIES,
+      DEFAULT_COMPATIBILITY_POLICY,
+      hashVerificationCode,
+      normalizeVerificationCode,
+      parseSemver,
+      compareSemver,
+      buildVerificationEntry,
+      evaluateVerificationCompatibility,
+      buildVerificationPresenceMetadata
+    } = require_verification_code();
     module.exports = {
       DignityP2P: DignityP2P2,
       createDefaultSignalingPool,
@@ -14694,7 +15130,16 @@ var require_src = __commonJS({
       HANDSHAKE_TYPE,
       attachErrorPanel,
       sanitizeCaptureMessage,
-      sanitizeCaptureValue
+      sanitizeCaptureValue,
+      COMPATIBILITY_POLICIES,
+      DEFAULT_COMPATIBILITY_POLICY,
+      hashVerificationCode,
+      normalizeVerificationCode,
+      parseSemver,
+      compareSemver,
+      buildVerificationEntry,
+      evaluateVerificationCompatibility,
+      buildVerificationPresenceMetadata
     };
   }
 });

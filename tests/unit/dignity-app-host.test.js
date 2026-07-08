@@ -227,4 +227,54 @@ describe('DignityAppHost', () => {
     host.rpcHandler.handle = async () => ({ ok: false, error: { code: 'x' } });
     await expect(host.rpc('ready', {})).rejects.toThrow('RPC failed');
   });
+
+  test('error RPC emits apperror via onError callback', async () => {
+    const host = new DignityAppHost({ manifest, replica, document });
+    const errors = [];
+    host.on('apperror', (e) => errors.push(e));
+    host._openChannel();
+
+    const clientPort = host.channel.port2;
+    clientPort.start();
+    clientPort.postMessage({
+      rpcId: 'err-1',
+      method: 'error',
+      params: { message: 'boom', stack: 'at app.js:1' }
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(errors[0].message).toBe('boom');
+    expect(errors[0].stack).toBe('at app.js:1');
+  });
+
+  test('hostPort emits apprpcerror when query RPC fails', async () => {
+    const host = new DignityAppHost({ manifest, replica, document });
+    const rpcErrors = [];
+    host.on('apprpcerror', (e) => rpcErrors.push(e));
+    host._openChannel();
+    host.rpcHandler.handle = async () => ({
+      ok: false,
+      error: { code: 'QUERY_FAILED', message: 'not allowed' }
+    });
+
+    const clientPort = host.channel.port2;
+    clientPort.start();
+    clientPort.postMessage({
+      rpcId: 'q-1',
+      method: 'query',
+      params: { collection: 'posts' }
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(rpcErrors[0].method).toBe('query');
+    expect(rpcErrors[0].code).toBe('QUERY_FAILED');
+  });
+
+  test('_prepareHtml prepends bootstrap when prepared html has no closing head', () => {
+    const host = new DignityAppHost({ manifest, replica, document });
+    const malformed = '<html><head><title>App</title><body>content</body></html>';
+    const out = host._prepareHtml(malformed);
+    expect(out.indexOf('window.dignity')).toBeLessThan(out.indexOf('<body>'));
+    expect(out).toContain('content');
+  });
 });

@@ -98,6 +98,17 @@ class DignityQueryReplica extends EventEmitter {
       return false;
     }
 
+    if (
+      this.dignity
+      && typeof this.dignity.checkVerificationOnIngest === 'function'
+      && !this.dignity.checkVerificationOnIngest(event.collectionName, {
+        verificationHash: event.verificationHash,
+        verificationVersion: event.verificationVersion
+      }, event.publisherId)
+    ) {
+      return false;
+    }
+
     if (!skipChainCheck && this.eventLog.length > 0) {
       const lastHash = this.eventLog[this.eventLog.length - 1].eventHash;
       if (event.prevHash !== lastHash) {
