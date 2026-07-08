@@ -36,8 +36,10 @@ test.describe('Playground browser', () => {
   test('playground page loads and lists Dignity Apps examples', async ({ page }) => {
     await page.goto('/playground/index.html');
     await expect(page.getByRole('heading', { name: 'Live playground' })).toBeVisible();
-    await expect(page.locator('a[href="#app-bridge-query"]')).toBeVisible();
+    await expect(page.locator('a[href="#app-manifest"]')).toBeVisible();
+    await expect(page.locator('a[href="#app-stored-command"]')).toBeVisible();
     await expect(page.getByLabel('Feature')).toBeVisible();
+    await expect(page.locator('#feature-select option[value="app-bridge-query"]')).toHaveCount(1);
   });
 
   for (const demo of DIGNITY_APP_DEMOS) {
