@@ -35,6 +35,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Optional React hooks via `dignity.js/react`
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **v0.12.0** — Dignity Apps error panel + console capture (#106), timeline example app (#107), apps registry (#109), delegated move proposals (#13)
 - **v0.11.0** — Dignity Apps: sandboxed iframe host, MessageChannel RPC bridge, read-only query API, stored commands (#100, #102–#105)
 - **v0.10.1** — README logo PNG aspect-ratio fix (export from SVG)
 - **v0.10.0** — cross-device chess resume, portable checkpoints, browser tic-tac-toe demo, PeerJS ICE/TURN docs, Playwright e2e smoke
@@ -552,7 +553,7 @@ npm run docs:dev
 
 If 4173 is busy, `docs:dev` auto-picks the next free port (4174, 4175, …) and prints the URLs.
 
-## Dignity Apps (v0.11.0)
+## Dignity Apps (v0.12.0)
 
 Self-contained HTML apps in a sandboxed iframe, inspired by [Datasette Apps](https://datasette.io/blog/2026/datasette-apps/). Track: [#100](https://github.com/jose-compu/dignity.js/issues/100).
 
@@ -596,6 +597,8 @@ await replica.start({ bootstrapPeerIds: ['alice'] });
 
 const host = new DignityAppHost({ manifest, replica, node: publisherNode });
 host.on('applog', (e) => console.log('[app]', e.message));
+const { attachErrorPanel } = require('dignity.js');
+attachErrorPanel(host, document.getElementById('app-shell'));
 host.mount(document.getElementById('app-frame'), appHtmlString);
 
 // Inside the iframe (bootstrap injected by host):
@@ -605,7 +608,33 @@ host.mount(document.getElementById('app-frame'), appHtmlString);
 // await dignity.runStoredCommand('create-post', { text: 'Hello' });
 ```
 
-Sandbox: `allow-scripts` only (no `allow-same-origin`, no top-navigation/forms/popups). Host emits `ready`, `applog`, and `apperror` events (error panel UI is v0.12).
+Sandbox: `allow-scripts` only (no `allow-same-origin`, no top-navigation/forms/popups). Host emits `ready`, `applog`, `apperror`, and `apprpcerror`. Bootstrap auto-captures `console.error`, `window.onerror`, and `unhandledrejection` into the host error panel (`attachErrorPanel`). Apps registry and timeline demo: `docs/apps/`.
+
+### Turn-based games: delegated move proposals (#13)
+
+Keep a single record owner (the game host) and let joiners send signed move proposals instead of transferring ownership each turn:
+
+```js
+// Joiner on their turn:
+await joiner.proposeUpdate('games', gameId, { board, nextPlayer: hostId }, {
+  connectToPeers: [hostId]
+});
+
+// Host validates and applies:
+node.on('proposal', async (proposal) => {
+  if (!isValidMove(proposal)) {
+    await node.rejectProposal(proposal, 'invalid-move');
+    return;
+  }
+  await node.acceptProposal(proposal, { broadcastScope: roomScope });
+});
+
+joiner.on('proposalresult', (result) => {
+  if (!result.ok) console.warn('move rejected:', result.reason);
+});
+```
+
+See `docs/tictactoe/` for a full PeerJS demo. `transferOwnership` remains available when you want to hand off the record entirely.
 
 ## Docs and Examples
 
@@ -615,7 +644,8 @@ Sandbox: `allow-scripts` only (no `allow-same-origin`, no top-navigation/forms/p
 - **Benchmarks:** [`docs/benchmarks/results.json`](./docs/benchmarks/results.json) — `npm run benchmark` (#92)
 - Docs site source: `docs/index.html` (local: `npm run docs:dev`)
 - **3D Chess demo:** `docs/chess/` — PeerJS mesh, dual-signed resume links, IndexedDB → [local chess demo](http://127.0.0.1:4173/chess/) when `docs:dev` is running
-- **Browser tic-tac-toe:** `docs/tictactoe/` — simpler PeerJS onboarding demo → [local tictactoe](http://127.0.0.1:4173/tictactoe/) when `docs:dev` is running
+- **Browser tic-tac-toe:** `docs/tictactoe/` — PeerJS onboarding + delegated move proposals → [local tictactoe](http://127.0.0.1:4173/tictactoe/) when `docs:dev` is running
+- **Dignity Apps registry:** `docs/apps/` — searchable app index + timeline read-only demo
 - API metadata: `docs/openapi-like.json`
 - Minimal demos:
   - `examples/decentralized-tictactoe.js`

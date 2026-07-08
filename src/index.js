@@ -96,6 +96,11 @@ const {
   buildClientBootstrapScript,
   HANDSHAKE_TYPE
 } = require('./apps/client');
+const { attachErrorPanel } = require('./apps/error-panel');
+const {
+  sanitizeCaptureMessage,
+  sanitizeCaptureValue
+} = require('./apps/capture-sanitize');
 
 module.exports = {
   DignityP2P,
@@ -162,5 +167,8 @@ module.exports = {
   createDignityAppClient,
   connectDignityAppClient,
   buildClientBootstrapScript,
-  HANDSHAKE_TYPE
+  HANDSHAKE_TYPE,
+  attachErrorPanel,
+  sanitizeCaptureMessage,
+  sanitizeCaptureValue
 };

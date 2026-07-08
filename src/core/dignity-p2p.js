@@ -433,6 +433,111 @@ class DignityP2P extends EventEmitter {
     throw new Error(`Unable to update ${collectionName}/${id} after ${maxAttempts} attempts`);
   }
 
+  /**
+   * Propose an update to the record owner (non-owner turn-based games, #13).
+   * @param {string} collectionName
+   * @param {string} id
+   * @param {object} patch
+   * @param {object} [options]
+   * @returns {Promise<{ proposalId: string }>}
+   */
+  async proposeUpdate(collectionName, id, patch, options = {}) {
+    const existing = this.getCollection(collectionName).get(id);
+
+    if (!existing || existing.deletedAt) {
+      throw new Error(`Object ${id} does not exist in ${collectionName}`);
+    }
+
+    if (existing.ownerId === this.nodeId) {
+      throw new Error('Owner should call update() directly');
+    }
+
+    if (this.isPeerBanned(this.nodeId)) {
+      throw new Error('Proposer is banned');
+    }
+
+    const proposalId = `prop-${this.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const payload = {
+      proposalId,
+      collection: collectionName,
+      id,
+      patch: { ...patch },
+      proposerId: this.nodeId,
+      baseVersion: existing.version
+    };
+
+    await this.sendDirectMessage(existing.ownerId, 'proposal', payload);
+
+    if (options.connectToPeers) {
+      await this.ensureConnectedToPeers(options.connectToPeers);
+    }
+
+    return { proposalId };
+  }
+
+  /**
+   * Accept a proposal and apply the patch as owner (#13).
+   * @param {object} proposal
+   * @param {object} [options]
+   * @returns {Promise<object>} updated record
+   */
+  async acceptProposal(proposal, options = {}) {
+    if (!proposal || !proposal.collection || !proposal.id) {
+      throw new Error('acceptProposal requires a valid proposal');
+    }
+
+    const existing = this.read(proposal.collection, proposal.id);
+    if (!existing || existing.ownerId !== this.nodeId) {
+      throw new Error('Only the record owner can accept proposals');
+    }
+
+    if (proposal.proposerId && this.isPeerBanned(proposal.proposerId)) {
+      await this.rejectProposal(proposal, 'proposer-banned');
+      throw new Error('Proposer is banned');
+    }
+
+    try {
+      const record = await this.update(proposal.collection, proposal.id, proposal.patch, {
+        ...options,
+        expectedVersion: proposal.baseVersion
+      });
+      await this.sendDirectMessage(proposal.proposerId, 'proposal:result', {
+        proposalId: proposal.proposalId,
+        ok: true,
+        collection: proposal.collection,
+        id: proposal.id
+      });
+      return record;
+    } catch (error) {
+      await this.sendDirectMessage(proposal.proposerId, 'proposal:result', {
+        proposalId: proposal.proposalId,
+        ok: false,
+        reason: error.message || 'rejected',
+        code: error.code || 'proposal-rejected'
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Reject a proposal without applying a patch (#13).
+   * @param {object} proposal
+   * @param {string} [reason]
+   * @returns {Promise<void>}
+   */
+  async rejectProposal(proposal, reason = 'rejected') {
+    if (!proposal || !proposal.proposerId) {
+      throw new Error('rejectProposal requires proposerId');
+    }
+
+    await this.sendDirectMessage(proposal.proposerId, 'proposal:result', {
+      proposalId: proposal.proposalId,
+      ok: false,
+      reason,
+      code: 'proposal-rejected'
+    });
+  }
+
   async transferOwnership(collectionName, id, newOwnerId, options = {}) {
     if (!newOwnerId) {
       throw new Error('newOwnerId is required');
@@ -1854,6 +1959,40 @@ class DignityP2P extends EventEmitter {
 
     if (decrypted.messageType === 'peer-group:gossip') {
       await this.handlePeerGroupGossip(decrypted);
+      return;
+    }
+
+    if (decrypted.messageType === 'proposal') {
+      const payload = decrypted.payload || {};
+      if (!payload.proposalId || payload.proposerId !== decrypted.senderId) {
+        return;
+      }
+
+      const record = this.read(payload.collection, payload.id);
+      if (!record || record.ownerId !== this.nodeId) {
+        return;
+      }
+
+      if (this.isPeerBanned(decrypted.senderId)) {
+        return;
+      }
+
+      this.emit('proposal', {
+        proposalId: payload.proposalId,
+        collection: payload.collection,
+        id: payload.id,
+        patch: payload.patch,
+        proposerId: decrypted.senderId,
+        baseVersion: payload.baseVersion
+      });
+      return;
+    }
+
+    if (decrypted.messageType === 'proposal:result') {
+      this.emit('proposalresult', {
+        ...decrypted.payload,
+        fromPeerId: decrypted.senderId
+      });
       return;
     }
 

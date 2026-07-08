@@ -105,14 +105,78 @@ function connectDignityAppClient({ timeoutMs = 10000 } = {}) {
 /**
  * Bootstrap script injected into sandboxed app HTML by the host.
  * Self-contained — no module imports in the iframe.
+ * @param {object} [manifest]
  * @returns {string}
  */
-function buildClientBootstrapScript() {
+function buildClientBootstrapScript(manifest = {}) {
+  const forwardConsoleLog = manifest.forwardConsoleLog === true;
   return `<script>
 (function() {
   var HANDSHAKE_TYPE = '${HANDSHAKE_TYPE}';
+  var FORWARD_LOG = ${forwardConsoleLog};
+  var MAX_LEN = 2000;
+  var SENSITIVE = /password|secret|token|privatekey|signingkey|encryptionkey|apppassword/i;
   var pending = [];
   var client = null;
+  var captureInstalled = false;
+
+  function sanitizeMsg(msg) {
+    if (msg == null) return '';
+    var s = String(msg);
+    return s.length > MAX_LEN ? s.slice(0, MAX_LEN) + '\\u2026' : s;
+  }
+
+  function sanitizeVal(v, depth) {
+    depth = depth || 0;
+    if (depth > 4) return '[max-depth]';
+    if (v == null) return v;
+    if (typeof v === 'string') return sanitizeMsg(v);
+    if (typeof v === 'number' || typeof v === 'boolean') return v;
+    if (Array.isArray(v)) {
+      return v.slice(0, 20).map(function(entry) { return sanitizeVal(entry, depth + 1); });
+    }
+    if (typeof v === 'object') {
+      var out = {};
+      for (var key in v) {
+        if (Object.prototype.hasOwnProperty.call(v, key)) {
+          out[key] = SENSITIVE.test(key) ? '[redacted]' : sanitizeVal(v[key], depth + 1);
+        }
+      }
+      return out;
+    }
+    return sanitizeMsg(v);
+  }
+
+  function installCapture(c, forwardLog) {
+    if (captureInstalled) return;
+    captureInstalled = true;
+    var origError = console.error;
+    console.error = function() {
+      var msg = Array.prototype.map.call(arguments, function(a) { return String(a); }).join(' ');
+      c.error(sanitizeMsg(msg), null).catch(function() {});
+      try { origError.apply(console, arguments); } catch (e) {}
+    };
+    if (forwardLog) {
+      var origLog = console.log;
+      console.log = function() {
+        var msg = Array.prototype.map.call(arguments, function(a) { return String(a); }).join(' ');
+        c.log(sanitizeMsg(msg), null).catch(function() {});
+        try { origLog.apply(console, arguments); } catch (e) {}
+      };
+    }
+    window.addEventListener('error', function(e) {
+      c.error(
+        sanitizeMsg(e.message || 'error'),
+        e.error && e.error.stack ? sanitizeMsg(e.error.stack) : null
+      ).catch(function() {});
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      var reason = e.reason;
+      var msg = reason && reason.message ? reason.message : String(reason);
+      var stack = reason && reason.stack ? reason.stack : null;
+      c.error(sanitizeMsg(msg), stack ? sanitizeMsg(stack) : null).catch(function() {});
+    });
+  }
 
   function createRpcId() {
     return 'rpc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
@@ -146,7 +210,8 @@ function buildClientBootstrapScript() {
       query: function(opts) { return call('query', opts).then(function(r) { return r.records; }); },
       list: function(collection) { return call('list', { collection: collection }).then(function(r) { return r.records; }); },
       runStoredCommand: function(id, args) { return call('runStoredCommand', { commandId: id, args: args || {} }); },
-      log: function(msg, data) { return call('log', { message: msg, data: data }); }
+      log: function(msg, data) { return call('log', { level: 'info', message: sanitizeMsg(msg), data: sanitizeVal(data) }); },
+      error: function(msg, stack) { return call('error', { message: sanitizeMsg(msg), stack: stack ? sanitizeMsg(stack) : null }); }
     };
   }
 
@@ -160,6 +225,7 @@ function buildClientBootstrapScript() {
       else if (job.method === 'list') p = client.list(job.args[0]);
       else if (job.method === 'runStoredCommand') p = client.runStoredCommand(job.args[0], job.args[1]);
       else if (job.method === 'log') p = client.log(job.args[0], job.args[1]);
+      else if (job.method === 'error') p = client.error(job.args[0], job.args[1]);
       else { job.reject(new Error('unknown method')); continue; }
       p.then(job.resolve).catch(job.reject);
     }
@@ -170,7 +236,8 @@ function buildClientBootstrapScript() {
     query: function(opts) { return enqueue('query', [opts]); },
     list: function(collection) { return enqueue('list', [collection]); },
     runStoredCommand: function(id, args) { return enqueue('runStoredCommand', [id, args]); },
-    log: function(msg, data) { return enqueue('log', [msg, data]); }
+    log: function(msg, data) { return enqueue('log', [msg, data]); },
+    error: function(msg, stack) { return enqueue('error', [msg, stack]); }
   };
 
   function enqueue(method, args) {
@@ -185,7 +252,10 @@ function buildClientBootstrapScript() {
     var port = event.ports && event.ports[0];
     if (!port) return;
     client = createClient(port);
-    client.ready().then(function() { flush(); }).catch(function(err) {
+    client.ready().then(function() {
+      installCapture(client, FORWARD_LOG);
+      flush();
+    }).catch(function(err) {
       pending.forEach(function(j) { j.reject(err); });
       pending.length = 0;
     });

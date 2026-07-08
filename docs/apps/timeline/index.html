@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Timeline · dignity.js Apps</title>
+    <link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../../assets/styles.css" />
+    <style>
+      .timeline-shell { max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+      .timeline-shell h1 { margin-bottom: 0.25rem; }
+      .timeline-shell p { color: #555; }
+      #host-mount { margin-top: 1rem; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; min-height: 200px; }
+      #host-mount iframe { width: 100%; min-height: 220px; border: 0; display: block; }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="site-header__brand" href="../../index.html#overview">
+        <img src="../../assets/dignity-logo.svg" alt="" width="344" height="80" />
+        <span class="site-header__version">v0.12.0 apps</span>
+      </a>
+      <div class="site-header__links">
+        <a href="../../index.html">Docs</a>
+        <a href="../index.html">Apps</a>
+        <a href="../../playground/index.html">Playground</a>
+        <a href="https://github.com/jose-compu/dignity.js" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </div>
+    </header>
+
+    <main class="timeline-shell">
+      <h1>Timeline app</h1>
+      <p>Read-only Dignity App over a seeded in-memory feed. Host error panel captures iframe logs.</p>
+      <div id="host-mount"></div>
+      <pre id="status" hidden>pending</pre>
+    </main>
+
+    <script type="module">
+      import dignity from '../../assets/dignity.esm.js';
+
+      const {
+        DignityP2P,
+        DignityQueryReplica,
+        DignityAppHost,
+        attachErrorPanel,
+        validateDignityAppManifest,
+        InMemoryNetworkHub,
+        InMemoryNetworkAdapter
+      } = dignity;
+
+      const statusEl = document.getElementById('status');
+
+      async function boot() {
+        const hub = new InMemoryNetworkHub();
+        const security = {
+          appPassword: 'timeline-demo',
+          powEnabled: false,
+          signingEnabled: false,
+          encryptionEnabled: false
+        };
+
+        const publisher = new DignityP2P({
+          nodeId: 'timeline-publisher',
+          networkAdapter: new InMemoryNetworkAdapter(hub),
+          security
+        });
+        const reader = new DignityP2P({
+          nodeId: 'timeline-reader',
+          networkAdapter: new InMemoryNetworkAdapter(hub),
+          security
+        });
+
+        await publisher.start();
+        await reader.start();
+
+        await publisher.joinPeerGroup('feed:timeline-demo', {
+          role: 'publisher',
+          fanout: 2,
+          domainEvents: true
+        });
+
+        const replica = new DignityQueryReplica(reader, {
+          groupId: 'feed:timeline-demo',
+          collections: ['posts'],
+          publisherId: 'timeline-publisher'
+        });
+        await replica.start({ bootstrapPeerIds: ['timeline-publisher'] });
+        await new Promise((resolve) => setTimeout(resolve, 30));
+
+        await publisher.create('posts', {
+          text: 'Welcome to the dignity.js timeline demo.',
+          author: 'dignity'
+        }, { id: 'p-welcome', peerGroupId: 'feed:timeline-demo' });
+        await publisher.create('posts', {
+          text: 'Apps query read-only replicas — no stored commands.',
+          author: 'docs'
+        }, { id: 'p-readonly', peerGroupId: 'feed:timeline-demo' });
+        await new Promise((resolve) => setTimeout(resolve, 40));
+
+        const manifest = validateDignityAppManifest({
+          id: 'timeline',
+          title: 'Timeline',
+          description: 'Read-only post feed',
+          collections: ['posts'],
+          forwardConsoleLog: true
+        }).manifest;
+
+        const mount = document.getElementById('host-mount');
+        const host = new DignityAppHost({ manifest, replica, document });
+        attachErrorPanel(host, mount);
+
+        const appHtml = await fetch('./app.html').then((r) => r.text());
+        host.mount(mount, appHtml);
+
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('handshake timeout')), 12000);
+          host.on('ready', () => {
+            clearTimeout(timer);
+            resolve();
+          });
+        });
+
+        statusEl.textContent = 'ok';
+        statusEl.hidden = false;
+
+        window.__timelineHost = host;
+        window.__timelineReplica = replica;
+        window.__timelinePublisher = publisher;
+        window.__timelineReader = reader;
+      }
+
+      boot().catch((error) => {
+        statusEl.textContent = `error: ${error.message}`;
+        statusEl.hidden = false;
+      });
+    </script>
+  </body>
+</html>

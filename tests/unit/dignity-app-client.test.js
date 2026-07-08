@@ -55,7 +55,16 @@ describe('Dignity App client SDK', () => {
     const script = buildClientBootstrapScript();
     expect(script).toContain('window.dignity');
     expect(script).toContain('dignity-app-handshake');
+    expect(script).toContain('error: function');
+    expect(script).toContain('installCapture');
     expect(script).not.toContain('require(');
+  });
+
+  test('buildClientBootstrapScript honors forwardConsoleLog manifest flag', () => {
+    const off = buildClientBootstrapScript({ forwardConsoleLog: false });
+    const on = buildClientBootstrapScript({ forwardConsoleLog: true });
+    expect(off).toContain('FORWARD_LOG = false');
+    expect(on).toContain('FORWARD_LOG = true');
   });
 
   test('createDignityAppClient requires MessagePort', () => {
