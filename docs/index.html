@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="dignity.js v0.13.0 — REST-like P2P object API for decentralized JavaScript applications." />
+    <meta name="description" content="dignity.js v0.14.0 — REST-like P2P object API for decentralized JavaScript applications." />
     <title>dignity.js · Documentation</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.ico" sizes="32x32" />
@@ -16,7 +16,7 @@
       <a class="site-header__brand" href="#overview">
         <img src="./assets/dignity-logo.svg" alt="" width="344" height="80" />
         <!-- <span>dignity.js</span> -->
-        <span class="site-header__version">v0.13.0</span>
+        <span class="site-header__version">v0.14.0</span>
       </a>
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
@@ -803,10 +803,10 @@ replica.verifyChain();  // hash-chain consistency</code></pre>
             </div>
 
             <h3>Roadmap</h3>
-            <p><strong>v0.14.0 (next)</strong> — Feature maintainability & consistency review (#124), TypeScript definitions (#14), production deployment runbook (#95).</p>
+            <p><strong>v0.14.0 (current)</strong> — TypeScript definitions (#14), production deployment runbook (#95), API consistency audit (#124).</p>
+            <p><strong>v0.13.0</strong> — Verification hashing (#115), semver versioning (#116), compatibility policies (#117), reflective logic fingerprints + publisher-scoped official dapp trust (#123), security audit (#122).</p>
             <p><strong>v1.0.0</strong> — API stability guarantee (#94), threat model (#96), migration guide (#97).</p>
-            <p><strong>v0.13.0 (current)</strong> — Verification hashing (#115), semver versioning (#116), compatibility policies (#117), reflective logic fingerprints + publisher-scoped official dapp trust (#123), security audit (#122).</p>
-            <p><strong>v0.12.0</strong> — Dignity Apps host error panel + iframe console capture (#106, #119–#120), timeline example app (#107), apps registry page (#109), delegated move proposals <code>proposeUpdate</code>/<code>acceptProposal</code> (#13).</p>
+            <p><strong>v0.12.0</strong> — Dignity Apps error panel, timeline app, apps registry, delegated move proposals (#13, #106–#120).</p>
             <p><strong>v0.11.0</strong> — Dignity Apps: sandboxed iframe host (<code>DignityAppHost</code>), MessageChannel RPC bridge, read-only <code>query</code>/<code>list</code> via <code>DignityQueryReplica</code>, manifest stored commands (#100, #102–#105).</p>
             <p><strong>v0.10.1 (shipped)</strong> — README logo PNG aspect-ratio fix (export from SVG).</p>
             <p><strong>v0.10.0 (shipped)</strong> — cross-device chess resume, portable checkpoints, lobby seat-key import, browser tic-tac-toe demo, PeerJS <code>iceServers</code>, Playwright e2e smoke, Bauhaus branding, doc cross-links (#11, #22–#27, #36).</p>
@@ -1222,6 +1222,7 @@ const pool = createDefaultSignalingPool({
               dignity.js requires WebRTC, IndexedDB (optional persistence), and Web Crypto in a secure context (HTTPS or localhost).
               CI runs Node.js 18/20/22 only — browser rows reflect manual smoke tests on the playground and chess demo.
               Full matrix: <a href="./browser-compatibility.md">browser-compatibility.md</a> (#91).
+              Production guide: <a href="./production-runbook.md">production-runbook.md</a> (#95).
             </p>
             <div class="table-wrap">
               <table>
@@ -1409,6 +1410,10 @@ const pool = createDefaultSignalingPool({
                     <td><code>npm run docs:api-reference</code></td>
                   </tr>
                   <tr>
+                    <td><a href="./production-runbook.md"><code>docs/production-runbook.md</code></a></td>
+                    <td>Production deployment checklist (#95)</td>
+                  </tr>
+                  <tr>
                     <td><a href="./browser-compatibility.md"><code>docs/browser-compatibility.md</code></a></td>
                     <td>Browser support matrix and platform caveats (#91)</td>
                     <td>—</td>
@@ -1452,7 +1457,7 @@ npm run example:chess</code></pre>
 
           <footer class="site-footer">
             <p>
-              dignity.js v0.13.0 ·
+              dignity.js v0.14.0 ·
               <a href="https://github.com/jose-compu/dignity.js/blob/main/LICENSE">Apache 2.0</a> ·
               <a href="https://github.com/jose-compu/dignity.js">GitHub</a> ·
               <a href="https://www.npmjs.com/package/dignity.js">npm</a>

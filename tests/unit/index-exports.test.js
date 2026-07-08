@@ -25,6 +25,13 @@ describe('public API exports', () => {
     expect(api.DEFAULT_PEER_GROUP_OPTIONS.maxHops).toBe(64);
   });
 
+  test('package.json exposes TypeScript definitions', () => {
+    const pkg = require('../../package.json');
+    expect(pkg.types).toBe('./types/index.d.ts');
+    expect(pkg.exports['.'].types).toBe('./types/index.d.ts');
+    expect(pkg.exports['./react'].types).toBe('./types/react.d.ts');
+  });
+
   test('exports sane default configs', () => {
     expect(Array.isArray(api.DEFAULT_CLOUDFLARE_SIGNALING_URLS)).toBe(true);
     expect(api.DEFAULT_CLOUDFLARE_SIGNALING_URLS.length).toBeGreaterThan(0);

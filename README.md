@@ -35,6 +35,7 @@
   <a href="https://jose-compu.github.io/dignity.js/tictactoe/">Tic-tac-toe</a> ·
   <a href="https://jose-compu.github.io/dignity.js/apps/">Apps registry</a> ·
   <a href="./docs/api-reference.md">API (MD)</a> ·
+  <a href="./docs/production-runbook.md">Production</a> ·
   <a href="./docs/browser-compatibility.md">Browsers</a> ·
   <a href="./TUTORIAL.md">Tutorial (MD)</a>
 </p>
@@ -64,6 +65,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Optional React hooks via `dignity.js/react`
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **v0.14.0** — TypeScript definitions (#14), production deployment runbook (#95), API consistency audit (#124)
 - **v0.13.0** — Verification code hashing (#115), optional semver versioning (#116), compatibility policies (#117), security audit v0.7–v0.13 (#122)
 - **v0.12.0** — Dignity Apps error panel + console capture (#106), timeline example app (#107), apps registry (#109), delegated move proposals (#13)
 - **v0.11.0** — Dignity Apps: sandboxed iframe host, MessageChannel RPC bridge, read-only query API, stored commands (#100, #102–#105)
@@ -321,6 +323,7 @@ const { enrollment } = await enrollColdRecoveryPassword({
   coldPassword: 'separate-vault-secret-never-on-public-pc'
 });
 await node.broadcastColdRecoveryEnrollment(enrollment);
+// Or: await node.enrollAndBroadcastColdRecovery({ username: 'alice', coldPassword: '...' });
 
 // Later: compromise recovery needs BOTH passwords
 const { rotation, nextKeyPair, nextGeneration } = await revokeAndRotateIdentity({
@@ -489,12 +492,12 @@ node.on('warning', (event) => {
   }
 });
 
-await host.update('chess-matches', gameId, { blackPlayerId: joinerId, status: 'playing' }, {
+await publisherNode.update('chess-matches', gameId, { blackPlayerId: joinerId, status: 'playing' }, {
   collaborators: [hostId, joinerId],
   broadcastScope: scope
 });
 
-await host.pushRecordSnapshot('chess-matches', gameId, {
+await publisherNode.pushRecordSnapshot('chess-matches', gameId, {
   broadcastScope: scope,
   connectToPeers: [joinerId]
 });
@@ -666,6 +669,27 @@ joiner.on('proposalresult', (result) => {
 
 See `docs/tictactoe/` for a full PeerJS demo. `transferOwnership` remains available when you want to hand off the record entirely.
 
+## TypeScript (v0.14.0)
+
+Type definitions ship with the package (`types/index.d.ts`, `dignity.js/react` → `types/react.d.ts`).
+
+```ts
+import {
+  DignityP2P,
+  InMemoryNetworkHub,
+  InMemoryNetworkAdapter,
+  type CompatibilityPolicy
+} from 'dignity.js';
+
+const node = new DignityP2P({
+  nodeId: 'alice',
+  networkAdapter: new InMemoryNetworkAdapter(new InMemoryNetworkHub()),
+  security: { powEnabled: false }
+});
+```
+
+Smoke example: [`examples/typescript-consumer/`](./examples/typescript-consumer/).
+
 ## Verification policies (v0.13.0)
 
 Bind each collection to canonical validation logic so peers loaded from different webs cannot silently diverge (#115–#117). Full guide: [docs — verification policies](https://jose-compu.github.io/dignity.js/#verification-policies).
@@ -729,6 +753,7 @@ Dignity App manifests may pin `dappVersion` + `logicHash` + `publisherId`. Store
 - **Documentation:** [jose-compu.github.io/dignity.js](https://jose-compu.github.io/dignity.js/)
 - **API reference:** [`docs/api-reference.md`](./docs/api-reference.md) (generated from `openapi-like.json`)
 - **Browser compatibility:** [`docs/browser-compatibility.md`](./docs/browser-compatibility.md) (#91)
+- **Production runbook:** [`docs/production-runbook.md`](./docs/production-runbook.md) (#95)
 - **Benchmarks:** [`docs/benchmarks/results.json`](./docs/benchmarks/results.json) — `npm run benchmark` (#92)
 - Docs site source: `docs/index.html` (local: `npm run docs:dev`)
 - **3D Chess demo:** `docs/chess/` — PeerJS mesh, dual-signed resume links, IndexedDB → [local chess demo](http://127.0.0.1:4173/chess/) when `docs:dev` is running
