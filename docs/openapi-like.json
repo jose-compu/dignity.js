@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "description": "REST-like object API over peer-to-peer replication",
   "lifecycle": {
     "start": "attach network message handler and begin receiving",
@@ -111,6 +111,23 @@
       "domainEvents": "operationToDomainEvent, verifyDomainEvent, verifyEventChain, DOMAIN_EVENT_SCHEMA_VERSION",
       "tiers": "assignPeerGroupTier, DEFAULT_LIVE_CAP (5000), filterPeersByTier",
       "bulkRelay": "electBulkRelays, DEFAULT_BULK_RELAY_COUNT"
+    },
+    "dignityApps": {
+      "validateDignityAppManifest": "validate manifest; returns { ok, manifest | reason }",
+      "collectionAllowed": "check collection against manifest allowlist",
+      "getStoredCommand": "lookup pre-declared stored command by id",
+      "buildAppCsp": "build immutable CSP content from manifest allowedCspOrigins",
+      "prepareSandboxedAppHtml": "inject CSP meta and violation reporter into app HTML",
+      "injectCspMeta": "prepend CSP meta tag to HTML head",
+      "DignityAppHost": "sandboxed iframe host; mount(container, html), unmount(), rpc() for tests",
+      "DEFAULT_SANDBOX": "allow-scripts only (no allow-same-origin)",
+      "createHostRpcHandler": "MessageChannel RPC: ready, query, list, runStoredCommand, log, error",
+      "RPC_METHODS": "allowlisted RPC method names",
+      "createDignityAppClient": "app-side SDK bound to transferred MessagePort",
+      "connectDignityAppClient": "wait for parent handshake postMessage in iframe",
+      "buildClientBootstrapScript": "self-contained iframe bootstrap for connectDignityAppClient",
+      "executeStoredCommand": "run manifest-declared write on publisher node only",
+      "isPublisherCommandCapable": "true when attached node can execute stored commands"
     }
   },
   "events": {
@@ -128,6 +145,11 @@
     "message": "custom decrypted message received",
     "securityerror": "signature, PoW, or decrypt failure on incoming message",
     "messageignored": "message dropped (wrong target, banned peer, etc.)"
+  },
+  "dignityAppHostEvents": {
+    "ready": "sandboxed app completed ready RPC handshake",
+    "applog": "log RPC forwarded from iframe",
+    "apperror": "error RPC or CSP securitypolicyviolation forwarded from iframe"
   },
   "recordShape": {
     "active": {

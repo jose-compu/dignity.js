@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Dignity Apps host e2e fixture</title>
+  </head>
+  <body>
+    <div id="host-mount"></div>
+    <pre id="sandbox"></pre>
+    <pre id="csp-present"></pre>
+    <pre id="channel-ready"></pre>
+    <pre id="post-text"></pre>
+    <pre id="status">pending</pre>
+    <script type="module">
+      import dignity from '../assets/dignity.esm.js';
+
+      const {
+        DignityP2P,
+        DignityQueryReplica,
+        DignityAppHost,
+        validateDignityAppManifest,
+        InMemoryNetworkHub,
+        InMemoryNetworkAdapter
+      } = dignity;
+
+      const statusEl = document.getElementById('status');
+
+      function fail(message) {
+        statusEl.textContent = `error: ${message}`;
+        throw new Error(message);
+      }
+
+      try {
+        const hub = new InMemoryNetworkHub();
+        const security = {
+          appPassword: 'browser-e2e-apps',
+          powEnabled: false,
+          signingEnabled: false,
+          encryptionEnabled: false
+        };
+
+        const publisher = new DignityP2P({
+          nodeId: 'publisher',
+          networkAdapter: new InMemoryNetworkAdapter(hub),
+          security
+        });
+        const reader = new DignityP2P({
+          nodeId: 'reader',
+          networkAdapter: new InMemoryNetworkAdapter(hub),
+          security
+        });
+
+        await publisher.start();
+        await reader.start();
+
+        await publisher.joinPeerGroup('feed:browser-e2e', {
+          role: 'publisher',
+          fanout: 2,
+          domainEvents: true
+        });
+
+        const replica = new DignityQueryReplica(reader, {
+          groupId: 'feed:browser-e2e',
+          collections: ['posts'],
+          publisherId: 'publisher'
+        });
+        await replica.start({ bootstrapPeerIds: ['publisher'] });
+        await new Promise((resolve) => setTimeout(resolve, 40));
+
+        await publisher.create('posts', { text: 'browser timeline post' }, {
+          id: 'p1',
+          peerGroupId: 'feed:browser-e2e'
+        });
+        await new Promise((resolve) => setTimeout(resolve, 60));
+
+        const manifest = validateDignityAppManifest({
+          id: 'timeline',
+          title: 'Timeline',
+          collections: ['posts'],
+          allowedCspOrigins: ['https://cdn.example.com']
+        }).manifest;
+
+        const host = new DignityAppHost({ manifest, replica, document });
+        host.mount(
+          document.getElementById('host-mount'),
+          '<html><head></head><body><p>App</p></body></html>'
+        );
+
+        const iframe = document.querySelector('#host-mount iframe');
+        if (!iframe) {
+          fail('iframe missing');
+        }
+
+        document.getElementById('sandbox').textContent = iframe.getAttribute('sandbox') || '';
+        document.getElementById('csp-present').textContent = String(
+          iframe.srcdoc.includes('Content-Security-Policy')
+        );
+
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('handshake timeout')), 12000);
+          host.on('ready', () => {
+            clearTimeout(timer);
+            resolve();
+          });
+        });
+
+        document.getElementById('channel-ready').textContent = String(host.isChannelReady());
+
+        const rows = await host.rpc('query', { collection: 'posts' });
+        document.getElementById('post-text').textContent = rows[0]?.data?.text || '';
+
+        host.unmount();
+        await replica.stop();
+        await publisher.stop();
+        await reader.stop();
+
+        statusEl.textContent = 'ok';
+      } catch (error) {
+        fail(error?.message || String(error));
+      }
+    </script>
+  </body>
+</html>

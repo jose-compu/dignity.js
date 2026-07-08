@@ -13449,6 +13449,666 @@ var require_manifest = __commonJS({
   }
 });
 
+// src/apps/csp.js
+var require_csp = __commonJS({
+  "src/apps/csp.js"(exports, module) {
+    function buildAppCsp(manifest) {
+      const origins = Array.isArray(manifest?.allowedCspOrigins) ? manifest.allowedCspOrigins : [];
+      const connectSrc = ["'none'", ...origins].join(" ");
+      return [
+        "default-src 'none'",
+        "script-src 'unsafe-inline'",
+        "style-src 'unsafe-inline'",
+        "img-src data: blob:",
+        `connect-src ${connectSrc}`,
+        "base-uri 'none'",
+        "form-action 'none'",
+        "frame-ancestors 'none'"
+      ].join("; ");
+    }
+    function escapeCspForHtmlAttribute(csp) {
+      return String(csp).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+    }
+    function injectCspMeta(html, cspContent) {
+      const escaped = escapeCspForHtmlAttribute(cspContent);
+      const meta = `<meta http-equiv="Content-Security-Policy" content="${escaped}">`;
+      if (/<head[^>]*>/i.test(html)) {
+        return html.replace(/<head[^>]*>/i, (match) => `${match}
+  ${meta}`);
+      }
+      if (/<html[^>]*>/i.test(html)) {
+        return html.replace(/<html[^>]*>/i, (match) => `${match}
+<head>
+  ${meta}
+</head>`);
+      }
+      return `<!DOCTYPE html><html><head>
+  ${meta}
+</head><body>${html}</body></html>`;
+    }
+    function injectCspViolationReporter(html) {
+      const script = `<script>
+document.addEventListener('securitypolicyviolation', function(e) {
+  try {
+    parent.postMessage({
+      type: 'dignity-app-csp-violation',
+      blockedURI: e.blockedURI,
+      violatedDirective: e.violatedDirective,
+      originalPolicy: e.originalPolicy
+    }, '*');
+  } catch (err) {}
+});
+<\/script>`;
+      if (/<\/head>/i.test(html)) {
+        return html.replace(/<\/head>/i, `  ${script}
+</head>`);
+      }
+      return `${script}${html}`;
+    }
+    function prepareSandboxedAppHtml(appHtml, manifest) {
+      const csp = buildAppCsp(manifest);
+      let html = injectCspMeta(appHtml, csp);
+      html = injectCspViolationReporter(html);
+      return html;
+    }
+    module.exports = {
+      buildAppCsp,
+      escapeCspForHtmlAttribute,
+      injectCspMeta,
+      injectCspViolationReporter,
+      prepareSandboxedAppHtml
+    };
+  }
+});
+
+// src/apps/stored-commands.js
+var require_stored_commands = __commonJS({
+  "src/apps/stored-commands.js"(exports, module) {
+    var { getStoredCommand } = require_manifest();
+    function emitStoredCommandRejection(node, reason, commandId, args) {
+      if (node && typeof node.emit === "function") {
+        node.emit("warning", {
+          type: "stored-command-rejected",
+          reason,
+          commandId,
+          args
+        });
+      }
+    }
+    function isPublisherCommandCapable(node, manifest) {
+      if (!node || !node.peerGroups || typeof node.peerGroups.get !== "function") {
+        return false;
+      }
+      const targetGroupId = manifest.peerGroupId || null;
+      if (targetGroupId) {
+        const group = node.peerGroups.get(targetGroupId);
+        return Boolean(group && group.role === "publisher" && group.commandCapable !== false);
+      }
+      for (const group of node.peerGroups.values()) {
+        if (group.role === "publisher" && group.commandCapable !== false) {
+          return true;
+        }
+      }
+      return false;
+    }
+    function validateAllowedFields(command, patch) {
+      if (!Array.isArray(command.allowedFields)) {
+        return null;
+      }
+      const allowed = new Set(command.allowedFields);
+      for (const key of Object.keys(patch || {})) {
+        if (!allowed.has(key)) {
+          return "field-not-allowed";
+        }
+      }
+      return null;
+    }
+    async function executeStoredCommand(node, manifest, commandId, args = {}) {
+      if (!manifest || manifest.readOnly) {
+        emitStoredCommandRejection(node, "read-only-manifest", commandId, args);
+        return { ok: false, reason: "read-only-manifest" };
+      }
+      const command = getStoredCommand(manifest, commandId);
+      if (!command) {
+        emitStoredCommandRejection(node, "unknown-command", commandId, args);
+        return { ok: false, reason: "unknown-command" };
+      }
+      if (!isPublisherCommandCapable(node, manifest)) {
+        emitStoredCommandRejection(node, "not-command-capable", commandId, args);
+        return { ok: false, reason: "not-command-capable" };
+      }
+      const collection = command.collection;
+      const writeOptions = {
+        peerGroupId: args.peerGroupId || manifest.peerGroupId || void 0,
+        broadcastScope: args.broadcastScope
+      };
+      if (command.kind === "create") {
+        const data = args.data;
+        if (!data || typeof data !== "object") {
+          emitStoredCommandRejection(node, "invalid-args", commandId, args);
+          return { ok: false, reason: "invalid-args" };
+        }
+        const fieldError = validateAllowedFields(command, data);
+        if (fieldError) {
+          emitStoredCommandRejection(node, fieldError, commandId, args);
+          return { ok: false, reason: fieldError };
+        }
+        const record = await node.create(collection, data, {
+          ...writeOptions,
+          id: args.id
+        });
+        return { ok: true, result: record };
+      }
+      if (command.kind === "update") {
+        const { id, patch } = args;
+        if (!id || !patch || typeof patch !== "object") {
+          emitStoredCommandRejection(node, "invalid-args", commandId, args);
+          return { ok: false, reason: "invalid-args" };
+        }
+        const fieldError = validateAllowedFields(command, patch);
+        if (fieldError) {
+          emitStoredCommandRejection(node, fieldError, commandId, args);
+          return { ok: false, reason: fieldError };
+        }
+        const record = await node.update(collection, id, patch, writeOptions);
+        return { ok: true, result: record };
+      }
+      if (command.kind === "delete") {
+        const { id } = args;
+        if (!id) {
+          emitStoredCommandRejection(node, "invalid-args", commandId, args);
+          return { ok: false, reason: "invalid-args" };
+        }
+        await node.remove(collection, id, writeOptions);
+        return { ok: true, result: { id, deleted: true } };
+      }
+      emitStoredCommandRejection(node, "unsupported-kind", commandId, args);
+      return { ok: false, reason: "unsupported-kind" };
+    }
+    module.exports = {
+      isPublisherCommandCapable,
+      validateAllowedFields,
+      executeStoredCommand,
+      emitStoredCommandRejection
+    };
+  }
+});
+
+// src/apps/bridge.js
+var require_bridge = __commonJS({
+  "src/apps/bridge.js"(exports, module) {
+    var { collectionAllowed } = require_manifest();
+    var { executeStoredCommand } = require_stored_commands();
+    var RPC_METHODS = /* @__PURE__ */ new Set(["ready", "query", "list", "runStoredCommand", "log", "error"]);
+    function filterRecords(records, filter) {
+      if (!filter || typeof filter !== "object") {
+        return records;
+      }
+      return records.filter((record) => {
+        for (const [key, value] of Object.entries(filter)) {
+          if (key === "ownerId") {
+            if (record.ownerId !== value) {
+              return false;
+            }
+            continue;
+          }
+          if (record.data && Object.prototype.hasOwnProperty.call(record.data, key)) {
+            if (record.data[key] !== value) {
+              return false;
+            }
+            continue;
+          }
+          if (record[key] !== value) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+    function createHostRpcHandler({
+      manifest,
+      replica = null,
+      node = null,
+      onLog = null,
+      onError = null
+    } = {}) {
+      if (!manifest) {
+        throw new Error("createHostRpcHandler requires manifest");
+      }
+      async function handle(message) {
+        const rpcId = message?.rpcId;
+        const method = message?.method;
+        const params = message?.params || {};
+        if (!rpcId || typeof rpcId !== "string") {
+          return { rpcId: rpcId || null, ok: false, error: { code: "invalid-envelope", message: "rpcId required" } };
+        }
+        if (!RPC_METHODS.has(method)) {
+          return { rpcId, ok: false, error: { code: "unknown-method", message: `Unknown RPC method: ${method}` } };
+        }
+        try {
+          if (method === "ready") {
+            return { rpcId, ok: true, result: { appId: manifest.id, readOnly: manifest.readOnly } };
+          }
+          if (method === "log") {
+            if (typeof onLog === "function") {
+              onLog({ level: params.level || "info", message: params.message, data: params.data });
+            }
+            return { rpcId, ok: true, result: { logged: true } };
+          }
+          if (method === "error") {
+            if (typeof onError === "function") {
+              onError({ message: params.message, stack: params.stack });
+            }
+            return { rpcId, ok: true, result: { received: true } };
+          }
+          if (method === "query" || method === "list") {
+            if (!replica) {
+              return { rpcId, ok: false, error: { code: "no-replica", message: "Query replica is not attached" } };
+            }
+            const collection = params.collection;
+            if (!collectionAllowed(manifest, collection)) {
+              return { rpcId, ok: false, error: { code: "collection-denied", message: `Collection not allowed: ${collection}` } };
+            }
+            let records = replica.list(collection);
+            if (method === "query") {
+              records = filterRecords(records, params.filter);
+              if (typeof params.limit === "number" && params.limit >= 0) {
+                records = records.slice(0, params.limit);
+              }
+            }
+            return { rpcId, ok: true, result: { records } };
+          }
+          if (method === "runStoredCommand") {
+            if (!node) {
+              return { rpcId, ok: false, error: { code: "no-node", message: "Publisher node is not attached" } };
+            }
+            const outcome = await executeStoredCommand(node, manifest, params.commandId, params.args || {});
+            if (!outcome.ok) {
+              return { rpcId, ok: false, error: { code: outcome.reason, message: outcome.reason } };
+            }
+            return { rpcId, ok: true, result: outcome.result };
+          }
+          return { rpcId, ok: false, error: { code: "unhandled", message: "Unhandled method" } };
+        } catch (error) {
+          return {
+            rpcId,
+            ok: false,
+            error: {
+              code: error.code || "rpc-failed",
+              message: error.message || "RPC failed"
+            }
+          };
+        }
+      }
+      return { handle };
+    }
+    module.exports = {
+      RPC_METHODS,
+      filterRecords,
+      createHostRpcHandler
+    };
+  }
+});
+
+// src/apps/client.js
+var require_client = __commonJS({
+  "src/apps/client.js"(exports, module) {
+    var HANDSHAKE_TYPE = "dignity-app-handshake";
+    function createRpcId() {
+      return `rpc-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+    function createDignityAppClient(port) {
+      if (!port || typeof port.postMessage !== "function") {
+        throw new Error("createDignityAppClient requires a MessagePort");
+      }
+      const pending = /* @__PURE__ */ new Map();
+      port.onmessage = (event) => {
+        const response = event.data;
+        if (!response || !response.rpcId) {
+          return;
+        }
+        const entry = pending.get(response.rpcId);
+        if (!entry) {
+          return;
+        }
+        pending.delete(response.rpcId);
+        if (response.ok) {
+          entry.resolve(response.result);
+        } else {
+          const err = new Error(response.error?.message || "RPC failed");
+          err.code = response.error?.code || "rpc-failed";
+          entry.reject(err);
+        }
+      };
+      function call(method, params = {}) {
+        const rpcId = createRpcId();
+        return new Promise((resolve, reject) => {
+          pending.set(rpcId, { resolve, reject });
+          port.postMessage({ rpcId, method, params });
+        });
+      }
+      return {
+        ready() {
+          return call("ready");
+        },
+        query({ collection, filter, limit } = {}) {
+          return call("query", { collection, filter, limit }).then((r) => r.records);
+        },
+        list(collection) {
+          return call("list", { collection }).then((r) => r.records);
+        },
+        runStoredCommand(commandId, args = {}) {
+          return call("runStoredCommand", { commandId, args });
+        },
+        log(message, data) {
+          return call("log", { level: "info", message, data });
+        },
+        error(message, stack) {
+          return call("error", { message, stack });
+        }
+      };
+    }
+    function connectDignityAppClient({ timeoutMs = 1e4 } = {}) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          window.removeEventListener("message", onMessage);
+          reject(new Error("Dignity App handshake timed out"));
+        }, timeoutMs);
+        function onMessage(event) {
+          const data = event.data;
+          if (!data || data.type !== HANDSHAKE_TYPE) {
+            return;
+          }
+          const port = event.ports && event.ports[0];
+          if (!port) {
+            clearTimeout(timer);
+            window.removeEventListener("message", onMessage);
+            reject(new Error("Dignity App handshake missing MessagePort"));
+            return;
+          }
+          clearTimeout(timer);
+          window.removeEventListener("message", onMessage);
+          const client = createDignityAppClient(port);
+          resolve(client);
+        }
+        window.addEventListener("message", onMessage);
+      });
+    }
+    function buildClientBootstrapScript() {
+      return `<script>
+(function() {
+  var HANDSHAKE_TYPE = '${HANDSHAKE_TYPE}';
+  var pending = [];
+  var client = null;
+
+  function createRpcId() {
+    return 'rpc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+  }
+
+  function createClient(port) {
+    var waiters = {};
+    port.onmessage = function(event) {
+      var response = event.data;
+      if (!response || !response.rpcId) return;
+      var entry = waiters[response.rpcId];
+      if (!entry) return;
+      delete waiters[response.rpcId];
+      if (response.ok) entry.resolve(response.result);
+      else {
+        var err = new Error((response.error && response.error.message) || 'RPC failed');
+        err.code = (response.error && response.error.code) || 'rpc-failed';
+        entry.reject(err);
+      }
+    };
+    port.start();
+    function call(method, params) {
+      var rpcId = createRpcId();
+      return new Promise(function(resolve, reject) {
+        waiters[rpcId] = { resolve: resolve, reject: reject };
+        port.postMessage({ rpcId: rpcId, method: method, params: params || {} });
+      });
+    }
+    return {
+      ready: function() { return call('ready'); },
+      query: function(opts) { return call('query', opts).then(function(r) { return r.records; }); },
+      list: function(collection) { return call('list', { collection: collection }).then(function(r) { return r.records; }); },
+      runStoredCommand: function(id, args) { return call('runStoredCommand', { commandId: id, args: args || {} }); },
+      log: function(msg, data) { return call('log', { message: msg, data: data }); }
+    };
+  }
+
+  function flush() {
+    if (!client) return;
+    while (pending.length) {
+      var job = pending.shift();
+      var p;
+      if (job.method === 'ready') p = client.ready();
+      else if (job.method === 'query') p = client.query(job.args[0]);
+      else if (job.method === 'list') p = client.list(job.args[0]);
+      else if (job.method === 'runStoredCommand') p = client.runStoredCommand(job.args[0], job.args[1]);
+      else if (job.method === 'log') p = client.log(job.args[0], job.args[1]);
+      else { job.reject(new Error('unknown method')); continue; }
+      p.then(job.resolve).catch(job.reject);
+    }
+  }
+
+  window.dignity = {
+    ready: function() { return enqueue('ready', []); },
+    query: function(opts) { return enqueue('query', [opts]); },
+    list: function(collection) { return enqueue('list', [collection]); },
+    runStoredCommand: function(id, args) { return enqueue('runStoredCommand', [id, args]); },
+    log: function(msg, data) { return enqueue('log', [msg, data]); }
+  };
+
+  function enqueue(method, args) {
+    return new Promise(function(resolve, reject) {
+      pending.push({ method: method, args: args, resolve: resolve, reject: reject });
+      flush();
+    });
+  }
+
+  window.addEventListener('message', function(event) {
+    if (!event.data || event.data.type !== HANDSHAKE_TYPE) return;
+    var port = event.ports && event.ports[0];
+    if (!port) return;
+    client = createClient(port);
+    client.ready().then(function() { flush(); }).catch(function(err) {
+      pending.forEach(function(j) { j.reject(err); });
+      pending.length = 0;
+    });
+  });
+})();
+<\/script>`;
+    }
+    module.exports = {
+      HANDSHAKE_TYPE,
+      createDignityAppClient,
+      connectDignityAppClient,
+      buildClientBootstrapScript
+    };
+  }
+});
+
+// src/apps/host.js
+var require_host = __commonJS({
+  "src/apps/host.js"(exports, module) {
+    var EventEmitter = require_event_emitter();
+    var { validateDignityAppManifest } = require_manifest();
+    var { prepareSandboxedAppHtml } = require_csp();
+    var { createHostRpcHandler } = require_bridge();
+    var { buildClientBootstrapScript, HANDSHAKE_TYPE } = require_client();
+    var DEFAULT_SANDBOX = "allow-scripts";
+    var DignityAppHost = class extends EventEmitter {
+      /**
+       * @param {object} options
+       * @param {object} options.manifest - raw or validated manifest
+       * @param {import('../cqrs/query-replica')|null} [options.replica]
+       * @param {import('../core/dignity-p2p')|null} [options.node]
+       * @param {Document} [options.document] - DOM document (default global)
+       */
+      constructor({ manifest, replica = null, node = null, document: doc = null } = {}) {
+        super();
+        const validated = manifest?.schemaVersion ? { ok: true, manifest } : validateDignityAppManifest(manifest);
+        if (!validated.ok) {
+          throw new Error(`Invalid Dignity App manifest: ${validated.reason}`);
+        }
+        this.manifest = validated.manifest;
+        this.replica = replica;
+        this.node = node;
+        this.document = doc || (typeof document !== "undefined" ? document : null);
+        this.iframe = null;
+        this.channel = null;
+        this.hostPort = null;
+        this.channelReady = false;
+        this.rpcHandler = createHostRpcHandler({
+          manifest: this.manifest,
+          replica: this.replica,
+          node: this.node,
+          onLog: (payload) => this.emit("applog", payload),
+          onError: (payload) => this.emit("apperror", payload)
+        });
+        this._onWindowMessage = this._onWindowMessage.bind(this);
+        this._onIframeLoad = this._onIframeLoad.bind(this);
+      }
+      /**
+       * Mount sandboxed app into a container element.
+       * @param {HTMLElement} container
+       * @param {string} appHtml - raw app HTML (CSP injected by host)
+       */
+      mount(container, appHtml) {
+        if (!this.document) {
+          throw new Error("DignityAppHost.mount requires a DOM document");
+        }
+        if (!container) {
+          throw new Error("DignityAppHost.mount requires a container element");
+        }
+        this.unmount();
+        this.iframe = this.document.createElement("iframe");
+        this.iframe.setAttribute("sandbox", DEFAULT_SANDBOX);
+        this.iframe.setAttribute("title", this.manifest.title);
+        this.iframe.setAttribute("referrerpolicy", "no-referrer");
+        const prepared = this._prepareHtml(appHtml);
+        this.iframe.srcdoc = prepared;
+        this.iframe.addEventListener("load", this._onIframeLoad);
+        if (typeof window !== "undefined") {
+          window.addEventListener("message", this._onWindowMessage);
+        }
+        container.appendChild(this.iframe);
+        this._openChannel();
+      }
+      /**
+       * Remove iframe and invalidate channel.
+       */
+      unmount() {
+        this._invalidateChannel();
+        if (typeof window !== "undefined") {
+          window.removeEventListener("message", this._onWindowMessage);
+        }
+        if (this.iframe) {
+          this.iframe.removeEventListener("load", this._onIframeLoad);
+          if (this.iframe.parentNode) {
+            this.iframe.parentNode.removeChild(this.iframe);
+          }
+          this.iframe = null;
+        }
+      }
+      /**
+       * Whether RPC channel is ready for requests.
+       * @returns {boolean}
+       */
+      isChannelReady() {
+        return this.channelReady;
+      }
+      /**
+       * Send RPC directly on host port (for tests).
+       * @param {string} method
+       * @param {object} params
+       * @returns {Promise<*>}
+       */
+      async rpc(method, params = {}) {
+        if (!this.channelReady || !this.hostPort) {
+          throw new Error("Dignity App channel is not ready");
+        }
+        const rpcId = `host-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const response = await this.rpcHandler.handle({ rpcId, method, params });
+        if (!response.ok) {
+          const err = new Error(response.error?.message || "RPC failed");
+          err.code = response.error?.code;
+          throw err;
+        }
+        if (method === "query" || method === "list") {
+          return response.result.records;
+        }
+        return response.result;
+      }
+      _prepareHtml(appHtml) {
+        let html = prepareSandboxedAppHtml(appHtml, this.manifest);
+        const bootstrap = buildClientBootstrapScript();
+        if (/<\/head>/i.test(html)) {
+          html = html.replace(/<\/head>/i, `  ${bootstrap}
+</head>`);
+        } else {
+          html = `${bootstrap}${html}`;
+        }
+        return html;
+      }
+      _openChannel() {
+        if (typeof MessageChannel === "undefined") {
+          throw new Error("MessageChannel is not available");
+        }
+        this._invalidateChannel();
+        this.channel = new MessageChannel();
+        this.hostPort = this.channel.port1;
+        this.channelReady = false;
+        this.hostPort.onmessage = async (event) => {
+          const response = await this.rpcHandler.handle(event.data);
+          this.hostPort.postMessage(response);
+          if (event.data?.method === "ready" && response.ok) {
+            this.channelReady = true;
+            this.emit("ready", { appId: this.manifest.id });
+          }
+        };
+        this.hostPort.start();
+      }
+      _invalidateChannel() {
+        this.channelReady = false;
+        if (this.hostPort) {
+          try {
+            this.hostPort.close();
+          } catch (error) {
+          }
+          this.hostPort = null;
+        }
+        this.channel = null;
+      }
+      _onIframeLoad() {
+        if (!this.iframe || !this.channel) {
+          return;
+        }
+        const target = this.iframe.contentWindow;
+        if (!target) {
+          return;
+        }
+        target.postMessage({ type: HANDSHAKE_TYPE }, "*", [this.channel.port2]);
+      }
+      _onWindowMessage(event) {
+        if (event.data?.type === "dignity-app-csp-violation") {
+          this.emit("apperror", {
+            type: "csp-violation",
+            blockedURI: event.data.blockedURI,
+            violatedDirective: event.data.violatedDirective,
+            originalPolicy: event.data.originalPolicy
+          });
+        }
+      }
+    };
+    module.exports = {
+      DignityAppHost,
+      DEFAULT_SANDBOX
+    };
+  }
+});
+
 // src/index.js
 var require_index = __commonJS({
   "src/index.js"(exports, module) {
@@ -13519,6 +14179,29 @@ var require_index = __commonJS({
       collectionAllowed,
       getStoredCommand
     } = require_manifest();
+    var {
+      buildAppCsp,
+      prepareSandboxedAppHtml,
+      injectCspMeta
+    } = require_csp();
+    var {
+      executeStoredCommand,
+      isPublisherCommandCapable
+    } = require_stored_commands();
+    var {
+      createHostRpcHandler,
+      RPC_METHODS
+    } = require_bridge();
+    var {
+      DignityAppHost,
+      DEFAULT_SANDBOX
+    } = require_host();
+    var {
+      createDignityAppClient,
+      connectDignityAppClient,
+      buildClientBootstrapScript,
+      HANDSHAKE_TYPE
+    } = require_client();
     module.exports = {
       DignityP2P,
       createDefaultSignalingPool,
@@ -13571,7 +14254,20 @@ var require_index = __commonJS({
       DIGNITY_APP_MANIFEST_SCHEMA_VERSION,
       validateDignityAppManifest,
       collectionAllowed,
-      getStoredCommand
+      getStoredCommand,
+      buildAppCsp,
+      prepareSandboxedAppHtml,
+      injectCspMeta,
+      executeStoredCommand,
+      isPublisherCommandCapable,
+      createHostRpcHandler,
+      RPC_METHODS,
+      DignityAppHost,
+      DEFAULT_SANDBOX,
+      createDignityAppClient,
+      connectDignityAppClient,
+      buildClientBootstrapScript,
+      HANDSHAKE_TYPE
     };
   }
 });

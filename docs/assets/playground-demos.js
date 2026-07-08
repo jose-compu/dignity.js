@@ -397,8 +397,8 @@ await reader.stop();`
   },
   {
     id: 'transfer-ownership',
-    group: 'v0.10',
-    title: 'v0.10 — Transfer ownership (turn-based moves)',
+    group: 'patterns',
+    title: 'Transfer ownership (turn-based moves)',
     description: 'Hand off record owner each turn — pattern used by the browser tic-tac-toe demo.',
     code: `const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = dignity;
 
@@ -450,8 +450,8 @@ await bob.stop();`
   },
   {
     id: 'late-joiner-snapshot',
-    group: 'v0.10',
-    title: 'v0.10 — Late joiner snapshot',
+    group: 'patterns',
+    title: 'Late joiner snapshot',
     description: 'pushRecordSnapshot catches up a peer that missed the initial create (PeerJS pattern).',
     code: `const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = dignity;
 
@@ -484,8 +484,8 @@ await joiner.stop();`
   },
   {
     id: 'peerjs-ice-config',
-    group: 'v0.10',
-    title: 'v0.10 — PeerJS iceServers config',
+    group: 'patterns',
+    title: 'PeerJS iceServers config',
     description: 'Create a PeerJS network adapter with custom STUN/TURN — used in production browser demos.',
     code: `const { createPeerJSNetworkAdapter } = dignity;
 
@@ -506,5 +506,277 @@ log('signaling urls:', adapter.urls);
 log('iceServers:', JSON.stringify(adapter.iceServers));
 log('See docs/browser-compatibility.md#peerjs-ice-turn for deployment notes.');
 log('Live demos: docs/chess/ and docs/tictactoe/');`
+  },
+  {
+    id: 'app-manifest',
+    group: 'apps',
+    title: 'App manifest validation',
+    description: 'Declare collections, CSP origins, and pre-approved stored write commands.',
+    code: `const { validateDignityAppManifest } = dignity;
+
+const result = validateDignityAppManifest({
+  id: 'timeline',
+  title: 'Event timeline',
+  collections: ['posts'],
+  peerGroupId: 'feed:alice',
+  allowedCspOrigins: ['https://cdn.example.com'],
+  storedCommands: [{
+    id: 'create-post',
+    collection: 'posts',
+    kind: 'create',
+    allowedFields: ['text']
+  }, {
+    id: 'upvote',
+    collection: 'posts',
+    kind: 'update',
+    allowedFields: ['upvotes']
+  }]
+});
+
+log('valid:', result.ok);
+log('collections:', result.manifest.collections.join(', '));
+log('connect-src:', result.manifest.allowedCspOrigins[0]);
+log('stored commands:', result.manifest.storedCommands.map((c) => c.id).join(', '));`
+  },
+  {
+    id: 'app-csp',
+    group: 'apps',
+    title: 'Sandbox CSP policy',
+    description: 'Immutable Content-Security-Policy for iframe apps — https allowlist only.',
+    code: `const { buildAppCsp, validateDignityAppManifest } = dignity;
+
+const { manifest } = validateDignityAppManifest({
+  id: 'reader',
+  title: 'Reader',
+  collections: ['posts'],
+  allowedCspOrigins: ['https://cdn.example.com']
+});
+
+const csp = buildAppCsp(manifest);
+log(csp);
+log('blocks localhost:', !csp.includes('localhost'));
+log('allows CDN:', csp.includes('https://cdn.example.com'));`
+  },
+  {
+    id: 'app-bridge-query',
+    group: 'apps',
+    title: 'App query over bridge',
+    description: 'Publisher writes domain events; replica hydrates; RPC query returns read-only data.',
+    code: `const {
+  DignityP2P,
+  DignityQueryReplica,
+  createHostRpcHandler,
+  validateDignityAppManifest,
+  InMemoryNetworkHub,
+  InMemoryNetworkAdapter
+} = dignity;
+
+const hub = new InMemoryNetworkHub();
+const security = helpers.fastSecurity();
+
+const publisher = new DignityP2P({
+  nodeId: 'publisher',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+const reader = new DignityP2P({
+  nodeId: 'reader',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+helpers.track(publisher, reader);
+await publisher.start();
+await reader.start();
+
+await publisher.joinPeerGroup('feed:timeline', {
+  role: 'publisher',
+  fanout: 2,
+  maxActivePeers: 4,
+  domainEvents: true
+});
+
+const replica = new DignityQueryReplica(reader, {
+  groupId: 'feed:timeline',
+  collections: ['posts'],
+  publisherId: 'publisher'
+});
+await replica.start({ bootstrapPeerIds: ['publisher'] });
+await helpers.sleep(30);
+
+await publisher.create('posts', { text: 'from publisher' }, {
+  id: 'p1',
+  peerGroupId: 'feed:timeline'
+});
+await helpers.sleep(40);
+
+const manifest = validateDignityAppManifest({
+  id: 'timeline',
+  title: 'Timeline',
+  collections: ['posts'],
+  peerGroupId: 'feed:timeline'
+}).manifest;
+
+const bridge = createHostRpcHandler({ manifest, replica });
+const response = await bridge.handle({
+  rpcId: 'q1',
+  method: 'query',
+  params: { collection: 'posts', filter: { ownerId: 'publisher' } }
+});
+
+log('rpc ok:', response.ok);
+log('records:', JSON.stringify(response.result.records.map((r) => r.data)));
+
+await replica.stop();
+await publisher.stop();
+await reader.stop();`
+  },
+  {
+    id: 'app-stored-command',
+    group: 'apps',
+    title: 'Stored command writes',
+    description: 'Sandboxed apps may only run manifest-declared create/update/delete commands.',
+    code: `const {
+  DignityP2P,
+  executeStoredCommand,
+  validateDignityAppManifest,
+  InMemoryNetworkHub,
+  InMemoryNetworkAdapter
+} = dignity;
+
+const hub = new InMemoryNetworkHub();
+const security = helpers.fastSecurity();
+
+const publisher = new DignityP2P({
+  nodeId: 'publisher',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+helpers.track(publisher);
+await publisher.start();
+await publisher.joinPeerGroup('feed:app', { role: 'publisher' });
+
+const manifest = validateDignityAppManifest({
+  id: 'social',
+  title: 'Social',
+  collections: ['posts'],
+  peerGroupId: 'feed:app',
+  storedCommands: [{
+    id: 'upvote',
+    collection: 'posts',
+    kind: 'update',
+    allowedFields: ['upvotes']
+  }]
+}).manifest;
+
+await publisher.create('posts', { upvotes: 0, text: 'hi' }, {
+  id: 'p1',
+  peerGroupId: 'feed:app'
+});
+
+const ok = await executeStoredCommand(publisher, manifest, 'upvote', {
+  id: 'p1',
+  patch: { upvotes: 1 }
+});
+log('stored command ok:', ok.ok);
+
+const blocked = await executeStoredCommand(publisher, manifest, 'upvote', {
+  id: 'p1',
+  patch: { text: 'hacked' }
+});
+log('disallowed field rejected:', blocked.reason);
+
+log('upvotes:', publisher.read('posts', 'p1')?.data.upvotes);
+
+await publisher.stop();`
+  },
+  {
+    id: 'app-sandbox-host',
+    group: 'apps',
+    title: 'Sandboxed iframe host',
+    description: 'DignityAppHost injects CSP, opens MessageChannel, and serves query RPC to the iframe.',
+    code: `const {
+  DignityP2P,
+  DignityQueryReplica,
+  DignityAppHost,
+  validateDignityAppManifest,
+  InMemoryNetworkHub,
+  InMemoryNetworkAdapter
+} = dignity;
+
+const hub = new InMemoryNetworkHub();
+const security = helpers.fastSecurity();
+
+const publisher = new DignityP2P({
+  nodeId: 'publisher',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+const reader = new DignityP2P({
+  nodeId: 'reader',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+helpers.track(publisher, reader);
+await publisher.start();
+await reader.start();
+
+await publisher.joinPeerGroup('feed:app', {
+  role: 'publisher',
+  fanout: 2,
+  domainEvents: true
+});
+
+const replica = new DignityQueryReplica(reader, {
+  groupId: 'feed:app',
+  collections: ['posts'],
+  publisherId: 'publisher'
+});
+await replica.start({ bootstrapPeerIds: ['publisher'] });
+await helpers.sleep(30);
+
+await publisher.create('posts', { text: 'sandboxed read' }, {
+  id: 'p1',
+  peerGroupId: 'feed:app'
+});
+await helpers.sleep(40);
+
+const manifest = validateDignityAppManifest({
+  id: 'reader',
+  title: 'Reader',
+  collections: ['posts'],
+  allowedCspOrigins: ['https://cdn.example.com']
+}).manifest;
+
+const container = document.createElement('div');
+container.hidden = true;
+document.body.appendChild(container);
+helpers.onCleanup(() => {
+  container.remove();
+});
+
+const host = new DignityAppHost({ manifest, replica });
+helpers.onCleanup(() => host.unmount());
+
+host.mount(container, '<html><head></head><body><p>App</p></body></html>');
+
+const iframe = container.querySelector('iframe');
+log('sandbox:', iframe.getAttribute('sandbox'));
+log('csp injected:', iframe.srcdoc.includes('Content-Security-Policy'));
+
+await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error('handshake timeout')), 8000);
+  host.on('ready', () => {
+    clearTimeout(timer);
+    resolve();
+  });
+});
+
+const rows = await host.rpc('query', { collection: 'posts' });
+log('host query rows:', rows.length);
+log('first post:', rows[0]?.data?.text);
+
+await replica.stop();
+await publisher.stop();
+await reader.stop();`
   }
 ];

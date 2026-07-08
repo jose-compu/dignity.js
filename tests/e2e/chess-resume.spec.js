@@ -5,7 +5,6 @@
  */
 
 const { test, expect } = require('@playwright/test');
-const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const {
   buildCheckpointDraft,
@@ -14,9 +13,6 @@ const {
   validateCheckpointForResume
 } = require('../../docs/chess/src/lib/resumeCheckpoint.js');
 const { createFreshKeyPair, keyPairToPublicBundle } = require('../../docs/chess/src/lib/playerKeys.js');
-
-const ROOT = path.join(__dirname, '../..');
-const DOCS_PORT = Number(process.env.DOCS_PORT || 4174);
 
 function buildSignedCheckpointFixture() {
   const whiteKeys = createFreshKeyPair();
@@ -57,35 +53,6 @@ function buildSignedCheckpointFixture() {
   return { checkpoint, whiteKeys, blackKeys };
 }
 
-let serverProcess;
-
-test.beforeAll(async () => {
-  if (process.env.RUN_CHESS_E2E !== '1') {
-    return;
-  }
-
-  const buildChess = spawnSync('node', ['scripts/build-chess-demo.js'], {
-    cwd: ROOT,
-    stdio: 'inherit'
-  });
-  if (buildChess.status !== 0) {
-    throw new Error('Failed to build chess demo');
-  }
-
-  serverProcess = spawn('npx', ['http-server', 'docs', '-a', '127.0.0.1', '-p', String(DOCS_PORT), '-c-1'], {
-    cwd: ROOT,
-    stdio: 'pipe',
-    shell: true
-  });
-  await new Promise((resolve) => setTimeout(resolve, 1500));
-});
-
-test.afterAll(async () => {
-  if (serverProcess) {
-    serverProcess.kill('SIGTERM');
-  }
-});
-
 test.describe('chess resume smoke', () => {
   test.skip(() => process.env.RUN_CHESS_E2E !== '1', 'Set RUN_CHESS_E2E=1 to run browser e2e tests');
 
@@ -94,9 +61,8 @@ test.describe('chess resume smoke', () => {
     expect(validateCheckpointForResume(checkpoint)).toEqual({ ok: true });
 
     const bundle = formatPortableCheckpointBundle(checkpoint);
-    const baseUrl = `http://127.0.0.1:${DOCS_PORT}/chess/`;
 
-    await page.goto(baseUrl);
+    await page.goto('/chess/');
     await page.getByLabel('Portable dual-signed checkpoint bundle').fill(bundle);
     await page.getByRole('button', { name: 'Import checkpoint and open resume' }).click();
 
@@ -116,8 +82,7 @@ test.describe('chess resume smoke', () => {
       }
     };
 
-    const baseUrl = `http://127.0.0.1:${DOCS_PORT}/chess/`;
-    await page.goto(baseUrl);
+    await page.goto('/chess/');
     await page.getByLabel('Portable dual-signed checkpoint bundle').fill(JSON.stringify(tampered));
     await page.getByRole('button', { name: 'Import checkpoint and open resume' }).click();
     await expect(page.getByRole('alert')).toContainText('signature verification failed', { ignoreCase: true });

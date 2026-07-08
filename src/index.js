@@ -73,6 +73,29 @@ const {
   collectionAllowed,
   getStoredCommand
 } = require('./apps/manifest');
+const {
+  buildAppCsp,
+  prepareSandboxedAppHtml,
+  injectCspMeta
+} = require('./apps/csp');
+const {
+  executeStoredCommand,
+  isPublisherCommandCapable
+} = require('./apps/stored-commands');
+const {
+  createHostRpcHandler,
+  RPC_METHODS
+} = require('./apps/bridge');
+const {
+  DignityAppHost,
+  DEFAULT_SANDBOX
+} = require('./apps/host');
+const {
+  createDignityAppClient,
+  connectDignityAppClient,
+  buildClientBootstrapScript,
+  HANDSHAKE_TYPE
+} = require('./apps/client');
 
 module.exports = {
   DignityP2P,
@@ -126,5 +149,18 @@ module.exports = {
   DIGNITY_APP_MANIFEST_SCHEMA_VERSION,
   validateDignityAppManifest,
   collectionAllowed,
-  getStoredCommand
+  getStoredCommand,
+  buildAppCsp,
+  prepareSandboxedAppHtml,
+  injectCspMeta,
+  executeStoredCommand,
+  isPublisherCommandCapable,
+  createHostRpcHandler,
+  RPC_METHODS,
+  DignityAppHost,
+  DEFAULT_SANDBOX,
+  createDignityAppClient,
+  connectDignityAppClient,
+  buildClientBootstrapScript,
+  HANDSHAKE_TYPE
 };

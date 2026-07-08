@@ -6,7 +6,7 @@
 [![npm version](https://img.shields.io/npm/v/dignity.js?color=cb3837&label=npm)](https://www.npmjs.com/package/dignity.js)
 [![npm downloads](https://img.shields.io/npm/dm/dignity.js?color=blue)](https://www.npmjs.com/package/dignity.js)
 [![CI](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml/badge.svg)](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-324%2B%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-414%2B%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-92%25-brightgreen)
 ![license](https://img.shields.io/badge/license-Apache%202.0-black)
 
@@ -35,6 +35,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Optional React hooks via `dignity.js/react`
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **v0.11.0** — Dignity Apps: sandboxed iframe host, MessageChannel RPC bridge, read-only query API, stored commands (#100, #102–#105)
 - **v0.10.1** — README logo PNG aspect-ratio fix (export from SVG)
 - **v0.10.0** — cross-device chess resume, portable checkpoints, browser tic-tac-toe demo, PeerJS ICE/TURN docs, Playwright e2e smoke
 - **`DignityQueryReplica`** — read-only materialized views with hash-chain verification
@@ -551,28 +552,60 @@ npm run docs:dev
 
 If 4173 is busy, `docs:dev` auto-picks the next free port (4174, 4175, …) and prints the URLs.
 
-## Dignity Apps (v0.10.1+)
+## Dignity Apps (v0.11.0)
 
 Self-contained HTML apps in a sandboxed iframe, inspired by [Datasette Apps](https://datasette.io/blog/2026/datasette-apps/). Track: [#100](https://github.com/jose-compu/dignity.js/issues/100).
 
-**Threat boundaries (v0.8.2+, documented in v0.10):**
+**Threat boundaries:**
 
-- Apps run in an iframe with `sandbox` + immutable CSP — no parent DOM, cookies, or `localStorage`.
+- Apps run in an iframe with `sandbox="allow-scripts"` + immutable CSP — no parent DOM, cookies, or `localStorage`.
 - Data access only via a parent **MessageChannel** bridge; no signing keys or mesh credentials in the iframe.
-- **Read:** `dignity.query` backed by `DignityQueryReplica` (collections allowlisted in manifest).
+- **Read:** `dignity.query` / `dignity.list` backed by `DignityQueryReplica` (collections allowlisted in manifest).
 - **Write:** only **stored commands** pre-declared in the app manifest — no arbitrary CRUD.
 - External `fetch` blocked unless origin is listed in `allowedCspOrigins` (https only; no localhost).
 
 ```js
-const { validateDignityAppManifest } = require('dignity.js');
+const {
+  DignityP2P,
+  DignityQueryReplica,
+  DignityAppHost,
+  validateDignityAppManifest
+} = require('dignity.js');
 
-const { ok, manifest } = validateDignityAppManifest({
+const { manifest } = validateDignityAppManifest({
   id: 'timeline-demo',
   title: 'Event timeline',
   collections: ['posts'],
-  peerGroupId: 'feed:alice'
+  peerGroupId: 'feed:alice',
+  allowedCspOrigins: ['https://cdn.example.com'],
+  storedCommands: [{
+    id: 'create-post',
+    kind: 'create',
+    collection: 'posts',
+    allowedFields: ['text']
+  }]
+}).manifest;
+
+// Parent page: publisher node + read-only replica + sandboxed host
+const replica = new DignityQueryReplica(subscriberNode, {
+  groupId: 'feed:alice',
+  collections: ['posts'],
+  publisherId: 'alice'
 });
+await replica.start({ bootstrapPeerIds: ['alice'] });
+
+const host = new DignityAppHost({ manifest, replica, node: publisherNode });
+host.on('applog', (e) => console.log('[app]', e.message));
+host.mount(document.getElementById('app-frame'), appHtmlString);
+
+// Inside the iframe (bootstrap injected by host):
+// const dignity = await connectDignityAppClient();
+// await dignity.ready();
+// const posts = await dignity.query({ collection: 'posts' });
+// await dignity.runStoredCommand('create-post', { text: 'Hello' });
 ```
+
+Sandbox: `allow-scripts` only (no `allow-same-origin`, no top-navigation/forms/popups). Host emits `ready`, `applog`, and `apperror` events (error panel UI is v0.12).
 
 ## Docs and Examples
 
