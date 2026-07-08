@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "REST-like object API over peer-to-peer replication",
   "lifecycle": {
     "start": "attach network message handler and begin receiving",
@@ -59,6 +59,25 @@
         "options": {
           "keepAsCollaborator": "default true; previous owner stays collaborator"
         }
+      },
+      "proposeUpdate": {
+        "method": "proposeUpdate(collection, id, patch, options)",
+        "authorization": "non-owner only; owner should call update()",
+        "description": "signed direct proposal to record owner (#13 turn-based games)",
+        "returns": "{ proposalId }",
+        "options": {
+          "connectToPeers": "ensure connection to owner before send"
+        }
+      },
+      "acceptProposal": {
+        "method": "acceptProposal(proposal, options)",
+        "authorization": "owner-only",
+        "description": "validate and apply proposal patch via update(); sends proposal:result to proposer"
+      },
+      "rejectProposal": {
+        "method": "rejectProposal(proposal, reason)",
+        "authorization": "owner-only",
+        "description": "reject without applying patch; sends proposal:result to proposer"
       }
     },
     "collections/{collection}": {
@@ -125,7 +144,10 @@
       "RPC_METHODS": "allowlisted RPC method names",
       "createDignityAppClient": "app-side SDK bound to transferred MessagePort",
       "connectDignityAppClient": "wait for parent handshake postMessage in iframe",
-      "buildClientBootstrapScript": "self-contained iframe bootstrap for connectDignityAppClient",
+      "buildClientBootstrapScript": "self-contained iframe bootstrap; auto-captures console.error, onerror, unhandledrejection (#106)",
+      "attachErrorPanel": "host DOM error/log panel; subscribes to applog, apperror, apprpcerror (#106)",
+      "sanitizeCaptureMessage": "cap and sanitize forwarded log/error strings",
+      "sanitizeCaptureValue": "redact sensitive keys in forwarded capture payloads",
       "executeStoredCommand": "run manifest-declared write on publisher node only",
       "isPublisherCommandCapable": "true when attached node can execute stored commands"
     }
@@ -143,13 +165,16 @@
     "peergroupleft": "local node left a PeerGroup",
     "peerleft": "peer left or timed out",
     "message": "custom decrypted message received",
+    "proposal": "owner received signed update proposal from non-owner (#13)",
+    "proposalresult": "proposer received accept/reject result for a proposal (#13)",
     "securityerror": "signature, PoW, or decrypt failure on incoming message",
     "messageignored": "message dropped (wrong target, banned peer, etc.)"
   },
   "dignityAppHostEvents": {
     "ready": "sandboxed app completed ready RPC handshake",
     "applog": "log RPC forwarded from iframe",
-    "apperror": "error RPC or CSP securitypolicyviolation forwarded from iframe"
+    "apperror": "error RPC or CSP securitypolicyviolation forwarded from iframe",
+    "apprpcerror": "failed query/list/runStoredCommand RPC from iframe (#106)"
   },
   "recordShape": {
     "active": {

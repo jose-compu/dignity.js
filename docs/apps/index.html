@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dignity Apps · dignity.js</title>
+    <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+    <style>
+      .apps-page { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+      .apps-toolbar { display: flex; flex-wrap: wrap; gap: 12px; margin: 1rem 0 1.5rem; }
+      .apps-toolbar input, .apps-toolbar select { padding: 8px 10px; font: inherit; border: 1px solid #ccc; border-radius: 6px; }
+      .apps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+      .app-card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; background: #fafafa; display: flex; flex-direction: column; gap: 8px; }
+      .app-card h2 { margin: 0; font-size: 1.1rem; }
+      .app-card p { margin: 0; color: #555; flex: 1; }
+      .app-card__meta { font-size: 12px; color: #666; }
+      .app-card a { align-self: flex-start; text-decoration: none; padding: 6px 12px; border-radius: 6px; background: #111; color: #fff; font-size: 13px; }
+      .apps-empty { color: #666; padding: 2rem 0; }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="site-header__brand" href="../index.html#overview">
+        <img src="../assets/dignity-logo.svg" alt="" width="344" height="80" />
+        <span class="site-header__version">v0.12.0 apps</span>
+      </a>
+      <div class="site-header__links">
+        <a href="../index.html">Docs</a>
+        <a href="../playground/index.html">Playground</a>
+        <a href="../tictactoe/index.html">Tic-tac-toe</a>
+        <a href="https://github.com/jose-compu/dignity.js" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </div>
+    </header>
+
+    <main class="apps-page">
+      <h1>Dignity Apps</h1>
+      <p>Sandboxed apps hosted with <code>DignityAppHost</code>. Search and launch demos from the registry.</p>
+
+      <div class="apps-toolbar">
+        <input id="search" type="search" placeholder="Search title or description" aria-label="Search apps" />
+        <select id="collection-filter" aria-label="Filter by collection">
+          <option value="">All collections</option>
+        </select>
+        <select id="access-filter" aria-label="Filter by access">
+          <option value="">All access modes</option>
+          <option value="readOnly">Read-only</option>
+          <option value="readWrite">Read-write</option>
+        </select>
+      </div>
+
+      <div id="apps-grid" class="apps-grid" aria-live="polite"></div>
+      <p id="apps-empty" class="apps-empty" hidden>No apps match your filters.</p>
+    </main>
+
+    <script>
+      (async function () {
+        const apps = await fetch('./registry.json').then((r) => r.json());
+        const searchEl = document.getElementById('search');
+        const collectionEl = document.getElementById('collection-filter');
+        const accessEl = document.getElementById('access-filter');
+        const grid = document.getElementById('apps-grid');
+        const empty = document.getElementById('apps-empty');
+
+        const collections = new Set();
+        apps.forEach((app) => (app.collections || []).forEach((c) => collections.add(c)));
+        [...collections].sort().forEach((name) => {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          collectionEl.appendChild(opt);
+        });
+
+        function render() {
+          const q = searchEl.value.trim().toLowerCase();
+          const col = collectionEl.value;
+          const access = accessEl.value;
+
+          const filtered = apps.filter((app) => {
+            const hay = `${app.title} ${app.description}`.toLowerCase();
+            if (q && !hay.includes(q)) return false;
+            if (col && !(app.collections || []).includes(col)) return false;
+            if (access === 'readOnly' && !app.readOnly) return false;
+            if (access === 'readWrite' && app.readOnly) return false;
+            return true;
+          });
+
+          grid.innerHTML = filtered.map((app) => `
+            <article class="app-card" data-id="${app.id}">
+              <h2>${escapeHtml(app.title)}</h2>
+              <p>${escapeHtml(app.description || '')}</p>
+              <div class="app-card__meta">${escapeHtml((app.collections || []).join(', '))} · ${app.readOnly ? 'read-only' : 'read-write'}</div>
+              <a href="${escapeHtml(app.entry)}">Launch</a>
+            </article>
+          `).join('');
+
+          empty.hidden = filtered.length > 0;
+        }
+
+        function escapeHtml(value) {
+          return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+        }
+
+        searchEl.addEventListener('input', render);
+        collectionEl.addEventListener('change', render);
+        accessEl.addEventListener('change', render);
+        render();
+      })();
+    </script>
+  </body>
+</html>

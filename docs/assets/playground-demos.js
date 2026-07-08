@@ -778,5 +778,143 @@ log('first post:', rows[0]?.data?.text);
 await replica.stop();
 await publisher.stop();
 await reader.stop();`
+  },
+  {
+    id: 'app-error-panel',
+    group: 'apps',
+    title: 'Host error panel',
+    description: 'attachErrorPanel subscribes to applog, apperror, and apprpcerror; bootstrap auto-captures iframe errors.',
+    code: `const {
+  DignityP2P,
+  DignityQueryReplica,
+  DignityAppHost,
+  attachErrorPanel,
+  validateDignityAppManifest,
+  InMemoryNetworkHub,
+  InMemoryNetworkAdapter
+} = dignity;
+
+const hub = new InMemoryNetworkHub();
+const security = helpers.fastSecurity();
+
+const publisher = new DignityP2P({
+  nodeId: 'publisher',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+const reader = new DignityP2P({
+  nodeId: 'reader',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+helpers.track(publisher, reader);
+await publisher.start();
+await reader.start();
+
+await publisher.joinPeerGroup('feed:errors', {
+  role: 'publisher',
+  fanout: 2,
+  domainEvents: true
+});
+
+const replica = new DignityQueryReplica(reader, {
+  groupId: 'feed:errors',
+  collections: ['posts'],
+  publisherId: 'publisher'
+});
+await replica.start({ bootstrapPeerIds: ['publisher'] });
+await helpers.sleep(30);
+
+const manifest = validateDignityAppManifest({
+  id: 'error-demo',
+  title: 'Error demo',
+  collections: ['posts'],
+  forwardConsoleLog: true
+}).manifest;
+
+const container = document.createElement('div');
+container.hidden = true;
+document.body.appendChild(container);
+helpers.onCleanup(() => container.remove());
+
+const host = new DignityAppHost({ manifest, replica });
+const panel = attachErrorPanel(host, container);
+helpers.onCleanup(() => {
+  panel.destroy();
+  host.unmount();
+});
+
+const errors = [];
+host.on('apperror', (e) => errors.push(e));
+
+host.mount(container, '<html><body><script>dignity.ready().then(function() { dignity.error(\\'demo error\\', \\'stack\\'); console.error(\\'captured\\'); });<\\/script></body></html>');
+
+await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error('handshake timeout')), 8000);
+  host.on('ready', () => {
+    clearTimeout(timer);
+    resolve();
+  });
+});
+
+await helpers.sleep(80);
+log('apperror events:', errors.length);
+log('panel mounted:', Boolean(container.querySelector('.dignity-app-panel--errors')));
+
+await replica.stop();
+await publisher.stop();
+await reader.stop();`
+  },
+  {
+    id: 'propose-update',
+    group: 'core',
+    title: 'Delegated move proposals',
+    description: 'Non-owner sends proposeUpdate; owner accepts or rejects with proposalresult (#13).',
+    code: `const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = dignity;
+
+const hub = new InMemoryNetworkHub();
+const security = helpers.fastSecurity();
+
+const host = new DignityP2P({
+  nodeId: 'host',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+const joiner = new DignityP2P({
+  nodeId: 'joiner',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+helpers.track(host, joiner);
+await host.start();
+await joiner.start();
+
+await host.create('games', { board: [], turn: 'joiner' }, {
+  id: 'g1',
+  broadcastScope: 'room:game'
+});
+
+const proposals = [];
+host.on('proposal', (p) => proposals.push(p));
+
+const results = [];
+joiner.on('proposalresult', (r) => results.push(r));
+
+const { proposalId } = await joiner.proposeUpdate('games', 'g1', {
+  board: ['X'],
+  turn: 'host'
+});
+await helpers.sleep(40);
+
+log('proposal received:', proposals[0]?.proposalId === proposalId);
+
+await host.acceptProposal(proposals[0], { broadcastScope: 'room:game' });
+await helpers.sleep(40);
+
+log('board after accept:', host.read('games', 'g1').data.board);
+log('joiner result ok:', results.some((r) => r.ok));
+
+await host.stop();
+await joiner.stop();`
   }
 ];

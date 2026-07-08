@@ -66,7 +66,7 @@ function render() {
     root.innerHTML = `
       <section class="ttt-card">
         <h1>Tic-tac-toe on dignity.js</h1>
-        <p>PeerJS mesh demo with room discovery and owner-only move enforcement.</p>
+        <p>PeerJS mesh demo with room discovery and delegated move proposals.</p>
         <label>
           Nickname
           <input id="nickname" value="${escapeHtml(state.nickname)}" maxlength="24" />
@@ -107,7 +107,6 @@ function render() {
   const myMark = state.route.role === 'host' ? 'X' : 'O';
   const canPlay = state.game?.data?.status === 'playing'
     && currentPlayer === state.node?.nodeId
-    && state.game?.ownerId === state.node?.nodeId
     && !winner;
 
   root.innerHTML = `
@@ -234,7 +233,35 @@ async function boot() {
 
   node.on('warning', (event) => {
     if (event.type === 'unauthorized-update') {
-      state.error = 'Only the record owner can apply that move.';
+      state.error = 'Direct updates are owner-only; use proposeUpdate when it is your turn.';
+      render();
+    }
+  });
+
+  node.on('proposal', async (proposal) => {
+    if (state.route.role !== 'host') {
+      return;
+    }
+
+    const game = node.read(COLLECTION, state.route.gameId);
+    if (!game || game.data.nextPlayer !== proposal.proposerId) {
+      await node.rejectProposal(proposal, 'not-your-turn');
+      return;
+    }
+
+    try {
+      await node.acceptProposal(proposal, {
+        broadcastScope: scope,
+        connectToPeers: [proposal.proposerId]
+      });
+    } catch (_error) {
+      // acceptProposal sends proposal:result on failure
+    }
+  });
+
+  node.on('proposalresult', (result) => {
+    if (!result.ok && result.reason) {
+      state.error = result.reason;
       render();
     }
   });
@@ -315,14 +342,14 @@ async function playMove(index) {
     return;
   }
 
-  if (game.ownerId !== state.node.nodeId) {
-    state.error = 'Only the record owner can move on this turn. Owner-only enforcement is active.';
-    render();
+  const board = [...(game.data.board || Array(9).fill(null))];
+  if (board[index]) {
     return;
   }
 
-  const board = [...(game.data.board || Array(9).fill(null))];
-  if (board[index]) {
+  if (game.data.nextPlayer !== state.node.nodeId) {
+    state.error = 'Wait for your turn.';
+    render();
     return;
   }
 
@@ -341,16 +368,14 @@ async function playMove(index) {
   state.error = '';
   const scope = scopeForGame(state.route.gameId);
   try {
-    await state.node.update(COLLECTION, state.route.gameId, patch, {
-      broadcastScope: scope,
-      connectToPeers: [opponentId, state.route.hostPeer].filter(Boolean)
-    });
-
-    if (!winner && opponentId) {
-      await state.node.transferOwnership(COLLECTION, state.route.gameId, opponentId, {
+    if (game.ownerId === state.node.nodeId) {
+      await state.node.update(COLLECTION, state.route.gameId, patch, {
         broadcastScope: scope,
-        connectToPeers: [opponentId],
-        keepAsCollaborator: false
+        connectToPeers: [opponentId, state.route.hostPeer].filter(Boolean)
+      });
+    } else {
+      await state.node.proposeUpdate(COLLECTION, state.route.gameId, patch, {
+        connectToPeers: [game.ownerId]
       });
     }
   } catch (error) {

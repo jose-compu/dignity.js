@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Timeline</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; padding: 12px; background: #fff; color: #111; }
+      h1 { font-size: 1.1rem; margin: 0 0 12px; }
+      .post { padding: 10px 12px; border: 1px solid #e5e5e5; border-radius: 6px; margin-bottom: 8px; }
+      .post strong { display: block; font-size: 0.85rem; color: #666; margin-bottom: 4px; }
+      .empty { color: #888; }
+      #error-trigger { margin-top: 12px; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>Posts</h1>
+    <div id="feed" class="empty">Loading…</div>
+    <button type="button" id="error-trigger">Trigger test error</button>
+    <script>
+      (async function () {
+        await dignity.ready();
+        const rows = await dignity.list('posts');
+        const feed = document.getElementById('feed');
+        if (!rows.length) {
+          feed.textContent = 'No posts yet.';
+          feed.className = 'empty';
+          return;
+        }
+        feed.className = '';
+        feed.innerHTML = rows.map(function (row) {
+          var author = (row.data && row.data.author) || 'unknown';
+          var text = (row.data && row.data.text) || '';
+          return '<article class="post"><strong>' + author + '</strong><div>' + text + '</div></article>';
+        }).join('');
+        console.log('timeline loaded', rows.length, 'posts');
+      })().catch(function (err) {
+        dignity.error(err.message || String(err), err.stack || null);
+      });
+
+      document.getElementById('error-trigger').addEventListener('click', function () {
+        throw new Error('timeline demo error');
+      });
+    </script>
+  </body>
+</html>

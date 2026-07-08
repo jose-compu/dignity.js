@@ -3,7 +3,7 @@
 This tutorial walks you through dignity.js from zero to a working multi-peer app. No prior P2P experience required.
 
 **Time:** ~35 minutes  
-**Version:** 0.11.0  
+**Version:** 0.12.0  
 **Full docs:** [docs site](https://jose-compu.github.io/dignity.js/) · [README](./README.md)
 
 ---
@@ -161,6 +161,27 @@ await alice.update('docs', 'd1', { body: 'shared draft' }, {
 
 // Bob can now update
 await bob.update('docs', 'd1', { body: 'Bob edited this' });
+```
+
+### Turn-based games: `proposeUpdate` (#13)
+
+For multiplayer turn games, keep one owner (the host) and let the other player send **move proposals** instead of transferring ownership each turn:
+
+```js
+await host.create('games', { board: [], nextPlayer: 'bob' }, { id: 'g1' });
+
+host.on('proposal', async (proposal) => {
+  const game = host.read('games', 'g1');
+  if (game.data.nextPlayer !== proposal.proposerId) {
+    await host.rejectProposal(proposal, 'not-your-turn');
+    return;
+  }
+  await host.acceptProposal(proposal, { broadcastScope: 'room:game' });
+});
+
+await bob.proposeUpdate('games', 'g1', { board: ['X'], nextPlayer: 'host' }, {
+  connectToPeers: ['host']
+});
 ```
 
 ---

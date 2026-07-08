@@ -1,0 +1,10 @@
+[
+  {
+    "id": "timeline",
+    "title": "Timeline",
+    "description": "Read-only post feed over a DignityQueryReplica. Demonstrates query/list and the host error panel.",
+    "collections": ["posts"],
+    "readOnly": true,
+    "entry": "./timeline/"
+  }
+]
