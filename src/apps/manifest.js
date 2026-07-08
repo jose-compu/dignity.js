@@ -104,7 +104,8 @@ function validateDignityAppManifest(raw) {
       requiresRole: isNonEmptyString(cmd.requiresRole) ? cmd.requiresRole.trim() : null
     })),
     allowedCspOrigins: allowedCspOrigins.map((o) => o.trim()),
-    readOnly: storedCommands.length === 0
+    readOnly: storedCommands.length === 0,
+    forwardConsoleLog: raw.forwardConsoleLog === true
   };
 
   return { ok: true, manifest };

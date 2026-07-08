@@ -124,6 +124,11 @@ class DignityAppHost extends EventEmitter {
     if (!response.ok) {
       const err = new Error(response.error?.message || 'RPC failed');
       err.code = response.error?.code;
+      this.emit('apprpcerror', {
+        method,
+        code: err.code,
+        message: err.message
+      });
       throw err;
     }
 
@@ -136,7 +141,7 @@ class DignityAppHost extends EventEmitter {
 
   _prepareHtml(appHtml) {
     let html = prepareSandboxedAppHtml(appHtml, this.manifest);
-    const bootstrap = buildClientBootstrapScript();
+    const bootstrap = buildClientBootstrapScript(this.manifest);
     if (/<\/head>/i.test(html)) {
       html = html.replace(/<\/head>/i, `  ${bootstrap}\n</head>`);
     } else {
@@ -158,6 +163,13 @@ class DignityAppHost extends EventEmitter {
     this.hostPort.onmessage = async (event) => {
       const response = await this.rpcHandler.handle(event.data);
       this.hostPort.postMessage(response);
+      if (!response.ok && ['query', 'list', 'runStoredCommand'].includes(event.data?.method)) {
+        this.emit('apprpcerror', {
+          method: event.data.method,
+          code: response.error?.code,
+          message: response.error?.message
+        });
+      }
       if (event.data?.method === 'ready' && response.ok) {
         this.channelReady = true;
         this.emit('ready', { appId: this.manifest.id });
