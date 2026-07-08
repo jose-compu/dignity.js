@@ -3,7 +3,7 @@
 This tutorial walks you through dignity.js from zero to a working multi-peer app. No prior P2P experience required.
 
 **Time:** ~35 minutes  
-**Version:** 0.13.0  
+**Version:** 0.14.0  
 **Full docs:** [docs site](https://jose-compu.github.io/dignity.js/) · [README](./README.md)
 
 **Lessons:** [1](#lesson-1--two-peers-one-shared-note) · [2](#lesson-2--rooms-and-discovery) · [3](#lesson-3--ownership-and-updates) · [4](#lesson-4--collaborators) · [4b](#lesson-4b--verification-policies-115117) · [5](#lesson-5--versions-and-conflicts) · [6](#lesson-6--browser-and-real-networks) · [7](#lesson-7--small-groups-vs-big-audiences) · [8](#lesson-8--big-feeds-with-cqrs-v08) · [9](#lesson-9--persist-across-reloads-browser) · [Cheat sheet](#cheat-sheet)
@@ -463,6 +463,7 @@ node.on('warning', handler);
 | [docs site](https://jose-compu.github.io/dignity.js/) | Full guide: CQRS, security, verification, API reference |
 | [docs/playground/](https://jose-compu.github.io/dignity.js/playground/) | Live demos: v0.13 verification, reflective hashing, publisher trust, CQRS |
 | [docs/api-reference.md](./docs/api-reference.md) | Generated API reference from `openapi-like.json` |
+| [docs/production-runbook.md](./docs/production-runbook.md) | Production deployment checklist (#95) |
 | [docs/browser-compatibility.md](./docs/browser-compatibility.md) | Supported browsers and platform requirements |
 | [docs/apps/](https://jose-compu.github.io/dignity.js/apps/) | Dignity Apps registry + timeline demo |
 | [docs/benchmarks/results.json](./docs/benchmarks/results.json) | Gossip latency and IndexedDB hydration benchmarks |

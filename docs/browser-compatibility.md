@@ -1,6 +1,6 @@
 # Browser compatibility (#91)
 
-dignity.js targets **modern evergreen browsers** with WebRTC, IndexedDB, Web Crypto, and (for Dignity Apps) `MessageChannel` + sandboxed iframes. **v0.13.0** bundles verification, CQRS replicas, and Dignity Apps for browser use via `dist/dignity.esm.js`.
+dignity.js targets **modern evergreen browsers** with WebRTC, IndexedDB, Web Crypto, and (for Dignity Apps) `MessageChannel` + sandboxed iframes. **v0.14.0** bundles verification, CQRS replicas, Dignity Apps, and TypeScript definitions for browser use via `dist/dignity.esm.js`.
 
 ## Required platform APIs
 

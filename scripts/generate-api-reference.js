@@ -87,8 +87,33 @@ function buildMarkdown() {
   }
 
   if (spec.resources.dignityApps) {
-    lines.push(heading(3, 'Dignity Apps (v0.11+)'));
-    lines.push(`${Object.entries(spec.resources.dignityApps).map(([k, v]) => `- **\`${k}\`** — ${v}`).join('\n')}\n\n`);
+    const appsIntro = spec.resources.dignityApps._intro || 'sandboxed iframe host and stored commands';
+    const appsEntries = Object.entries(spec.resources.dignityApps).filter(([k]) => k !== '_intro');
+    lines.push(heading(3, `Dignity Apps (${appsIntro})`));
+    lines.push(`${appsEntries.map(([k, v]) => `- **\`${k}\`** — ${v}`).join('\n')}\n\n`);
+  }
+
+  if (spec.resources.packageExports) {
+    lines.push(heading(3, 'Package-level exports'));
+    for (const [section, desc] of Object.entries(spec.resources.packageExports)) {
+      lines.push(`- **${section}** — ${desc}`);
+    }
+    lines.push('\n');
+  }
+
+  if (spec.resources.network) {
+    lines.push(heading(3, 'Network adapters'));
+    lines.push(`${Object.entries(spec.resources.network).map(([k, v]) => `- **\`${k}\`** — ${v}`).join('\n')}\n\n`);
+  }
+
+  if (spec.resources.signalingExports) {
+    lines.push(heading(3, 'Signaling exports'));
+    lines.push(`${Object.entries(spec.resources.signalingExports).map(([k, v]) => `- **\`${k}\`** — ${v}`).join('\n')}\n\n`);
+  }
+
+  if (spec.resources.verification) {
+    lines.push(heading(3, 'Verification helpers'));
+    lines.push(`${Object.entries(spec.resources.verification).map(([k, v]) => `- **\`${k}\`** — ${v}`).join('\n')}\n\n`);
   }
 
   lines.push(heading(2, 'Events'));
@@ -97,6 +122,16 @@ function buildMarkdown() {
   if (spec.dignityAppHostEvents) {
     lines.push(heading(3, 'DignityAppHost events'));
     lines.push(table(['Event', 'Description'], Object.entries(spec.dignityAppHostEvents).map(([k, v]) => [`\`${k}\``, v])));
+  }
+
+  if (spec.queryReplicaEvents) {
+    lines.push(heading(3, 'DignityQueryReplica events'));
+    lines.push(table(['Event', 'Description'], Object.entries(spec.queryReplicaEvents).map(([k, v]) => [`\`${k}\``, v])));
+  }
+
+  if (spec.warningSubtypes) {
+    lines.push(heading(3, 'Warning subtypes (`warning` event `type` field)'));
+    lines.push(table(['Subtype', 'Description'], Object.entries(spec.warningSubtypes).map(([k, v]) => [`\`${k}\``, v])));
   }
 
   lines.push(heading(2, 'Record shape'));
