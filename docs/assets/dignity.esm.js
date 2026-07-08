@@ -4175,6 +4175,97 @@ var require_dignity_p2p = __commonJS({
         }
         throw new Error(`Unable to update ${collectionName}/${id} after ${maxAttempts} attempts`);
       }
+      /**
+       * Propose an update to the record owner (non-owner turn-based games, #13).
+       * @param {string} collectionName
+       * @param {string} id
+       * @param {object} patch
+       * @param {object} [options]
+       * @returns {Promise<{ proposalId: string }>}
+       */
+      async proposeUpdate(collectionName, id, patch, options = {}) {
+        const existing = this.getCollection(collectionName).get(id);
+        if (!existing || existing.deletedAt) {
+          throw new Error(`Object ${id} does not exist in ${collectionName}`);
+        }
+        if (existing.ownerId === this.nodeId) {
+          throw new Error("Owner should call update() directly");
+        }
+        if (this.isPeerBanned(this.nodeId)) {
+          throw new Error("Proposer is banned");
+        }
+        const proposalId = `prop-${this.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        const payload = {
+          proposalId,
+          collection: collectionName,
+          id,
+          patch: { ...patch },
+          proposerId: this.nodeId,
+          baseVersion: existing.version
+        };
+        await this.sendDirectMessage(existing.ownerId, "proposal", payload);
+        if (options.connectToPeers) {
+          await this.ensureConnectedToPeers(options.connectToPeers);
+        }
+        return { proposalId };
+      }
+      /**
+       * Accept a proposal and apply the patch as owner (#13).
+       * @param {object} proposal
+       * @param {object} [options]
+       * @returns {Promise<object>} updated record
+       */
+      async acceptProposal(proposal, options = {}) {
+        if (!proposal || !proposal.collection || !proposal.id) {
+          throw new Error("acceptProposal requires a valid proposal");
+        }
+        const existing = this.read(proposal.collection, proposal.id);
+        if (!existing || existing.ownerId !== this.nodeId) {
+          throw new Error("Only the record owner can accept proposals");
+        }
+        if (proposal.proposerId && this.isPeerBanned(proposal.proposerId)) {
+          await this.rejectProposal(proposal, "proposer-banned");
+          throw new Error("Proposer is banned");
+        }
+        try {
+          const record = await this.update(proposal.collection, proposal.id, proposal.patch, {
+            ...options,
+            expectedVersion: proposal.baseVersion
+          });
+          await this.sendDirectMessage(proposal.proposerId, "proposal:result", {
+            proposalId: proposal.proposalId,
+            ok: true,
+            collection: proposal.collection,
+            id: proposal.id
+          });
+          return record;
+        } catch (error) {
+          await this.sendDirectMessage(proposal.proposerId, "proposal:result", {
+            proposalId: proposal.proposalId,
+            ok: false,
+            reason: error.message || "rejected",
+            code: error.code || "proposal-rejected"
+          });
+          throw error;
+        }
+      }
+      /**
+       * Reject a proposal without applying a patch (#13).
+       * @param {object} proposal
+       * @param {string} [reason]
+       * @returns {Promise<void>}
+       */
+      async rejectProposal(proposal, reason = "rejected") {
+        if (!proposal || !proposal.proposerId) {
+          throw new Error("rejectProposal requires proposerId");
+        }
+        await this.sendDirectMessage(proposal.proposerId, "proposal:result", {
+          proposalId: proposal.proposalId,
+          ok: false,
+          reason,
+          code: "proposal-rejected"
+        });
+      }
       async transferOwnership(collectionName, id, newOwnerId, options = {}) {
         if (!newOwnerId) {
           throw new Error("newOwnerId is required");
@@ -5348,6 +5439,35 @@ var require_dignity_p2p = __commonJS({
         }
         if (decrypted.messageType === "peer-group:gossip") {
           await this.handlePeerGroupGossip(decrypted);
+          return;
+        }
+        if (decrypted.messageType === "proposal") {
+          const payload = decrypted.payload || {};
+          if (!payload.proposalId || payload.proposerId !== decrypted.senderId) {
+            return;
+          }
+          const record = this.read(payload.collection, payload.id);
+          if (!record || record.ownerId !== this.nodeId) {
+            return;
+          }
+          if (this.isPeerBanned(decrypted.senderId)) {
+            return;
+          }
+          this.emit("proposal", {
+            proposalId: payload.proposalId,
+            collection: payload.collection,
+            id: payload.id,
+            patch: payload.patch,
+            proposerId: decrypted.senderId,
+            baseVersion: payload.baseVersion
+          });
+          return;
+        }
+        if (decrypted.messageType === "proposal:result") {
+          this.emit("proposalresult", {
+            ...decrypted.payload,
+            fromPeerId: decrypted.senderId
+          });
           return;
         }
         this.emit("message", {
@@ -13426,7 +13546,8 @@ var require_manifest = __commonJS({
           requiresRole: isNonEmptyString(cmd.requiresRole) ? cmd.requiresRole.trim() : null
         })),
         allowedCspOrigins: allowedCspOrigins.map((o) => o.trim()),
-        readOnly: storedCommands.length === 0
+        readOnly: storedCommands.length === 0,
+        forwardConsoleLog: raw.forwardConsoleLog === true
       };
       return { ok: true, manifest };
     }
@@ -13834,12 +13955,75 @@ var require_client = __commonJS({
         window.addEventListener("message", onMessage);
       });
     }
-    function buildClientBootstrapScript() {
+    function buildClientBootstrapScript(manifest = {}) {
+      const forwardConsoleLog = manifest.forwardConsoleLog === true;
       return `<script>
 (function() {
   var HANDSHAKE_TYPE = '${HANDSHAKE_TYPE}';
+  var FORWARD_LOG = ${forwardConsoleLog};
+  var MAX_LEN = 2000;
+  var SENSITIVE = /password|secret|token|privatekey|signingkey|encryptionkey|apppassword/i;
   var pending = [];
   var client = null;
+  var captureInstalled = false;
+
+  function sanitizeMsg(msg) {
+    if (msg == null) return '';
+    var s = String(msg);
+    return s.length > MAX_LEN ? s.slice(0, MAX_LEN) + '\\u2026' : s;
+  }
+
+  function sanitizeVal(v, depth) {
+    depth = depth || 0;
+    if (depth > 4) return '[max-depth]';
+    if (v == null) return v;
+    if (typeof v === 'string') return sanitizeMsg(v);
+    if (typeof v === 'number' || typeof v === 'boolean') return v;
+    if (Array.isArray(v)) {
+      return v.slice(0, 20).map(function(entry) { return sanitizeVal(entry, depth + 1); });
+    }
+    if (typeof v === 'object') {
+      var out = {};
+      for (var key in v) {
+        if (Object.prototype.hasOwnProperty.call(v, key)) {
+          out[key] = SENSITIVE.test(key) ? '[redacted]' : sanitizeVal(v[key], depth + 1);
+        }
+      }
+      return out;
+    }
+    return sanitizeMsg(v);
+  }
+
+  function installCapture(c, forwardLog) {
+    if (captureInstalled) return;
+    captureInstalled = true;
+    var origError = console.error;
+    console.error = function() {
+      var msg = Array.prototype.map.call(arguments, function(a) { return String(a); }).join(' ');
+      c.error(sanitizeMsg(msg), null).catch(function() {});
+      try { origError.apply(console, arguments); } catch (e) {}
+    };
+    if (forwardLog) {
+      var origLog = console.log;
+      console.log = function() {
+        var msg = Array.prototype.map.call(arguments, function(a) { return String(a); }).join(' ');
+        c.log(sanitizeMsg(msg), null).catch(function() {});
+        try { origLog.apply(console, arguments); } catch (e) {}
+      };
+    }
+    window.addEventListener('error', function(e) {
+      c.error(
+        sanitizeMsg(e.message || 'error'),
+        e.error && e.error.stack ? sanitizeMsg(e.error.stack) : null
+      ).catch(function() {});
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      var reason = e.reason;
+      var msg = reason && reason.message ? reason.message : String(reason);
+      var stack = reason && reason.stack ? reason.stack : null;
+      c.error(sanitizeMsg(msg), stack ? sanitizeMsg(stack) : null).catch(function() {});
+    });
+  }
 
   function createRpcId() {
     return 'rpc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
@@ -13873,7 +14057,8 @@ var require_client = __commonJS({
       query: function(opts) { return call('query', opts).then(function(r) { return r.records; }); },
       list: function(collection) { return call('list', { collection: collection }).then(function(r) { return r.records; }); },
       runStoredCommand: function(id, args) { return call('runStoredCommand', { commandId: id, args: args || {} }); },
-      log: function(msg, data) { return call('log', { message: msg, data: data }); }
+      log: function(msg, data) { return call('log', { level: 'info', message: sanitizeMsg(msg), data: sanitizeVal(data) }); },
+      error: function(msg, stack) { return call('error', { message: sanitizeMsg(msg), stack: stack ? sanitizeMsg(stack) : null }); }
     };
   }
 
@@ -13887,6 +14072,7 @@ var require_client = __commonJS({
       else if (job.method === 'list') p = client.list(job.args[0]);
       else if (job.method === 'runStoredCommand') p = client.runStoredCommand(job.args[0], job.args[1]);
       else if (job.method === 'log') p = client.log(job.args[0], job.args[1]);
+      else if (job.method === 'error') p = client.error(job.args[0], job.args[1]);
       else { job.reject(new Error('unknown method')); continue; }
       p.then(job.resolve).catch(job.reject);
     }
@@ -13897,7 +14083,8 @@ var require_client = __commonJS({
     query: function(opts) { return enqueue('query', [opts]); },
     list: function(collection) { return enqueue('list', [collection]); },
     runStoredCommand: function(id, args) { return enqueue('runStoredCommand', [id, args]); },
-    log: function(msg, data) { return enqueue('log', [msg, data]); }
+    log: function(msg, data) { return enqueue('log', [msg, data]); },
+    error: function(msg, stack) { return enqueue('error', [msg, stack]); }
   };
 
   function enqueue(method, args) {
@@ -13912,7 +14099,10 @@ var require_client = __commonJS({
     var port = event.ports && event.ports[0];
     if (!port) return;
     client = createClient(port);
-    client.ready().then(function() { flush(); }).catch(function(err) {
+    client.ready().then(function() {
+      installCapture(client, FORWARD_LOG);
+      flush();
+    }).catch(function(err) {
       pending.forEach(function(j) { j.reject(err); });
       pending.length = 0;
     });
@@ -14034,6 +14224,11 @@ var require_host = __commonJS({
         if (!response.ok) {
           const err = new Error(response.error?.message || "RPC failed");
           err.code = response.error?.code;
+          this.emit("apprpcerror", {
+            method,
+            code: err.code,
+            message: err.message
+          });
           throw err;
         }
         if (method === "query" || method === "list") {
@@ -14043,7 +14238,7 @@ var require_host = __commonJS({
       }
       _prepareHtml(appHtml) {
         let html = prepareSandboxedAppHtml(appHtml, this.manifest);
-        const bootstrap = buildClientBootstrapScript();
+        const bootstrap = buildClientBootstrapScript(this.manifest);
         if (/<\/head>/i.test(html)) {
           html = html.replace(/<\/head>/i, `  ${bootstrap}
 </head>`);
@@ -14063,6 +14258,13 @@ var require_host = __commonJS({
         this.hostPort.onmessage = async (event) => {
           const response = await this.rpcHandler.handle(event.data);
           this.hostPort.postMessage(response);
+          if (!response.ok && ["query", "list", "runStoredCommand"].includes(event.data?.method)) {
+            this.emit("apprpcerror", {
+              method: event.data.method,
+              code: response.error?.code,
+              message: response.error?.message
+            });
+          }
           if (event.data?.method === "ready" && response.ok) {
             this.channelReady = true;
             this.emit("ready", { appId: this.manifest.id });
@@ -14105,6 +14307,194 @@ var require_host = __commonJS({
     module.exports = {
       DignityAppHost,
       DEFAULT_SANDBOX
+    };
+  }
+});
+
+// src/apps/capture-sanitize.js
+var require_capture_sanitize = __commonJS({
+  "src/apps/capture-sanitize.js"(exports, module) {
+    var SENSITIVE_KEYS = /password|secret|token|privatekey|signingkey|encryptionkey|apppassword/i;
+    var MAX_MESSAGE_LENGTH = 2e3;
+    function sanitizeCaptureValue(value, depth = 0) {
+      if (depth > 4) {
+        return "[max-depth]";
+      }
+      if (value === null || value === void 0) {
+        return value;
+      }
+      if (typeof value === "string") {
+        return value.length > MAX_MESSAGE_LENGTH ? `${value.slice(0, MAX_MESSAGE_LENGTH)}\u2026` : value;
+      }
+      if (typeof value === "number" || typeof value === "boolean") {
+        return value;
+      }
+      if (Array.isArray(value)) {
+        return value.slice(0, 20).map((entry) => sanitizeCaptureValue(entry, depth + 1));
+      }
+      if (typeof value === "object") {
+        const out = {};
+        for (const [key, entry] of Object.entries(value)) {
+          if (SENSITIVE_KEYS.test(key)) {
+            out[key] = "[redacted]";
+          } else {
+            out[key] = sanitizeCaptureValue(entry, depth + 1);
+          }
+        }
+        return out;
+      }
+      return String(value).slice(0, MAX_MESSAGE_LENGTH);
+    }
+    function sanitizeCaptureMessage(message) {
+      if (message === null || message === void 0) {
+        return "";
+      }
+      const text = String(message);
+      return text.length > MAX_MESSAGE_LENGTH ? `${text.slice(0, MAX_MESSAGE_LENGTH)}\u2026` : text;
+    }
+    module.exports = {
+      SENSITIVE_KEYS,
+      MAX_MESSAGE_LENGTH,
+      sanitizeCaptureValue,
+      sanitizeCaptureMessage
+    };
+  }
+});
+
+// src/apps/error-panel.js
+var require_error_panel = __commonJS({
+  "src/apps/error-panel.js"(exports, module) {
+    var { sanitizeCaptureMessage } = require_capture_sanitize();
+    var PANEL_STYLE_ID = "dignity-app-error-panel-styles";
+    var DEFAULT_STYLES = `
+.dignity-app-panel { font-family: system-ui, sans-serif; font-size: 13px; margin: 0 0 8px; border: 1px solid #ccc; border-radius: 6px; background: #fafafa; }
+.dignity-app-panel__toggle { width: 100%; text-align: left; padding: 8px 12px; border: 0; background: transparent; cursor: pointer; font: inherit; }
+.dignity-app-panel__toggle--error { color: #a40000; font-weight: 600; }
+.dignity-app-panel__body { max-height: 200px; overflow: auto; padding: 0 12px 8px; }
+.dignity-app-panel__entry { margin: 4px 0; padding: 6px 8px; border-radius: 4px; background: #fff; border: 1px solid #eee; white-space: pre-wrap; word-break: break-word; }
+.dignity-app-panel__entry--error { border-color: #f5c2c7; background: #fff5f5; }
+.dignity-app-panel__meta { color: #666; font-size: 11px; }
+`;
+    function ensurePanelStyles(doc) {
+      if (!doc || doc.getElementById(PANEL_STYLE_ID)) {
+        return;
+      }
+      const style = doc.createElement("style");
+      style.id = PANEL_STYLE_ID;
+      style.textContent = DEFAULT_STYLES;
+      doc.head.appendChild(style);
+    }
+    function attachErrorPanel(host, container, options = {}) {
+      if (!host || !container) {
+        throw new Error("attachErrorPanel requires host and container");
+      }
+      const doc = options.document || (typeof document !== "undefined" ? document : null);
+      if (!doc) {
+        throw new Error("attachErrorPanel requires a DOM document");
+      }
+      const maxEntries = typeof options.maxEntries === "number" ? options.maxEntries : 50;
+      ensurePanelStyles(doc);
+      const errorPanel = doc.createElement("div");
+      errorPanel.className = "dignity-app-panel dignity-app-panel--errors";
+      errorPanel.hidden = true;
+      const errorToggle = doc.createElement("button");
+      errorToggle.type = "button";
+      errorToggle.className = "dignity-app-panel__toggle dignity-app-panel__toggle--error";
+      errorToggle.textContent = "App errors (0)";
+      errorToggle.setAttribute("aria-expanded", "false");
+      const errorBody = doc.createElement("div");
+      errorBody.className = "dignity-app-panel__body";
+      errorBody.hidden = true;
+      errorPanel.appendChild(errorToggle);
+      errorPanel.appendChild(errorBody);
+      const logPanel = doc.createElement("div");
+      logPanel.className = "dignity-app-panel dignity-app-panel--logs";
+      const logToggle = doc.createElement("button");
+      logToggle.type = "button";
+      logToggle.className = "dignity-app-panel__toggle";
+      logToggle.textContent = "App log (0)";
+      logToggle.setAttribute("aria-expanded", "false");
+      const logBody = doc.createElement("div");
+      logBody.className = "dignity-app-panel__body";
+      logBody.hidden = true;
+      logPanel.appendChild(logToggle);
+      logPanel.appendChild(logBody);
+      container.insertBefore(errorPanel, container.firstChild);
+      container.insertBefore(logPanel, container.firstChild);
+      const errors = [];
+      const logs = [];
+      function formatEntry(payload, isError) {
+        const entry = doc.createElement("div");
+        entry.className = `dignity-app-panel__entry${isError ? " dignity-app-panel__entry--error" : ""}`;
+        const meta = doc.createElement("div");
+        meta.className = "dignity-app-panel__meta";
+        meta.textContent = payload.type || (isError ? "error" : "log");
+        const text = doc.createElement("div");
+        const message = sanitizeCaptureMessage(payload.message || payload.reason || JSON.stringify(payload));
+        text.textContent = message;
+        entry.appendChild(meta);
+        entry.appendChild(text);
+        return entry;
+      }
+      function pushEntry(list, bodyEl, toggleEl, label, payload, isError) {
+        list.push(payload);
+        while (list.length > maxEntries) {
+          list.shift();
+        }
+        bodyEl.appendChild(formatEntry(payload, isError));
+        toggleEl.textContent = `${label} (${list.length})`;
+      }
+      function expandPanel(panel, toggle, body) {
+        panel.hidden = false;
+        body.hidden = false;
+        toggle.setAttribute("aria-expanded", "true");
+      }
+      errorToggle.addEventListener("click", () => {
+        const open = errorBody.hidden;
+        errorBody.hidden = !open;
+        errorToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+      logToggle.addEventListener("click", () => {
+        const open = logBody.hidden;
+        logBody.hidden = !open;
+        logToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+      const onApplog = (payload) => {
+        pushEntry(logs, logBody, logToggle, "App log", payload, false);
+      };
+      const onApperror = (payload) => {
+        pushEntry(errors, errorBody, errorToggle, "App errors", payload, true);
+        expandPanel(errorPanel, errorToggle, errorBody);
+      };
+      const onApprpcerror = (payload) => {
+        pushEntry(errors, errorBody, errorToggle, "App errors", {
+          type: "rpc-error",
+          message: payload.message || payload.code,
+          code: payload.code
+        }, true);
+        expandPanel(errorPanel, errorToggle, errorBody);
+      };
+      host.on("applog", onApplog);
+      host.on("apperror", onApperror);
+      host.on("apprpcerror", onApprpcerror);
+      return {
+        destroy() {
+          host.off("applog", onApplog);
+          host.off("apperror", onApperror);
+          host.off("apprpcerror", onApprpcerror);
+          if (errorPanel.parentNode) {
+            errorPanel.parentNode.removeChild(errorPanel);
+          }
+          if (logPanel.parentNode) {
+            logPanel.parentNode.removeChild(logPanel);
+          }
+        }
+      };
+    }
+    module.exports = {
+      attachErrorPanel,
+      ensurePanelStyles,
+      DEFAULT_STYLES
     };
   }
 });
@@ -14202,6 +14592,11 @@ var require_index = __commonJS({
       buildClientBootstrapScript,
       HANDSHAKE_TYPE
     } = require_client();
+    var { attachErrorPanel } = require_error_panel();
+    var {
+      sanitizeCaptureMessage,
+      sanitizeCaptureValue
+    } = require_capture_sanitize();
     module.exports = {
       DignityP2P,
       createDefaultSignalingPool,
@@ -14267,7 +14662,10 @@ var require_index = __commonJS({
       createDignityAppClient,
       connectDignityAppClient,
       buildClientBootstrapScript,
-      HANDSHAKE_TYPE
+      HANDSHAKE_TYPE,
+      attachErrorPanel,
+      sanitizeCaptureMessage,
+      sanitizeCaptureValue
     };
   }
 });
