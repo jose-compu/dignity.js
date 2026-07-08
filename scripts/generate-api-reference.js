@@ -86,8 +86,18 @@ function buildMarkdown() {
     lines.push(`${Object.entries(spec.resources.cqrs).map(([k, v]) => `- **\`${k}\`** — ${v}`).join('\n')}\n\n`);
   }
 
+  if (spec.resources.dignityApps) {
+    lines.push(heading(3, 'Dignity Apps (v0.11+)'));
+    lines.push(`${Object.entries(spec.resources.dignityApps).map(([k, v]) => `- **\`${k}\`** — ${v}`).join('\n')}\n\n`);
+  }
+
   lines.push(heading(2, 'Events'));
   lines.push(table(['Event', 'Description'], Object.entries(spec.events || {}).map(([k, v]) => [`\`${k}\``, v])));
+
+  if (spec.dignityAppHostEvents) {
+    lines.push(heading(3, 'DignityAppHost events'));
+    lines.push(table(['Event', 'Description'], Object.entries(spec.dignityAppHostEvents).map(([k, v]) => [`\`${k}\``, v])));
+  }
 
   lines.push(heading(2, 'Record shape'));
   lines.push(heading(3, 'Active record'));

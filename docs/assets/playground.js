@@ -36,10 +36,11 @@ function populateFeatureSelect() {
 
   const labels = {
     core: 'Core',
-    'v0.10': 'v0.10.1'
+    patterns: 'Browser patterns',
+    apps: 'Dignity Apps'
   };
 
-  const order = ['core', 'v0.10'];
+  const order = ['core', 'patterns', 'apps'];
   const seen = new Set(order);
   for (const key of groups.keys()) {
     if (!seen.has(key)) {

@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "description": "P2P object API for decentralized JavaScript applications",
   "homepage": "https://jose-compu.github.io/dignity.js/",
   "repository": {
@@ -45,6 +45,8 @@
     "test:stress-peer-group": "RUN_STRESS_TESTS=1 jest tests/stress/peer-group-scale.test.js --runInBand --coverage=false",
     "stress:peer-group": "node scripts/stress-peer-group.js",
     "test:cloudflare-live": "RUN_CLOUDFLARE_LIVE_TESTS=1 jest tests/integration/cloudflare-signaling-live.test.js --runInBand",
+    "test:e2e": "RUN_BROWSER_E2E=1 playwright test",
+    "test:e2e:browser": "RUN_BROWSER_E2E=1 playwright test tests/e2e/dignity-apps-browser.spec.js tests/e2e/playground-browser.spec.js",
     "test:e2e:chess": "RUN_CHESS_E2E=1 playwright test tests/e2e/chess-resume.spec.js",
     "test:pow-calibrate": "RUN_POW_CALIBRATE=1 jest tests/unit/sloth-vdf-timing.test.js --runInBand --coverage=false",
     "build": "node scripts/build.js",
