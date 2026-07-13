@@ -1,7 +1,9 @@
 const {
   hashReflectiveLogic,
   normalizeFunctionSource,
-  collectReflectiveFingerprints
+  collectReflectiveFingerprints,
+  parseFunctionSource,
+  canonicalizeFunctionNode
 } = require('../../src/security/reflective-logic');
 const {
   hashVerificationCode,
@@ -162,5 +164,77 @@ describe('reflective logic hashing (#123)', () => {
     const strict = hashReflectiveLogic(rules, { policy: 'strict' }).hash;
     const advisory = hashReflectiveLogic(rules, { policy: 'advisory' }).hash;
     expect(strict).not.toBe(advisory);
+  });
+
+  test('parseFunctionSource returns null for empty or invalid sources', () => {
+    expect(parseFunctionSource('')).toBeNull();
+    expect(parseFunctionSource('   ')).toBeNull();
+    expect(parseFunctionSource('not-a-function')).toBeNull();
+  });
+
+  test('parseFunctionSource handles async function declarations', () => {
+    const node = parseFunctionSource('async function foo(x) { return x; }');
+    expect(node?.type).toBe('FunctionDeclaration');
+    expect(canonicalizeFunctionNode(node)).toContain('async function');
+  });
+
+  test('parseFunctionSource handles assignment and method definition shapes', () => {
+    const assigned = parseFunctionSource('const fn = function named(a) { return a; };');
+    expect(assigned?.type).toBe('FunctionExpression');
+
+    const method = parseFunctionSource('({ run(x) { return x; } })');
+    expect(method?.type).toBe('FunctionExpression');
+  });
+
+  test('parseFunctionSource handles identifier-style function expressions', () => {
+    const node = parseFunctionSource('myFn(a) { return a; }');
+    expect(node?.type).toBe('FunctionExpression');
+  });
+
+  test('collectReflectiveFingerprints handles null, arrays, cycles, and dangerous keys', () => {
+    const inner = { score: 1 };
+    const cyclic = { inner, label: 'x' };
+    cyclic.self = cyclic;
+
+    const rules = {
+      __proto__: { evil() { return 1; } },
+      constructor: { hack() { return 2; } },
+      prototype: { bad() { return 3; } },
+      nullable: null,
+      list: [function itemFn() { return 1; }],
+      cyclic,
+      symbolKey: Symbol('skip'),
+      bigintKey: 9n
+    };
+
+    const { canonical, fingerprints } = collectReflectiveFingerprints(rules);
+    expect(canonical.nullable).toBeNull();
+    expect(canonical.list[0]).toEqual({ __reflectiveFunction__: '$.list[0]' });
+    expect(canonical.cyclic.self).toEqual({ __reflectiveRef__: '$.cyclic.self' });
+    expect(fingerprints.has('$.list[0]')).toBe(true);
+    expect(Object.keys(canonical)).not.toContain('__proto__');
+    expect(String(canonical.symbolKey)).toBeTruthy();
+    expect(String(canonical.bigintKey)).toBe('9');
+  });
+
+  test('normalizeFunctionSource respects astCanonicalize and whitespace options', () => {
+    const source = 'function f() { return 1; }';
+    const noAst = normalizeFunctionSource(source, { astCanonicalize: false, collapseWhitespace: false });
+    expect(noAst).toContain('function f');
+
+    const noCollapse = normalizeFunctionSource('function g() {\n  return 2;\n}', {
+      astCanonicalize: false,
+      collapseWhitespace: false,
+      stripComments: false
+    });
+    expect(noCollapse).toContain('\n');
+  });
+
+  test('allowNative permits native functions when explicitly enabled', () => {
+    const { fingerprints } = collectReflectiveFingerprints(
+      { fn: Array.prototype.map },
+      { allowNative: true }
+    );
+    expect(fingerprints.has('$.fn')).toBe(true);
   });
 });

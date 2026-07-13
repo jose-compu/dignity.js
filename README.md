@@ -36,6 +36,8 @@
   <a href="https://jose-compu.github.io/dignity.js/apps/">Apps registry</a> ·
   <a href="./docs/api-reference.md">API (MD)</a> ·
   <a href="./docs/production-runbook.md">Production</a> ·
+  <a href="./docs/api-stability.md">API stability</a> ·
+  <a href="./docs/threat-model.md">Threat model</a> ·
   <a href="./docs/browser-compatibility.md">Browsers</a> ·
   <a href="./TUTORIAL.md">Tutorial (MD)</a>
 </p>
@@ -46,7 +48,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 
 ## Highlights
 
-- REST-like API over P2P replication: `create`, `read`, `list`, `update`, `remove`
+- Familiar object operations over P2P replication: `create`, `read`, `list`, `update`, `remove`
 - Owner authorization model by default (only creator can update/delete)
 - Security defaults enabled:
   - message signing (Ed25519)
@@ -65,6 +67,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Optional React hooks via `dignity.js/react`
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **v1.0.0** — Stable public API (#94), threat model (#96), openapi normalization (#126), chess credential login (#128)
 - **v0.14.0** — TypeScript definitions (#14), production deployment runbook (#95), API consistency audit (#124)
 - **v0.13.0** — Verification code hashing (#115), optional semver versioning (#116), compatibility policies (#117), security audit v0.7–v0.13 (#122)
 - **v0.12.0** — Dignity Apps error panel + console capture (#106), timeline example app (#107), apps registry (#109), delegated move proposals (#13)
@@ -669,7 +672,11 @@ joiner.on('proposalresult', (result) => {
 
 See `docs/tictactoe/` for a full PeerJS demo. `transferOwnership` remains available when you want to hand off the record entirely.
 
-## TypeScript (v0.14.0)
+## Migration to v1.0.0
+
+v1.0.0 declares the public npm API stable with no intentional breaking changes from v0.14.0. Bump your dependency and review [`docs/api-stability.md`](./docs/api-stability.md). Full 0.7 → 1.0 notes: issue #97.
+
+## TypeScript (v0.14.0+)
 
 Type definitions ship with the package (`types/index.d.ts`, `dignity.js/react` → `types/react.d.ts`).
 
@@ -752,11 +759,13 @@ Dignity App manifests may pin `dappVersion` + `logicHash` + `publisherId`. Store
 
 - **Documentation:** [jose-compu.github.io/dignity.js](https://jose-compu.github.io/dignity.js/)
 - **API reference:** [`docs/api-reference.md`](./docs/api-reference.md) (generated from `openapi-like.json`)
+- **API stability (v1.0):** [`docs/api-stability.md`](./docs/api-stability.md) (#94)
+- **Threat model (v1.0):** [`docs/threat-model.md`](./docs/threat-model.md) (#96)
 - **Browser compatibility:** [`docs/browser-compatibility.md`](./docs/browser-compatibility.md) (#91)
 - **Production runbook:** [`docs/production-runbook.md`](./docs/production-runbook.md) (#95)
 - **Benchmarks:** [`docs/benchmarks/results.json`](./docs/benchmarks/results.json) — `npm run benchmark` (#92)
 - Docs site source: `docs/index.html` (local: `npm run docs:dev`)
-- **3D Chess demo:** `docs/chess/` — PeerJS mesh, dual-signed resume links, IndexedDB → [local chess demo](http://127.0.0.1:4173/chess/) when `docs:dev` is running
+- **3D Chess demo:** `docs/chess/` — PeerJS mesh, username/password seat keys, dual-signed resume links, IndexedDB → [local chess demo](http://127.0.0.1:4173/chess/) when `docs:dev` is running
 - **Browser tic-tac-toe:** `docs/tictactoe/` — PeerJS onboarding + delegated move proposals → [local tictactoe](http://127.0.0.1:4173/tictactoe/) when `docs:dev` is running
 - **Dignity Apps registry:** `docs/apps/` — searchable app index + timeline read-only demo
 - API metadata: `docs/openapi-like.json`

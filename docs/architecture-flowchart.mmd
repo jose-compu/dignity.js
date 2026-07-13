@@ -12,7 +12,7 @@ flowchart TB
   end
 
   subgraph Command["DignityP2P command path"]
-    API["REST-like CRUD\ncreate · read · list · update · remove"]
+    API["Object CRUD surface\ncreate · read · list · update · remove"]
     Repl["Operation log + replication"]
     Disc["Discovery & presence\njoinDiscovery · listPeers"]
     Gossip["PeerGroup gossip\njoinPeerGroup · fan-out"]

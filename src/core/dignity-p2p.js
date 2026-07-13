@@ -54,7 +54,7 @@ function computeContentHash(data) {
 /**
  * Core node API for replicated object collections.
  *
- * Interface shape is intentionally REST-like:
+ * Interface shape uses a familiar CRUD surface:
  * - create(collection, data)
  * - read(collection, id)
  * - list(collection)

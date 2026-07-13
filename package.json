@@ -1,7 +1,7 @@
 {
   "name": "dignity.js",
-  "version": "0.14.0",
-  "description": "P2P object API for decentralized JavaScript applications",
+  "version": "1.0.0",
+  "description": "The scalable data layer of the decentralized browser application ecosystem.",
   "homepage": "https://jose-compu.github.io/dignity.js/",
   "repository": {
     "type": "git",
@@ -65,7 +65,7 @@
     "docs:api-reference": "node scripts/generate-api-reference.js",
     "benchmark": "node scripts/run-benchmarks.js --write docs/benchmarks/results.json",
     "benchmark:quick": "node scripts/run-benchmarks.js --quick",
-    "docs:check": "node -e \"const fs=require('fs');['docs/index.html','docs/favicon.ico','docs/api-reference.md','docs/browser-compatibility.md','docs/production-runbook.md','docs/benchmarks/results.json','docs/playground/index.html','docs/assets/playground.js','docs/assets/playground-demos.js','docs/assets/playground.css','docs/chess/index.html','docs/chess/favicon.ico','docs/assets/favicon.svg','docs/chess/assets/chess-app.js','docs/tictactoe/index.html','docs/tictactoe/favicon.ico','docs/tictactoe/assets/tictactoe-app.js','docs/apps/index.html','docs/apps/registry.json','docs/apps/timeline/index.html','docs/assets/dignity-logo.png','docs/assets/dignity.esm.js','docs/assets/highlight/highlight.min.js','docs/assets/highlight/github.min.css','docs/assets/highlight/github-dark.min.css'].forEach(p=>fs.accessSync(p));\"",
+    "docs:check": "node -e \"const fs=require('fs');['docs/index.html','docs/favicon.ico','docs/api-reference.md','docs/api-stability.md','docs/threat-model.md','docs/browser-compatibility.md','docs/production-runbook.md','docs/benchmarks/results.json','docs/playground/index.html','docs/assets/playground.js','docs/assets/playground-demos.js','docs/assets/playground.css','docs/chess/index.html','docs/chess/favicon.ico','docs/assets/favicon.svg','docs/chess/assets/chess-app.js','docs/tictactoe/index.html','docs/tictactoe/favicon.ico','docs/tictactoe/assets/tictactoe-app.js','docs/apps/index.html','docs/apps/registry.json','docs/apps/timeline/index.html','docs/assets/dignity-logo.png','docs/assets/dignity.esm.js','docs/assets/highlight/highlight.min.js','docs/assets/highlight/github.min.css','docs/assets/highlight/github-dark.min.css'].forEach(p=>fs.accessSync(p));\"",
     "example:tictactoe": "node examples/decentralized-tictactoe.js",
     "example:chess": "node examples/decentralized-chess-lite.js",
     "prepublishOnly": "npm test && npm run build"

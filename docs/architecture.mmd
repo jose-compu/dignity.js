@@ -8,7 +8,7 @@ architecture-beta
 
     group core(cloud)[DignityP2P Command Path]
 
-    service api(server)[REST-like CRUD] in core
+    service api(server)[Object CRUD surface] in core
     service repl(server)[Replication Engine] in core
     service disc(server)[Discovery & Presence] in core
     service gossip(server)[PeerGroup Gossip] in core

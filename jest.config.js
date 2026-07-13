@@ -9,5 +9,13 @@ module.exports = {
     : ['<rootDir>/tests/unit/sloth-vdf-timing.test.js'],
   collectCoverageFrom: ['src/**/*.js'],
   coverageDirectory: 'coverage',
+  coverageThreshold: {
+    global: {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80
+    }
+  },
   verbose: true
 };

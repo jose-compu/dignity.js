@@ -44,7 +44,7 @@ Use the [bug report template](https://github.com/jose-compu/dignity.js/issues/ne
 
 ## Feature requests
 
-Use the [feature request template](https://github.com/jose-compu/dignity.js/issues/new?template=feature_request.yml). Describe the use case and how it fits the dignity.js P2P object model.
+Use the [feature request template](https://github.com/jose-compu/dignity.js/issues/new?template=feature_request.yml). Describe the use case and how it fits the dignity.js scalable data layer and replicated object model.
 
 ## Code of conduct
 

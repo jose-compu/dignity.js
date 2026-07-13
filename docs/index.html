@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="dignity.js v0.14.0 — REST-like P2P object API for decentralized JavaScript applications." />
+    <meta name="description" content="dignity.js v1.0.0 — The scalable data layer of the decentralized browser application ecosystem." />
     <title>dignity.js · Documentation</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.ico" sizes="32x32" />
@@ -16,7 +16,7 @@
       <a class="site-header__brand" href="#overview">
         <img src="./assets/dignity-logo.svg" alt="" width="344" height="80" />
         <!-- <span>dignity.js</span> -->
-        <span class="site-header__version">v0.14.0</span>
+        <span class="site-header__version">v1.0.0</span>
       </a>
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
@@ -83,8 +83,8 @@
           <section id="overview" class="section">
             <h1 class="page-title">Documentation</h1>
             <p class="lead">
-              <strong>dignity.js</strong> is a REST-like P2P object API for decentralized JavaScript
-              applications. Synchronize shared objects across browsers with
+              <strong>The scalable data layer of the decentralized browser application ecosystem.</strong>
+              <strong>dignity.js</strong> synchronizes shared objects across browsers with
               <a href="#object-api">owner authorization</a>,
               <a href="#security">scoped broadcast encryption</a>, and built-in
               <a href="#security">anti-abuse controls</a>.
@@ -514,7 +514,7 @@ await bob.stop();</code></pre>
           <section id="object-api" class="section">
             <h2>Object API</h2>
             <p>
-              The core API mirrors REST semantics. Each object belongs to a <strong>collection</strong>.
+              The core API uses a familiar collection-oriented surface. Each object belongs to a <strong>collection</strong>.
               The peer that creates an object becomes its <strong>owner</strong> — only the owner may update or delete it.
             </p>
 
@@ -803,7 +803,8 @@ replica.verifyChain();  // hash-chain consistency</code></pre>
             </div>
 
             <h3>Roadmap</h3>
-            <p><strong>v0.14.0 (current)</strong> — TypeScript definitions (#14), production deployment runbook (#95), API consistency audit (#124).</p>
+            <p><strong>v1.0.0 (current)</strong> — Stable public API (#94), threat model (#96), openapi normalization (#126), chess credential login (#128).</p>
+            <p><strong>v0.14.0</strong> — TypeScript definitions (#14), production deployment runbook (#95), API consistency audit (#124).</p>
             <p><strong>v0.13.0</strong> — Verification hashing (#115), semver versioning (#116), compatibility policies (#117), reflective logic fingerprints + publisher-scoped official dapp trust (#123), security audit (#122).</p>
             <p><strong>v1.0.0</strong> — API stability guarantee (#94), threat model (#96), migration guide (#97).</p>
             <p><strong>v0.12.0</strong> — Dignity Apps error panel, timeline app, apps registry, delegated move proposals (#13, #106–#120).</p>
@@ -1223,6 +1224,8 @@ const pool = createDefaultSignalingPool({
               CI runs Node.js 18/20/22 only — browser rows reflect manual smoke tests on the playground and chess demo.
               Full matrix: <a href="./browser-compatibility.md">browser-compatibility.md</a> (#91).
               Production guide: <a href="./production-runbook.md">production-runbook.md</a> (#95).
+              API stability: <a href="./api-stability.md">api-stability.md</a> (#94).
+              Threat model: <a href="./threat-model.md">threat-model.md</a> (#96).
             </p>
             <div class="table-wrap">
               <table>
@@ -1410,6 +1413,14 @@ const pool = createDefaultSignalingPool({
                     <td><code>npm run docs:api-reference</code></td>
                   </tr>
                   <tr>
+                    <td><a href="./api-stability.md"><code>docs/api-stability.md</code></a></td>
+                    <td>API stability guarantee and deprecation policy (#94)</td>
+                  </tr>
+                  <tr>
+                    <td><a href="./threat-model.md"><code>docs/threat-model.md</code></a></td>
+                    <td>STRIDE threat model and residual risks (#96)</td>
+                  </tr>
+                  <tr>
                     <td><a href="./production-runbook.md"><code>docs/production-runbook.md</code></a></td>
                     <td>Production deployment checklist (#95)</td>
                   </tr>
@@ -1457,7 +1468,7 @@ npm run example:chess</code></pre>
 
           <footer class="site-footer">
             <p>
-              dignity.js v0.14.0 ·
+              dignity.js v1.0.0 ·
               <a href="https://github.com/jose-compu/dignity.js/blob/main/LICENSE">Apache 2.0</a> ·
               <a href="https://github.com/jose-compu/dignity.js">GitHub</a> ·
               <a href="https://www.npmjs.com/package/dignity.js">npm</a>

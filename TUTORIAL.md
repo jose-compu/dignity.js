@@ -3,7 +3,7 @@
 This tutorial walks you through dignity.js from zero to a working multi-peer app. No prior P2P experience required.
 
 **Time:** ~35 minutes  
-**Version:** 0.14.0  
+**Version:** 1.0.0  
 **Full docs:** [docs site](https://jose-compu.github.io/dignity.js/) · [README](./README.md)
 
 **Lessons:** [1](#lesson-1--two-peers-one-shared-note) · [2](#lesson-2--rooms-and-discovery) · [3](#lesson-3--ownership-and-updates) · [4](#lesson-4--collaborators) · [4b](#lesson-4b--verification-policies-115117) · [5](#lesson-5--versions-and-conflicts) · [6](#lesson-6--browser-and-real-networks) · [7](#lesson-7--small-groups-vs-big-audiences) · [8](#lesson-8--big-feeds-with-cqrs-v08) · [9](#lesson-9--persist-across-reloads-browser) · [Cheat sheet](#cheat-sheet)
@@ -12,16 +12,18 @@ This tutorial walks you through dignity.js from zero to a working multi-peer app
 
 ## What you are building
 
-dignity.js gives you a **REST-like API** that runs over peer-to-peer networks:
+**The scalable data layer of the decentralized browser application ecosystem.**
 
-| REST idea | dignity.js |
+dignity.js synchronizes shared objects across peer-to-peer networks with **ownership rules** and **encryption/signing enabled by default**. The core surface uses familiar collection operations:
+
+| HTTP analogy | dignity.js |
 |-----------|------------|
 | `POST /notes` | `create('notes', data)` |
 | `GET /notes/:id` | `read('notes', id)` |
 | `PATCH /notes/:id` | `update('notes', id, patch)` |
 | `DELETE /notes/:id` | `remove('notes', id)` |
 
-Each browser (or Node process) is a **node**. Nodes replicate objects to each other with **ownership rules** and **encryption/signing enabled by default**.
+Each browser (or Node process) is a **node**. Nodes replicate objects to each other over the mesh.
 
 ---
 
