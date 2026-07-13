@@ -12,16 +12,18 @@ This tutorial walks you through dignity.js from zero to a working multi-peer app
 
 ## What you are building
 
-dignity.js gives you a **REST-like API** that runs over peer-to-peer networks:
+**The scalable data layer of the decentralized browser application ecosystem.**
 
-| REST idea | dignity.js |
+dignity.js synchronizes shared objects across peer-to-peer networks with **ownership rules** and **encryption/signing enabled by default**. The core surface uses familiar collection operations:
+
+| HTTP analogy | dignity.js |
 |-----------|------------|
 | `POST /notes` | `create('notes', data)` |
 | `GET /notes/:id` | `read('notes', id)` |
 | `PATCH /notes/:id` | `update('notes', id, patch)` |
 | `DELETE /notes/:id` | `remove('notes', id)` |
 
-Each browser (or Node process) is a **node**. Nodes replicate objects to each other with **ownership rules** and **encryption/signing enabled by default**.
+Each browser (or Node process) is a **node**. Nodes replicate objects to each other over the mesh.
 
 ---
 

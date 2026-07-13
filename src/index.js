@@ -1,8 +1,10 @@
 /**
  * dignity.js public API.
  *
+ * The scalable data layer of the decentralized browser application ecosystem.
+ *
  * This package exposes:
- * - `DignityP2P`: REST-like object CRUD over peer-to-peer operation replication
+ * - `DignityP2P`: replicated object collections over peer-to-peer operation sync
  * - signaling providers and pool helpers
  * - in-memory adapter utilities for tests and local prototyping
  */

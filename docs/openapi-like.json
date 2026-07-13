@@ -1,7 +1,7 @@
 {
   "name": "dignity.js",
   "version": "1.0.0",
-  "description": "REST-like object API over peer-to-peer replication with CQRS read replicas, Dignity Apps, and verification policies",
+  "description": "The scalable data layer of the decentralized browser application ecosystem — P2P object replication with CQRS read replicas, Dignity Apps, and verification policies",
   "lifecycle": {
     "start": "attach network message handler and begin receiving",
     "stop": "leave discovery scopes and detach handler"

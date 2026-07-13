@@ -1,7 +1,7 @@
 {
   "name": "dignity.js",
   "version": "1.0.0",
-  "description": "P2P object API for decentralized JavaScript applications",
+  "description": "The scalable data layer of the decentralized browser application ecosystem.",
   "homepage": "https://jose-compu.github.io/dignity.js/",
   "repository": {
     "type": "git",

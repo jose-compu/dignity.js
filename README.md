@@ -48,7 +48,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 
 ## Highlights
 
-- REST-like API over P2P replication: `create`, `read`, `list`, `update`, `remove`
+- Familiar object operations over P2P replication: `create`, `read`, `list`, `update`, `remove`
 - Owner authorization model by default (only creator can update/delete)
 - Security defaults enabled:
   - message signing (Ed25519)
