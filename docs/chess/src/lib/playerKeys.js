@@ -1,7 +1,9 @@
 import nacl from 'tweetnacl';
 import naclUtil from 'tweetnacl-util';
+import { deriveKeyPairFromCredentials } from '../../../../src/index.js';
 
 const STORAGE_KEY = 'dignity-chess-player-keys-v1';
+const DEMO_KDF_ITERATIONS = 10000;
 
 function loadStore() {
   try {
@@ -48,6 +50,19 @@ export function createFreshKeyPair() {
     signing: nacl.sign.keyPair(),
     encryption: nacl.box.keyPair()
   };
+}
+
+export async function derivePlayerKeyPairFromCredentials({ gameId, seat, username, password }) {
+  if (!gameId || !seat || !username || !password) {
+    throw new Error('derivePlayerKeyPairFromCredentials requires gameId, seat, username, and password');
+  }
+
+  return deriveKeyPairFromCredentials({
+    username,
+    password,
+    pepper: `${gameId}:${seat}`,
+    kdfIterations: DEMO_KDF_ITERATIONS
+  });
 }
 
 export function keyPairToPublicBundle(keyPair) {

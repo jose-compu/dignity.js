@@ -48,7 +48,11 @@ function GameList({ title, games, emptyText, onOpen }) {
 
 export default function Lobby({
   nickname,
+  username,
+  password,
   onNicknameChange,
+  onUsernameChange,
+  onPasswordChange,
   onCreate,
   onJoinPaste,
   onOpenGame
@@ -62,6 +66,8 @@ export default function Lobby({
   const [finishedGames, setFinishedGames] = useState([]);
   const [loadingGames, setLoadingGames] = useState(true);
   const nicknameInputId = useId();
+  const usernameInputId = useId();
+  const passwordInputId = useId();
   const pasteLinkId = useId();
   const seatBackupId = useId();
   const checkpointBundleId = useId();
@@ -120,14 +126,37 @@ export default function Lobby({
     <div className="lobby-layout">
       <section className="lobby lobby__top">
         <div className="lobby__hero">
-          <p className="eyebrow">dignity.js v0.14.0 · decentralized demo</p>
+          <p className="eyebrow">dignity.js v1.0.0 · decentralized demo</p>
           <h1>3D Chess on dignity.js</h1>
           <p>
             Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption,
-            dual-signed resume links, and scalable spectator feeds via PeerGroup gossip.
+            credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip.
           </p>
+          <label className="lobby__nickname" htmlFor={usernameInputId}>
+            Username
+            <input
+              id={usernameInputId}
+              value={username}
+              onChange={(event) => onUsernameChange(event.target.value)}
+              placeholder="Username"
+              maxLength={64}
+              autoComplete="username"
+            />
+          </label>
+          <label className="lobby__nickname" htmlFor={passwordInputId}>
+            Password
+            <input
+              id={passwordInputId}
+              type="password"
+              value={password}
+              onChange={(event) => onPasswordChange(event.target.value)}
+              placeholder="Password"
+              maxLength={128}
+              autoComplete="current-password"
+            />
+          </label>
           <label className="lobby__nickname" htmlFor={nicknameInputId}>
-            Your nickname
+            Display nickname
             <input
               id={nicknameInputId}
               value={nickname}
@@ -137,7 +166,12 @@ export default function Lobby({
               autoComplete="nickname"
             />
           </label>
-          <button type="button" className="primary" onClick={() => onCreate(generateGameId())}>
+          <button
+            type="button"
+            className="primary"
+            disabled={!username.trim() || !password}
+            onClick={() => onCreate(generateGameId())}
+          >
             Start new game
           </button>
         </div>

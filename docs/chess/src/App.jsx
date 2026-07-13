@@ -6,13 +6,23 @@ import { nodeIdForRole, parseRoute, randomToken, scopeForGame } from './lib/link
 import { saveLocalGameSession } from './lib/localGames.js';
 
 const STORAGE_KEY = 'dignity-chess-name';
+const STORAGE_USERNAME_KEY = 'dignity-chess-username';
+const SESSION_PASSWORD_KEY = 'dignity-chess-password';
 
 export default function App() {
   const [route, setRoute] = useState(() => parseRoute());
   const [draftNickname, setDraftNickname] = useState(
     () => localStorage.getItem(STORAGE_KEY) || 'Player'
   );
+  const [draftUsername, setDraftUsername] = useState(
+    () => localStorage.getItem(STORAGE_USERNAME_KEY) || ''
+  );
+  const [draftPassword, setDraftPassword] = useState(
+    () => sessionStorage.getItem(SESSION_PASSWORD_KEY) || ''
+  );
   const [sessionNickname, setSessionNickname] = useState(null);
+  const [sessionUsername, setSessionUsername] = useState(null);
+  const [sessionPassword, setSessionPassword] = useState(null);
 
   useEffect(() => {
     const handleHashChange = () => setRoute(parseRoute());
@@ -29,16 +39,32 @@ export default function App() {
     return nodeIdForRole(route.role, route.gameId);
   }, [activeSession, sessionNickname, route.role, route.gameId]);
 
-  function persistNickname(name) {
-    const trimmed = name.trim() || 'Player';
-    localStorage.setItem(STORAGE_KEY, trimmed);
-    setDraftNickname(trimmed);
-    setSessionNickname(trimmed);
-    return trimmed;
+  function persistCredentials({ nickname, username, password }) {
+    const trimmedName = nickname.trim() || 'Player';
+    const trimmedUsername = username.trim();
+    localStorage.setItem(STORAGE_KEY, trimmedName);
+    localStorage.setItem(STORAGE_USERNAME_KEY, trimmedUsername);
+    if (password) {
+      sessionStorage.setItem(SESSION_PASSWORD_KEY, password);
+    }
+    setDraftNickname(trimmedName);
+    setDraftUsername(trimmedUsername);
+    setDraftPassword(password || '');
+    setSessionNickname(trimmedName);
+    setSessionUsername(trimmedUsername);
+    setSessionPassword(password || '');
+    return { nickname: trimmedName, username: trimmedUsername, password };
   }
 
   function startGame(gameId) {
-    persistNickname(draftNickname);
+    if (!draftUsername.trim() || !draftPassword) {
+      return;
+    }
+    persistCredentials({
+      nickname: draftNickname,
+      username: draftUsername,
+      password: draftPassword
+    });
     const roomKey = randomToken(16);
     const joinToken = randomToken();
     const watchToken = randomToken();
@@ -70,12 +96,16 @@ export default function App() {
     window.location.hash = hash;
     setRoute(parseRoute());
     setSessionNickname(null);
+    setSessionUsername(null);
+    setSessionPassword(null);
   }
 
   function backToLobby() {
     window.location.hash = '';
     setRoute(parseRoute());
     setSessionNickname(null);
+    setSessionUsername(null);
+    setSessionPassword(null);
   }
 
   function openPastedLink(raw) {
@@ -83,6 +113,8 @@ export default function App() {
     window.location.hash = hashIndex >= 0 ? raw.slice(hashIndex + 1) : raw;
     setRoute(parseRoute());
     setSessionNickname(null);
+    setSessionUsername(null);
+    setSessionPassword(null);
   }
 
   return (
@@ -90,16 +122,20 @@ export default function App() {
       <header className="topbar">
         <a href="../index.html">dignity.js docs</a>
         {!activeSession ? (
-          <span className="topbar__hint">Set your nickname in the lobby before starting or joining.</span>
+          <span className="topbar__hint">Set username, password, and nickname in the lobby before starting or joining.</span>
         ) : sessionNickname ? (
-          <span className="topbar__player">Playing as <strong>{sessionNickname}</strong></span>
+          <span className="topbar__player">Playing as <strong>{sessionNickname}</strong> ({sessionUsername})</span>
         ) : null}
       </header>
 
       {!activeSession ? (
         <Lobby
           nickname={draftNickname}
+          username={draftUsername}
+          password={draftPassword}
           onNicknameChange={setDraftNickname}
+          onUsernameChange={setDraftUsername}
+          onPasswordChange={setDraftPassword}
           onCreate={startGame}
           onJoinPaste={openPastedLink}
           onOpenGame={openSavedGame}
@@ -108,7 +144,9 @@ export default function App() {
         <JoinGate
           route={route}
           defaultNickname={draftNickname}
-          onConfirm={persistNickname}
+          defaultUsername={draftUsername}
+          defaultPassword={draftPassword}
+          onConfirm={persistCredentials}
           onBack={backToLobby}
         />
       ) : (
@@ -116,6 +154,8 @@ export default function App() {
           route={route}
           nodeId={nodeId}
           nickname={sessionNickname}
+          username={sessionUsername}
+          password={sessionPassword}
           onBack={backToLobby}
         />
       )}

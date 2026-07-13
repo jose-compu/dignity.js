@@ -21,6 +21,7 @@ import {
 import { saveLocalGameSession } from '../lib/localGames.js';
 import {
   createFreshKeyPair,
+  derivePlayerKeyPairFromCredentials,
   findPlayerKeyPairByPublicKey,
   keyPairToPublicBundle,
   loadPlayerKeyPair,
@@ -71,7 +72,7 @@ function canJoin(route, game) {
   );
 }
 
-export default function GameView({ route, nodeId, nickname, onBack }) {
+export default function GameView({ route, nodeId, nickname, username, password, onBack }) {
   const scope = scopeForGame(route.gameId);
   const roomKey = route.roomKey;
 
@@ -84,19 +85,79 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
     () => !route.checkpoint && !route.checkpointRef
   );
   const [resumeSeat, setResumeSeat] = useState(null);
-  const [keyPair, setKeyPair] = useState(() => {
-    if (route.role === 'host') {
-      return loadPlayerKeyPair(route.gameId, 'white') || createFreshKeyPair();
-    }
-    if (route.role === 'join') {
-      return loadPlayerKeyPair(route.gameId, 'black') || createFreshKeyPair();
-    }
-    return createFreshKeyPair();
-  });
+  const [keyPair, setKeyPair] = useState(null);
+  const [keysReady, setKeysReady] = useState(false);
   const [pendingProposal, setPendingProposal] = useState(null);
   const [finalizedCheckpoint, setFinalizedCheckpoint] = useState(null);
   const [resumeLink, setResumeLink] = useState('');
   const restoredFromCheckpointRef = React.useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initSigningKeys() {
+      const seatForRole = route.role === 'host'
+        ? 'white'
+        : route.role === 'join'
+          ? 'black'
+          : route.role === 'resume' && (route.seat === 'white' || route.seat === 'black')
+            ? route.seat
+            : null;
+
+      if (route.role === 'watch') {
+        if (!cancelled) {
+          setKeyPair(createFreshKeyPair());
+          setKeysReady(true);
+        }
+        return;
+      }
+
+      if (username && password && seatForRole) {
+        try {
+          const derived = await derivePlayerKeyPairFromCredentials({
+            gameId: route.gameId,
+            seat: seatForRole,
+            username,
+            password
+          });
+          if (!cancelled) {
+            setKeyPair(derived);
+            savePlayerKeyRecord(route.gameId, seatForRole, derived, nickname);
+            if (route.role === 'resume') {
+              setResumeSeat(seatForRole);
+            }
+            setKeysReady(true);
+          }
+          return;
+        } catch (deriveError) {
+          p2pError('credential key derivation failed', deriveError);
+        }
+      }
+
+      if (!cancelled) {
+        if (route.role === 'host') {
+          setKeyPair(loadPlayerKeyPair(route.gameId, 'white') || createFreshKeyPair());
+        } else if (route.role === 'join') {
+          setKeyPair(loadPlayerKeyPair(route.gameId, 'black') || createFreshKeyPair());
+        } else {
+          setKeyPair(createFreshKeyPair());
+        }
+        setKeysReady(true);
+      }
+    }
+
+    setKeysReady(false);
+    initSigningKeys().catch((initError) => {
+      if (!cancelled) {
+        p2pError('signing key init failed', initError);
+        setKeysReady(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [route.role, route.gameId, route.seat, username, password, nickname]);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,14 +220,17 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
   }, [route.role, route.checkpoint, route.checkpointRef, route.gameId, route.roomKey, route.seat]);
 
   const dignityConfig = useMemo(
-    () => createDignityConfig({
-      nodeId,
-      roomKey,
-      scope,
-      role: route.role,
-      keyPair
-    }),
-    [nodeId, roomKey, scope, route.role, keyPair]
+    () => (keysReady && keyPair
+      ? createDignityConfig({
+        nodeId,
+        roomKey,
+        scope,
+        nickname,
+        role: route.role,
+        keyPair
+      })
+      : null),
+    [keysReady, keyPair, nodeId, roomKey, scope, nickname, route.role]
   );
 
   const { node, status, error } = useDignity(dignityConfig);
@@ -1135,6 +1199,15 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
     return <p className="error">Missing room key in link.</p>;
   }
 
+  if (!keysReady || !keyPair) {
+    return (
+      <section className="panel">
+        <h2>Deriving signing keys…</h2>
+        <p className="muted">Using your username and password to restore your seat keys for this game.</p>
+      </section>
+    );
+  }
+
   if (route.role === 'resume' && (route.checkpoint || route.checkpointRef) && !checkpointResolved) {
     return (
       <section className="panel">
@@ -1194,9 +1267,9 @@ export default function GameView({ route, nodeId, nickname, onBack }) {
       <section className="panel error-panel">
         <h2>Seat keys not found on this device</h2>
         <p>
-          This resume link carries a valid dual-signed checkpoint, but this browser does not have your
-          player signing keys. Open the link on the device that played, or import a seat key backup
-          from the Resume panel before leaving.
+          This resume link carries a valid dual-signed checkpoint, but this browser could not derive your
+          player signing keys. Re-enter the same username and password used when you first played, import a
+          seat key backup from the lobby, or open the link on the original device.
         </p>
         <button type="button" onClick={onBack}>Back</button>
       </section>

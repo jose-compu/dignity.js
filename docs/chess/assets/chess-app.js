@@ -15249,7 +15249,7 @@ var require_derive_key_pair = __commonJS({
       const iterations = typeof kdfIterations === "number" ? kdfIterations : DEFAULT_SECURITY_OPTIONS.kdfIterations;
       return deriveBroadcastKey(password, salt, iterations);
     }
-    async function deriveKeyPairFromCredentials({
+    async function deriveKeyPairFromCredentials2({
       username,
       password,
       pepper = "",
@@ -15285,7 +15285,7 @@ var require_derive_key_pair = __commonJS({
       };
     }
     module.exports = {
-      deriveKeyPairFromCredentials,
+      deriveKeyPairFromCredentials: deriveKeyPairFromCredentials2,
       deriveColdRecoverySigningKey,
       keyPairToPublicBundle: keyPairToPublicBundle2,
       buildIdentitySalt,
@@ -15305,7 +15305,7 @@ var require_identity_rotation = __commonJS({
     var naclUtil3 = require_nacl_util();
     var { stableStringify: stableStringify2 } = require_message_security_service();
     var {
-      deriveKeyPairFromCredentials,
+      deriveKeyPairFromCredentials: deriveKeyPairFromCredentials2,
       deriveColdRecoverySigningKey,
       keyPairToPublicBundle: keyPairToPublicBundle2
     } = require_derive_key_pair();
@@ -15516,7 +15516,7 @@ var require_identity_rotation = __commonJS({
       kdfIterations,
       timestamp
     } = {}) {
-      const currentKeyPair = await deriveKeyPairFromCredentials({
+      const currentKeyPair = await deriveKeyPairFromCredentials2({
         username,
         password,
         generation: currentGeneration,
@@ -15524,7 +15524,7 @@ var require_identity_rotation = __commonJS({
         kdfIterations
       });
       const nextGeneration = currentGeneration + 1;
-      const nextKeyPair = await deriveKeyPairFromCredentials({
+      const nextKeyPair = await deriveKeyPairFromCredentials2({
         username,
         password,
         generation: nextGeneration,
@@ -15567,7 +15567,7 @@ var require_identity_rotation = __commonJS({
       kdfIterations,
       timestamp
     } = {}) {
-      const currentKeyPair = await deriveKeyPairFromCredentials({
+      const currentKeyPair = await deriveKeyPairFromCredentials2({
         username,
         password: currentPassword,
         generation: currentGeneration,
@@ -15575,7 +15575,7 @@ var require_identity_rotation = __commonJS({
         kdfIterations
       });
       const nextGeneration = currentGeneration + 1;
-      const nextKeyPair = await deriveKeyPairFromCredentials({
+      const nextKeyPair = await deriveKeyPairFromCredentials2({
         username,
         password: newPassword,
         generation: nextGeneration,
@@ -23920,7 +23920,7 @@ var require_dignity_p2p = __commonJS({
       rotateIdentityPassword,
       enrollColdRecoveryPassword
     } = require_identity_rotation();
-    var { deriveKeyPairFromCredentials } = require_derive_key_pair();
+    var { deriveKeyPairFromCredentials: deriveKeyPairFromCredentials2 } = require_derive_key_pair();
     var {
       DEFAULT_PEER_GROUP_OPTIONS,
       peerGroupScope,
@@ -24714,7 +24714,7 @@ var require_dignity_p2p = __commonJS({
         this.securityService.options.identityGeneration = generation;
       }
       async deriveAndAdoptIdentity({ username, password, generation = 1, pepper = "", kdfIterations } = {}) {
-        const keyPair = await deriveKeyPairFromCredentials({
+        const keyPair = await deriveKeyPairFromCredentials2({
           username,
           password,
           generation,
@@ -26039,207 +26039,6 @@ var require_dignity_p2p = __commonJS({
       }
     };
     module.exports = DignityP2P2;
-  }
-});
-
-// src/react/index.js
-var require_react2 = __commonJS({
-  "src/react/index.js"(exports, module) {
-    var { useCallback: useCallback2, useEffect: useEffect7, useState: useState7 } = require_react();
-    var DignityP2P2 = require_dignity_p2p();
-    function useDignity2(config) {
-      const [node2, setNode] = useState7(null);
-      const [status, setStatus] = useState7("idle");
-      const [error2, setError] = useState7(null);
-      useEffect7(() => {
-        if (!config) {
-          return void 0;
-        }
-        let cancelled = false;
-        const instance = new DignityP2P2(config);
-        setNode(instance);
-        setStatus("starting");
-        setError(null);
-        instance.start().then(() => {
-          if (!cancelled) {
-            setStatus("running");
-          }
-        }).catch((startError) => {
-          if (!cancelled) {
-            setError(startError);
-            setStatus("error");
-          }
-        });
-        return () => {
-          cancelled = true;
-          instance.stop().catch(() => void 0).finally(() => {
-            setStatus("stopped");
-            setNode(null);
-          });
-        };
-      }, [config]);
-      return {
-        node: node2,
-        status,
-        error: error2
-      };
-    }
-    function useCollection(node2, collectionName) {
-      const [records, setRecords] = useState7([]);
-      const refresh = useCallback2(() => {
-        if (!node2 || !collectionName) {
-          setRecords([]);
-          return;
-        }
-        setRecords(node2.list(collectionName));
-      }, [node2, collectionName]);
-      useEffect7(() => {
-        refresh();
-        if (!node2) {
-          return void 0;
-        }
-        node2.on("change", refresh);
-        return () => node2.off("change", refresh);
-      }, [node2, refresh]);
-      return records;
-    }
-    function usePeers2(node2, scope = "main", options = {}) {
-      const includeSelf = options.includeSelf !== false;
-      const [peers, setPeers] = useState7([]);
-      const refresh = useCallback2(() => {
-        if (!node2) {
-          setPeers([]);
-          return;
-        }
-        setPeers(node2.listPeers(scope, { includeSelf }));
-      }, [node2, scope, includeSelf]);
-      useEffect7(() => {
-        refresh();
-        if (!node2) {
-          return void 0;
-        }
-        const handlePresenceChange = () => refresh();
-        node2.on("peerdiscovered", handlePresenceChange);
-        node2.on("peerleft", handlePresenceChange);
-        return () => {
-          node2.off("peerdiscovered", handlePresenceChange);
-          node2.off("peerleft", handlePresenceChange);
-        };
-      }, [node2, refresh]);
-      return peers;
-    }
-    function useObject2(node2, collectionName, objectId) {
-      const [record, setRecord] = useState7(null);
-      const refresh = useCallback2(() => {
-        if (!node2 || !collectionName || !objectId) {
-          setRecord(null);
-          return;
-        }
-        setRecord(node2.read(collectionName, objectId));
-      }, [node2, collectionName, objectId]);
-      useEffect7(() => {
-        refresh();
-        if (!node2) {
-          return void 0;
-        }
-        const handleChange = (event) => {
-          if (event && event.collection === collectionName && event.id === objectId) {
-            refresh();
-          }
-        };
-        node2.on("change", handleChange);
-        return () => node2.off("change", handleChange);
-      }, [node2, collectionName, objectId, refresh]);
-      return record;
-    }
-    function useDiscovery2(node2, scope = "main", options = null) {
-      const [joined, setJoined] = useState7(false);
-      const [error2, setError] = useState7(null);
-      useEffect7(() => {
-        if (!node2 || !scope || !options) {
-          setJoined(false);
-          setError(null);
-          return void 0;
-        }
-        let cancelled = false;
-        node2.joinDiscovery(scope, options).then(() => {
-          if (!cancelled) {
-            setJoined(true);
-            setError(null);
-          }
-        }).catch((joinError) => {
-          if (!cancelled) {
-            setJoined(false);
-            setError(joinError);
-          }
-        });
-        return () => {
-          cancelled = true;
-          node2.leaveDiscovery(scope).catch(() => void 0);
-          setJoined(false);
-        };
-      }, [node2, scope, options]);
-      return { joined, error: error2 };
-    }
-    function useConnectionStats(node2, pollIntervalMs = 2e3) {
-      const [stats, setStats] = useState7({ openCount: 0, peerIds: [] });
-      const refresh = useCallback2(() => {
-        if (!node2 || typeof node2.getConnectionStats !== "function") {
-          setStats({ openCount: 0, peerIds: [] });
-          return;
-        }
-        setStats(node2.getConnectionStats());
-      }, [node2]);
-      useEffect7(() => {
-        refresh();
-        if (!node2 || !pollIntervalMs) {
-          return void 0;
-        }
-        const timer = setInterval(refresh, pollIntervalMs);
-        return () => clearInterval(timer);
-      }, [node2, pollIntervalMs, refresh]);
-      return stats;
-    }
-    function useRoom(node2, scope = "main", options = null) {
-      const peersOptions = options && options.peersOptions ? options.peersOptions : {};
-      const { joined, error: error2 } = useDiscovery2(node2, scope, options);
-      const peers = usePeers2(node2, scope, peersOptions);
-      const connectionStats = useConnectionStats(node2, options?.connectionPollMs ?? 2e3);
-      return {
-        joined,
-        error: error2,
-        peers,
-        connectionStats
-      };
-    }
-    function useMessages(node2, filter = null) {
-      const [messages, setMessages] = useState7([]);
-      useEffect7(() => {
-        if (!node2) {
-          setMessages([]);
-          return void 0;
-        }
-        const handleMessage = (message) => {
-          if (typeof filter === "function" && !filter(message)) {
-            return;
-          }
-          setMessages((current) => [...current, message]);
-        };
-        node2.on("message", handleMessage);
-        return () => node2.off("message", handleMessage);
-      }, [node2, filter]);
-      return messages;
-    }
-    module.exports = {
-      useDignity: useDignity2,
-      useCollection,
-      usePeers: usePeers2,
-      useObject: useObject2,
-      useDiscovery: useDiscovery2,
-      useConnectionStats,
-      useRoom,
-      useMessages
-    };
   }
 });
 
@@ -35185,7 +34984,7 @@ var require_src = __commonJS({
       DEFAULT_SECURITY_OPTIONS,
       DEFAULT_APP_PASSWORD
     } = require_message_security_service();
-    var { deriveKeyPairFromCredentials, keyPairToPublicBundle: keyPairToPublicBundle2, deriveColdRecoverySigningKey } = require_derive_key_pair();
+    var { deriveKeyPairFromCredentials: deriveKeyPairFromCredentials2, keyPairToPublicBundle: keyPairToPublicBundle2, deriveColdRecoverySigningKey } = require_derive_key_pair();
     var {
       createIdentityRotation,
       verifyIdentityRotation,
@@ -35291,7 +35090,7 @@ var require_src = __commonJS({
       MessageSecurityService,
       DEFAULT_SECURITY_OPTIONS,
       DEFAULT_APP_PASSWORD,
-      deriveKeyPairFromCredentials,
+      deriveKeyPairFromCredentials: deriveKeyPairFromCredentials2,
       deriveColdRecoverySigningKey,
       keyPairToPublicBundle: keyPairToPublicBundle2,
       createIdentityRotation,
@@ -35356,6 +35155,207 @@ var require_src = __commonJS({
       hashReflectiveLogic,
       normalizeFunctionSource,
       collectReflectiveFingerprints
+    };
+  }
+});
+
+// src/react/index.js
+var require_react2 = __commonJS({
+  "src/react/index.js"(exports, module) {
+    var { useCallback: useCallback2, useEffect: useEffect7, useState: useState7 } = require_react();
+    var DignityP2P2 = require_dignity_p2p();
+    function useDignity2(config) {
+      const [node2, setNode] = useState7(null);
+      const [status, setStatus] = useState7("idle");
+      const [error2, setError] = useState7(null);
+      useEffect7(() => {
+        if (!config) {
+          return void 0;
+        }
+        let cancelled = false;
+        const instance = new DignityP2P2(config);
+        setNode(instance);
+        setStatus("starting");
+        setError(null);
+        instance.start().then(() => {
+          if (!cancelled) {
+            setStatus("running");
+          }
+        }).catch((startError) => {
+          if (!cancelled) {
+            setError(startError);
+            setStatus("error");
+          }
+        });
+        return () => {
+          cancelled = true;
+          instance.stop().catch(() => void 0).finally(() => {
+            setStatus("stopped");
+            setNode(null);
+          });
+        };
+      }, [config]);
+      return {
+        node: node2,
+        status,
+        error: error2
+      };
+    }
+    function useCollection(node2, collectionName) {
+      const [records, setRecords] = useState7([]);
+      const refresh = useCallback2(() => {
+        if (!node2 || !collectionName) {
+          setRecords([]);
+          return;
+        }
+        setRecords(node2.list(collectionName));
+      }, [node2, collectionName]);
+      useEffect7(() => {
+        refresh();
+        if (!node2) {
+          return void 0;
+        }
+        node2.on("change", refresh);
+        return () => node2.off("change", refresh);
+      }, [node2, refresh]);
+      return records;
+    }
+    function usePeers2(node2, scope = "main", options = {}) {
+      const includeSelf = options.includeSelf !== false;
+      const [peers, setPeers] = useState7([]);
+      const refresh = useCallback2(() => {
+        if (!node2) {
+          setPeers([]);
+          return;
+        }
+        setPeers(node2.listPeers(scope, { includeSelf }));
+      }, [node2, scope, includeSelf]);
+      useEffect7(() => {
+        refresh();
+        if (!node2) {
+          return void 0;
+        }
+        const handlePresenceChange = () => refresh();
+        node2.on("peerdiscovered", handlePresenceChange);
+        node2.on("peerleft", handlePresenceChange);
+        return () => {
+          node2.off("peerdiscovered", handlePresenceChange);
+          node2.off("peerleft", handlePresenceChange);
+        };
+      }, [node2, refresh]);
+      return peers;
+    }
+    function useObject2(node2, collectionName, objectId) {
+      const [record, setRecord] = useState7(null);
+      const refresh = useCallback2(() => {
+        if (!node2 || !collectionName || !objectId) {
+          setRecord(null);
+          return;
+        }
+        setRecord(node2.read(collectionName, objectId));
+      }, [node2, collectionName, objectId]);
+      useEffect7(() => {
+        refresh();
+        if (!node2) {
+          return void 0;
+        }
+        const handleChange = (event) => {
+          if (event && event.collection === collectionName && event.id === objectId) {
+            refresh();
+          }
+        };
+        node2.on("change", handleChange);
+        return () => node2.off("change", handleChange);
+      }, [node2, collectionName, objectId, refresh]);
+      return record;
+    }
+    function useDiscovery2(node2, scope = "main", options = null) {
+      const [joined, setJoined] = useState7(false);
+      const [error2, setError] = useState7(null);
+      useEffect7(() => {
+        if (!node2 || !scope || !options) {
+          setJoined(false);
+          setError(null);
+          return void 0;
+        }
+        let cancelled = false;
+        node2.joinDiscovery(scope, options).then(() => {
+          if (!cancelled) {
+            setJoined(true);
+            setError(null);
+          }
+        }).catch((joinError) => {
+          if (!cancelled) {
+            setJoined(false);
+            setError(joinError);
+          }
+        });
+        return () => {
+          cancelled = true;
+          node2.leaveDiscovery(scope).catch(() => void 0);
+          setJoined(false);
+        };
+      }, [node2, scope, options]);
+      return { joined, error: error2 };
+    }
+    function useConnectionStats(node2, pollIntervalMs = 2e3) {
+      const [stats, setStats] = useState7({ openCount: 0, peerIds: [] });
+      const refresh = useCallback2(() => {
+        if (!node2 || typeof node2.getConnectionStats !== "function") {
+          setStats({ openCount: 0, peerIds: [] });
+          return;
+        }
+        setStats(node2.getConnectionStats());
+      }, [node2]);
+      useEffect7(() => {
+        refresh();
+        if (!node2 || !pollIntervalMs) {
+          return void 0;
+        }
+        const timer = setInterval(refresh, pollIntervalMs);
+        return () => clearInterval(timer);
+      }, [node2, pollIntervalMs, refresh]);
+      return stats;
+    }
+    function useRoom(node2, scope = "main", options = null) {
+      const peersOptions = options && options.peersOptions ? options.peersOptions : {};
+      const { joined, error: error2 } = useDiscovery2(node2, scope, options);
+      const peers = usePeers2(node2, scope, peersOptions);
+      const connectionStats = useConnectionStats(node2, options?.connectionPollMs ?? 2e3);
+      return {
+        joined,
+        error: error2,
+        peers,
+        connectionStats
+      };
+    }
+    function useMessages(node2, filter = null) {
+      const [messages, setMessages] = useState7([]);
+      useEffect7(() => {
+        if (!node2) {
+          setMessages([]);
+          return void 0;
+        }
+        const handleMessage = (message) => {
+          if (typeof filter === "function" && !filter(message)) {
+            return;
+          }
+          setMessages((current) => [...current, message]);
+        };
+        node2.on("message", handleMessage);
+        return () => node2.off("message", handleMessage);
+      }, [node2, filter]);
+      return messages;
+    }
+    module.exports = {
+      useDignity: useDignity2,
+      useCollection,
+      usePeers: usePeers2,
+      useObject: useObject2,
+      useDiscovery: useDiscovery2,
+      useConnectionStats,
+      useRoom,
+      useMessages
     };
   }
 });
@@ -35674,7 +35674,9 @@ function formatRoleLabel(game) {
 // docs/chess/src/lib/playerKeys.js
 var import_tweetnacl = __toESM(require_nacl_fast());
 var import_tweetnacl_util = __toESM(require_nacl_util());
+var import_src = __toESM(require_src());
 var STORAGE_KEY = "dignity-chess-player-keys-v1";
+var DEMO_KDF_ITERATIONS = 1e4;
 function loadStore() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -35715,6 +35717,17 @@ function createFreshKeyPair() {
     signing: import_tweetnacl.default.sign.keyPair(),
     encryption: import_tweetnacl.default.box.keyPair()
   };
+}
+async function derivePlayerKeyPairFromCredentials({ gameId, seat, username, password }) {
+  if (!gameId || !seat || !username || !password) {
+    throw new Error("derivePlayerKeyPairFromCredentials requires gameId, seat, username, and password");
+  }
+  return (0, import_src.deriveKeyPairFromCredentials)({
+    username,
+    password,
+    pepper: `${gameId}:${seat}`,
+    kdfIterations: DEMO_KDF_ITERATIONS
+  });
 }
 function keyPairToPublicBundle(keyPair) {
   return {
@@ -36129,7 +36142,11 @@ function GameList({ title, games, emptyText, onOpen }) {
 }
 function Lobby({
   nickname,
+  username,
+  password,
   onNicknameChange,
+  onUsernameChange,
+  onPasswordChange,
   onCreate,
   onJoinPaste,
   onOpenGame
@@ -36143,6 +36160,8 @@ function Lobby({
   const [finishedGames, setFinishedGames] = (0, import_react.useState)([]);
   const [loadingGames, setLoadingGames] = (0, import_react.useState)(true);
   const nicknameInputId = (0, import_react.useId)();
+  const usernameInputId = (0, import_react.useId)();
+  const passwordInputId = (0, import_react.useId)();
   const pasteLinkId = (0, import_react.useId)();
   const seatBackupId = (0, import_react.useId)();
   const checkpointBundleId = (0, import_react.useId)();
@@ -36191,7 +36210,28 @@ function Lobby({
       setImportError(error2?.message || "Invalid portable checkpoint bundle");
     }
   }
-  return /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby-layout" }, /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v0.14.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: nicknameInputId }, "Your nickname", /* @__PURE__ */ import_react.default.createElement(
+  return /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby-layout" }, /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.0.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
+    "input",
+    {
+      id: usernameInputId,
+      value: username,
+      onChange: (event) => onUsernameChange(event.target.value),
+      placeholder: "Username",
+      maxLength: 64,
+      autoComplete: "username"
+    }
+  )), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: passwordInputId }, "Password", /* @__PURE__ */ import_react.default.createElement(
+    "input",
+    {
+      id: passwordInputId,
+      type: "password",
+      value: password,
+      onChange: (event) => onPasswordChange(event.target.value),
+      placeholder: "Password",
+      maxLength: 128,
+      autoComplete: "current-password"
+    }
+  )), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: nicknameInputId }, "Display nickname", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
       id: nicknameInputId,
@@ -36201,7 +36241,16 @@ function Lobby({
       maxLength: 32,
       autoComplete: "nickname"
     }
-  )), /* @__PURE__ */ import_react.default.createElement("button", { type: "button", className: "primary", onClick: () => onCreate(generateGameId()) }, "Start new game")), /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__join" }, /* @__PURE__ */ import_react.default.createElement("h2", null, "Join from link"), /* @__PURE__ */ import_react.default.createElement("p", null, "Paste a host, opponent, spectator, or dual-signed resume link. Resume links restore signed game state from the URL when possible."), /* @__PURE__ */ import_react.default.createElement("label", { htmlFor: pasteLinkId }, "Game link"), /* @__PURE__ */ import_react.default.createElement(
+  )), /* @__PURE__ */ import_react.default.createElement(
+    "button",
+    {
+      type: "button",
+      className: "primary",
+      disabled: !username.trim() || !password,
+      onClick: () => onCreate(generateGameId())
+    },
+    "Start new game"
+  )), /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__join" }, /* @__PURE__ */ import_react.default.createElement("h2", null, "Join from link"), /* @__PURE__ */ import_react.default.createElement("p", null, "Paste a host, opponent, spectator, or dual-signed resume link. Resume links restore signed game state from the URL when possible."), /* @__PURE__ */ import_react.default.createElement("label", { htmlFor: pasteLinkId }, "Game link"), /* @__PURE__ */ import_react.default.createElement(
     "textarea",
     {
       id: pasteLinkId,
@@ -36287,54 +36336,92 @@ var ROLE_COPY = {
   host: {
     title: "Start game",
     action: "Start as White",
-    hint: "You will play White. Choose your name before connecting to the room."
+    hint: "Enter your username and password to derive your signing keys. Same credentials restore your seat on any device."
   },
   join: {
     title: "Join as opponent",
     action: "Join as Black",
-    hint: "Choose your name now \u2014 it cannot be changed after connecting without reconnecting."
+    hint: "Use the username and password shared by the host for this game room. Your display nickname is shown to other players."
   },
   watch: {
     title: "Watch game",
     action: "Enter as spectator",
-    hint: "Pick a display name for the spectator list."
+    hint: "Spectators need a username and password for encrypted mesh access. Pick a display name for the spectator list."
   },
   resume: {
     title: "Resume game",
     action: "Reconnect",
-    hint: "This link carries a dual-signed checkpoint. Import your seat key backup in the lobby first when using a new device."
+    hint: "Enter the same username and password used when you first played. Import a seat key backup in the lobby if you changed devices without credentials."
   }
 };
-function JoinGate({ route, defaultNickname, onConfirm, onBack }) {
+function JoinGate({
+  route,
+  defaultNickname,
+  defaultUsername,
+  defaultPassword,
+  onConfirm,
+  onBack
+}) {
   const [name, setName] = (0, import_react2.useState)(defaultNickname);
+  const [username, setUsername] = (0, import_react2.useState)(defaultUsername);
+  const [password, setPassword] = (0, import_react2.useState)(defaultPassword);
   const nicknameInputId = (0, import_react2.useId)();
+  const usernameInputId = (0, import_react2.useId)();
+  const passwordInputId = (0, import_react2.useId)();
   const copy = ROLE_COPY[route.role] || ROLE_COPY.resume;
   function handleSubmit(event) {
     event.preventDefault();
     const trimmed = name.trim();
-    if (!trimmed) {
+    const trimmedUsername = username.trim();
+    if (!trimmed || !trimmedUsername || !password) {
       return;
     }
-    onConfirm(trimmed);
+    onConfirm({
+      nickname: trimmed,
+      username: trimmedUsername,
+      password
+    });
   }
-  return /* @__PURE__ */ import_react2.default.createElement("section", { className: "join-gate" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "join-gate__card panel" }, /* @__PURE__ */ import_react2.default.createElement("p", { className: "eyebrow" }, "Game ", route.gameId), /* @__PURE__ */ import_react2.default.createElement("h2", { id: "join-gate-title" }, copy.title), /* @__PURE__ */ import_react2.default.createElement("p", { id: "join-gate-hint" }, copy.hint), /* @__PURE__ */ import_react2.default.createElement("form", { onSubmit: handleSubmit, "aria-labelledby": "join-gate-title" }, /* @__PURE__ */ import_react2.default.createElement("label", { className: "join-gate__field", htmlFor: nicknameInputId }, "Your nickname", /* @__PURE__ */ import_react2.default.createElement(
+  const canSubmit = Boolean(name.trim() && username.trim() && password);
+  return /* @__PURE__ */ import_react2.default.createElement("section", { className: "join-gate" }, /* @__PURE__ */ import_react2.default.createElement("div", { className: "join-gate__card panel" }, /* @__PURE__ */ import_react2.default.createElement("p", { className: "eyebrow" }, "Game ", route.gameId), /* @__PURE__ */ import_react2.default.createElement("h2", { id: "join-gate-title" }, copy.title), /* @__PURE__ */ import_react2.default.createElement("p", { id: "join-gate-hint" }, copy.hint), /* @__PURE__ */ import_react2.default.createElement("form", { onSubmit: handleSubmit, "aria-labelledby": "join-gate-title" }, /* @__PURE__ */ import_react2.default.createElement("label", { className: "join-gate__field", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react2.default.createElement(
+    "input",
+    {
+      id: usernameInputId,
+      value: username,
+      onChange: (event) => setUsername(event.target.value),
+      placeholder: "Username",
+      autoFocus: true,
+      maxLength: 64,
+      autoComplete: "username",
+      "aria-describedby": "join-gate-hint"
+    }
+  )), /* @__PURE__ */ import_react2.default.createElement("label", { className: "join-gate__field", htmlFor: passwordInputId }, "Password", /* @__PURE__ */ import_react2.default.createElement(
+    "input",
+    {
+      id: passwordInputId,
+      type: "password",
+      value: password,
+      onChange: (event) => setPassword(event.target.value),
+      placeholder: "Password",
+      maxLength: 128,
+      autoComplete: "current-password"
+    }
+  )), /* @__PURE__ */ import_react2.default.createElement("label", { className: "join-gate__field", htmlFor: nicknameInputId }, "Display nickname", /* @__PURE__ */ import_react2.default.createElement(
     "input",
     {
       id: nicknameInputId,
       value: name,
       onChange: (event) => setName(event.target.value),
       placeholder: "Nickname",
-      autoFocus: true,
       maxLength: 32,
-      autoComplete: "nickname",
-      "aria-describedby": "join-gate-hint"
+      autoComplete: "nickname"
     }
   )), /* @__PURE__ */ import_react2.default.createElement("div", { className: "join-gate__actions" }, /* @__PURE__ */ import_react2.default.createElement("button", { type: "button", className: "ghost", onClick: onBack }, "\u2190 Back"), /* @__PURE__ */ import_react2.default.createElement(
     "button",
     {
       type: "submit",
       className: "primary",
-      disabled: !name.trim(),
+      disabled: !canSubmit,
       "aria-label": `${copy.action} for game ${route.gameId}`
     },
     copy.action
@@ -39804,13 +39891,13 @@ var Chess = class {
 var import_react8 = __toESM(require_react2());
 
 // docs/chess/src/lib/dignitySetup.js
-var import_src = __toESM(require_src());
+var import_src2 = __toESM(require_src());
 function createDignityConfig({ nodeId, roomKey, scope, nickname, role, keyPair }) {
-  const networkAdapter = (0, import_src.createPeerJSNetworkAdapter)({
-    urls: import_src.DEFAULT_CLOUDFLARE_SIGNALING_URLS
+  const networkAdapter = (0, import_src2.createPeerJSNetworkAdapter)({
+    urls: import_src2.DEFAULT_CLOUDFLARE_SIGNALING_URLS
   });
   if (typeof console !== "undefined") {
-    console.log("[chess-p2p] signaling urls", import_src.DEFAULT_CLOUDFLARE_SIGNALING_URLS);
+    console.log("[chess-p2p] signaling urls", import_src2.DEFAULT_CLOUDFLARE_SIGNALING_URLS);
     console.log("[chess-p2p] dignity config", { nodeId, scope, role, roomKeyLen: roomKey?.length });
   }
   return {
@@ -39832,7 +39919,7 @@ function createDignityConfig({ nodeId, roomKey, scope, nickname, role, keyPair }
   };
 }
 async function attachPersistence(node2, collections = ["chess-matches"]) {
-  const persistence = new import_src.IndexedDBPersistence({ collections });
+  const persistence = new import_src2.IndexedDBPersistence({ collections });
   await persistence.attach(node2);
   return persistence;
 }
@@ -69247,7 +69334,7 @@ function canResume(route, game, routeCheckpoint) {
 function canWatch(route, game) {
   return route.watchToken && game?.data?.watchToken === route.watchToken;
 }
-function GameView({ route, nodeId, nickname, onBack }) {
+function GameView({ route, nodeId, nickname, username, password, onBack }) {
   const scope = scopeForGame(route.gameId);
   const roomKey = route.roomKey;
   p2pLog("GameView mount", { role: route.role, nodeId, gameId: route.gameId, hostPeer: route.hostPeer });
@@ -69256,19 +69343,66 @@ function GameView({ route, nodeId, nickname, onBack }) {
     () => !route.checkpoint && !route.checkpointRef
   );
   const [resumeSeat, setResumeSeat] = (0, import_react7.useState)(null);
-  const [keyPair, setKeyPair] = (0, import_react7.useState)(() => {
-    if (route.role === "host") {
-      return loadPlayerKeyPair(route.gameId, "white") || createFreshKeyPair();
-    }
-    if (route.role === "join") {
-      return loadPlayerKeyPair(route.gameId, "black") || createFreshKeyPair();
-    }
-    return createFreshKeyPair();
-  });
+  const [keyPair, setKeyPair] = (0, import_react7.useState)(null);
+  const [keysReady, setKeysReady] = (0, import_react7.useState)(false);
   const [pendingProposal, setPendingProposal] = (0, import_react7.useState)(null);
   const [finalizedCheckpoint, setFinalizedCheckpoint] = (0, import_react7.useState)(null);
   const [resumeLink, setResumeLink] = (0, import_react7.useState)("");
   const restoredFromCheckpointRef = import_react7.default.useRef(false);
+  (0, import_react7.useEffect)(() => {
+    let cancelled = false;
+    async function initSigningKeys() {
+      const seatForRole = route.role === "host" ? "white" : route.role === "join" ? "black" : route.role === "resume" && (route.seat === "white" || route.seat === "black") ? route.seat : null;
+      if (route.role === "watch") {
+        if (!cancelled) {
+          setKeyPair(createFreshKeyPair());
+          setKeysReady(true);
+        }
+        return;
+      }
+      if (username && password && seatForRole) {
+        try {
+          const derived = await derivePlayerKeyPairFromCredentials({
+            gameId: route.gameId,
+            seat: seatForRole,
+            username,
+            password
+          });
+          if (!cancelled) {
+            setKeyPair(derived);
+            savePlayerKeyRecord(route.gameId, seatForRole, derived, nickname);
+            if (route.role === "resume") {
+              setResumeSeat(seatForRole);
+            }
+            setKeysReady(true);
+          }
+          return;
+        } catch (deriveError) {
+          p2pError("credential key derivation failed", deriveError);
+        }
+      }
+      if (!cancelled) {
+        if (route.role === "host") {
+          setKeyPair(loadPlayerKeyPair(route.gameId, "white") || createFreshKeyPair());
+        } else if (route.role === "join") {
+          setKeyPair(loadPlayerKeyPair(route.gameId, "black") || createFreshKeyPair());
+        } else {
+          setKeyPair(createFreshKeyPair());
+        }
+        setKeysReady(true);
+      }
+    }
+    setKeysReady(false);
+    initSigningKeys().catch((initError) => {
+      if (!cancelled) {
+        p2pError("signing key init failed", initError);
+        setKeysReady(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [route.role, route.gameId, route.seat, username, password, nickname]);
   (0, import_react7.useEffect)(() => {
     let cancelled = false;
     async function resolveCheckpoint() {
@@ -69316,14 +69450,15 @@ function GameView({ route, nodeId, nickname, onBack }) {
     };
   }, [route.role, route.checkpoint, route.checkpointRef, route.gameId, route.roomKey, route.seat]);
   const dignityConfig = (0, import_react7.useMemo)(
-    () => createDignityConfig({
+    () => keysReady && keyPair ? createDignityConfig({
       nodeId,
       roomKey,
       scope,
+      nickname,
       role: route.role,
       keyPair
-    }),
-    [nodeId, roomKey, scope, route.role, keyPair]
+    }) : null,
+    [keysReady, keyPair, nodeId, roomKey, scope, nickname, route.role]
   );
   const { node: node2, status, error: error2 } = (0, import_react8.useDignity)(dignityConfig);
   const game = (0, import_react8.useObject)(node2, COLLECTION2, route.gameId);
@@ -70135,6 +70270,9 @@ function GameView({ route, nodeId, nickname, onBack }) {
   if (!roomKey) {
     return /* @__PURE__ */ import_react7.default.createElement("p", { className: "error" }, "Missing room key in link.");
   }
+  if (!keysReady || !keyPair) {
+    return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Deriving signing keys\u2026"), /* @__PURE__ */ import_react7.default.createElement("p", { className: "muted" }, "Using your username and password to restore your seat keys for this game."));
+  }
   if (route.role === "resume" && (route.checkpoint || route.checkpointRef) && !checkpointResolved) {
     return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Loading signed checkpoint\u2026"), /* @__PURE__ */ import_react7.default.createElement("p", { className: "muted" }, "Restoring game state from the resume link."));
   }
@@ -70151,7 +70289,7 @@ function GameView({ route, nodeId, nickname, onBack }) {
     return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Invalid spectator link"), /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
   }
   if (route.role === "resume" && routeCheckpoint && validateCheckpointForResume(routeCheckpoint).ok && resumeSeat === null) {
-    return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Seat keys not found on this device"), /* @__PURE__ */ import_react7.default.createElement("p", null, "This resume link carries a valid dual-signed checkpoint, but this browser does not have your player signing keys. Open the link on the device that played, or import a seat key backup from the Resume panel before leaving."), /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
+    return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Seat keys not found on this device"), /* @__PURE__ */ import_react7.default.createElement("p", null, "This resume link carries a valid dual-signed checkpoint, but this browser could not derive your player signing keys. Re-enter the same username and password used when you first played, import a seat key backup from the lobby, or open the link on the original device."), /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
   }
   if (route.role === "resume" && routeCheckpoint && !validateCheckpointForResume(routeCheckpoint).ok) {
     return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Invalid signed checkpoint"), /* @__PURE__ */ import_react7.default.createElement("p", null, "The resume link checkpoint failed signature validation."), /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
@@ -70235,12 +70373,22 @@ function GameView({ route, nodeId, nickname, onBack }) {
 
 // docs/chess/src/App.jsx
 var STORAGE_KEY2 = "dignity-chess-name";
+var STORAGE_USERNAME_KEY = "dignity-chess-username";
+var SESSION_PASSWORD_KEY = "dignity-chess-password";
 function App() {
   const [route, setRoute] = (0, import_react9.useState)(() => parseRoute());
   const [draftNickname, setDraftNickname] = (0, import_react9.useState)(
     () => localStorage.getItem(STORAGE_KEY2) || "Player"
   );
+  const [draftUsername, setDraftUsername] = (0, import_react9.useState)(
+    () => localStorage.getItem(STORAGE_USERNAME_KEY) || ""
+  );
+  const [draftPassword, setDraftPassword] = (0, import_react9.useState)(
+    () => sessionStorage.getItem(SESSION_PASSWORD_KEY) || ""
+  );
   const [sessionNickname, setSessionNickname] = (0, import_react9.useState)(null);
+  const [sessionUsername, setSessionUsername] = (0, import_react9.useState)(null);
+  const [sessionPassword, setSessionPassword] = (0, import_react9.useState)(null);
   (0, import_react9.useEffect)(() => {
     const handleHashChange = () => setRoute(parseRoute());
     window.addEventListener("hashchange", handleHashChange);
@@ -70253,15 +70401,31 @@ function App() {
     }
     return nodeIdForRole(route.role, route.gameId);
   }, [activeSession, sessionNickname, route.role, route.gameId]);
-  function persistNickname(name) {
-    const trimmed = name.trim() || "Player";
-    localStorage.setItem(STORAGE_KEY2, trimmed);
-    setDraftNickname(trimmed);
-    setSessionNickname(trimmed);
-    return trimmed;
+  function persistCredentials({ nickname, username, password }) {
+    const trimmedName = nickname.trim() || "Player";
+    const trimmedUsername = username.trim();
+    localStorage.setItem(STORAGE_KEY2, trimmedName);
+    localStorage.setItem(STORAGE_USERNAME_KEY, trimmedUsername);
+    if (password) {
+      sessionStorage.setItem(SESSION_PASSWORD_KEY, password);
+    }
+    setDraftNickname(trimmedName);
+    setDraftUsername(trimmedUsername);
+    setDraftPassword(password || "");
+    setSessionNickname(trimmedName);
+    setSessionUsername(trimmedUsername);
+    setSessionPassword(password || "");
+    return { nickname: trimmedName, username: trimmedUsername, password };
   }
   function startGame(gameId) {
-    persistNickname(draftNickname);
+    if (!draftUsername.trim() || !draftPassword) {
+      return;
+    }
+    persistCredentials({
+      nickname: draftNickname,
+      username: draftUsername,
+      password: draftPassword
+    });
     const roomKey = randomToken(16);
     const joinToken = randomToken();
     const watchToken = randomToken();
@@ -70292,23 +70456,33 @@ function App() {
     window.location.hash = hash;
     setRoute(parseRoute());
     setSessionNickname(null);
+    setSessionUsername(null);
+    setSessionPassword(null);
   }
   function backToLobby() {
     window.location.hash = "";
     setRoute(parseRoute());
     setSessionNickname(null);
+    setSessionUsername(null);
+    setSessionPassword(null);
   }
   function openPastedLink(raw) {
     const hashIndex = raw.indexOf("#");
     window.location.hash = hashIndex >= 0 ? raw.slice(hashIndex + 1) : raw;
     setRoute(parseRoute());
     setSessionNickname(null);
+    setSessionUsername(null);
+    setSessionPassword(null);
   }
-  return /* @__PURE__ */ import_react9.default.createElement("div", { className: `app-shell${activeSession && sessionNickname ? " app-shell--game" : ""}` }, /* @__PURE__ */ import_react9.default.createElement("header", { className: "topbar" }, /* @__PURE__ */ import_react9.default.createElement("a", { href: "../index.html" }, "dignity.js docs"), !activeSession ? /* @__PURE__ */ import_react9.default.createElement("span", { className: "topbar__hint" }, "Set your nickname in the lobby before starting or joining.") : sessionNickname ? /* @__PURE__ */ import_react9.default.createElement("span", { className: "topbar__player" }, "Playing as ", /* @__PURE__ */ import_react9.default.createElement("strong", null, sessionNickname)) : null), !activeSession ? /* @__PURE__ */ import_react9.default.createElement(
+  return /* @__PURE__ */ import_react9.default.createElement("div", { className: `app-shell${activeSession && sessionNickname ? " app-shell--game" : ""}` }, /* @__PURE__ */ import_react9.default.createElement("header", { className: "topbar" }, /* @__PURE__ */ import_react9.default.createElement("a", { href: "../index.html" }, "dignity.js docs"), !activeSession ? /* @__PURE__ */ import_react9.default.createElement("span", { className: "topbar__hint" }, "Set username, password, and nickname in the lobby before starting or joining.") : sessionNickname ? /* @__PURE__ */ import_react9.default.createElement("span", { className: "topbar__player" }, "Playing as ", /* @__PURE__ */ import_react9.default.createElement("strong", null, sessionNickname), " (", sessionUsername, ")") : null), !activeSession ? /* @__PURE__ */ import_react9.default.createElement(
     Lobby,
     {
       nickname: draftNickname,
+      username: draftUsername,
+      password: draftPassword,
       onNicknameChange: setDraftNickname,
+      onUsernameChange: setDraftUsername,
+      onPasswordChange: setDraftPassword,
       onCreate: startGame,
       onJoinPaste: openPastedLink,
       onOpenGame: openSavedGame
@@ -70318,7 +70492,9 @@ function App() {
     {
       route,
       defaultNickname: draftNickname,
-      onConfirm: persistNickname,
+      defaultUsername: draftUsername,
+      defaultPassword: draftPassword,
+      onConfirm: persistCredentials,
       onBack: backToLobby
     }
   ) : /* @__PURE__ */ import_react9.default.createElement(
@@ -70327,6 +70503,8 @@ function App() {
       route,
       nodeId,
       nickname: sessionNickname,
+      username: sessionUsername,
+      password: sessionPassword,
       onBack: backToLobby
     }
   ), /* @__PURE__ */ import_react9.default.createElement("footer", { className: "footer" }, "Scope preview: ", route.gameId ? scopeForGame(route.gameId) : "\u2014", " \xB7 Cloudflare PeerJS \xB7 IndexedDB persistence"));

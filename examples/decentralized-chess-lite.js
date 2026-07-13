@@ -4,6 +4,7 @@
  * Run: npm run example:chess
  *
  * Demonstrates:
+ * - Credential-derived signing keys (deriveKeyPairFromCredentials)
  * - Room discovery and scoped broadcast
  * - Replicated match state (create / update / read)
  * - Owner authorization on moves
@@ -11,7 +12,18 @@
  * For the browser 3D demo (PeerJS, dual-signed resume, IndexedDB), see:
  *   docs/chess/   — rebuild with: npm run build:chess
  */
-const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = require('../src');
+const {
+  DignityP2P,
+  InMemoryNetworkHub,
+  InMemoryNetworkAdapter,
+  deriveKeyPairFromCredentials
+} = require('../src');
+
+const ROOM_PASSWORD = 'chess-lite-room-secret';
+const HOST_USERNAME = 'alice';
+const HOST_PASSWORD = 'host-pass-demo';
+const JOINER_USERNAME = 'bob';
+const JOINER_PASSWORD = 'joiner-pass-demo';
 
 function initialBoard() {
   return {
@@ -22,17 +34,39 @@ function initialBoard() {
   };
 }
 
+async function buildNode({ nodeId, username, password, hub }) {
+  const keyPair = await deriveKeyPairFromCredentials({
+    username,
+    password,
+    pepper: `chess-lite:${nodeId}`,
+    kdfIterations: 10000
+  });
+
+  return new DignityP2P({
+    nodeId,
+    networkAdapter: new InMemoryNetworkAdapter(hub),
+    security: {
+      appPassword: ROOM_PASSWORD,
+      powTargetMs: 100,
+      keyPair
+    }
+  });
+}
+
 async function runDemo() {
   const hub = new InMemoryNetworkHub();
   const scope = 'room:chess-lite';
 
-  const host = new DignityP2P({
+  console.log('Signing keys derived from username + password (pepper: chess-lite:<nodeId>)');
+  console.log(`  host:   ${HOST_USERNAME}`);
+  console.log(`  joiner: ${JOINER_USERNAME}`);
+  console.log(`  room broadcast password: ${ROOM_PASSWORD}\n`);
+
+  const host = await buildNode({
     nodeId: 'host',
-    networkAdapter: new InMemoryNetworkAdapter(hub),
-    security: {
-      appPassword: 'demo-shared-password',
-      powTargetMs: 100
-    }
+    username: HOST_USERNAME,
+    password: HOST_PASSWORD,
+    hub
   });
 
   await host.start();
@@ -54,13 +88,11 @@ async function runDemo() {
     { id: 'match-1', broadcastScope: scope }
   );
 
-  const joiner = new DignityP2P({
+  const joiner = await buildNode({
     nodeId: 'joiner',
-    networkAdapter: new InMemoryNetworkAdapter(hub),
-    security: {
-      appPassword: 'demo-shared-password',
-      powTargetMs: 100
-    }
+    username: JOINER_USERNAME,
+    password: JOINER_PASSWORD,
+    hub
   });
 
   await joiner.start();

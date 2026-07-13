@@ -2,7 +2,7 @@
 
 Practical guide for running dignity.js in production: signaling, NAT traversal, security tuning, monitoring, and scale.
 
-See also: [browser-compatibility.md](./browser-compatibility.md), [PeerJS ICE/TURN](./browser-compatibility.md#peerjs-ice-turn).
+See also: [browser-compatibility.md](./browser-compatibility.md), [api-stability.md](./api-stability.md), [threat-model.md](./threat-model.md), [PeerJS ICE/TURN](./browser-compatibility.md#peerjs-ice-turn).
 
 ## Deployment checklist
 
@@ -97,7 +97,7 @@ Defaults from `DEFAULT_SECURITY_OPTIONS`:
 node.registerPublisherVerification('alice', 'posts', {
   code: businessRules,
   reflective: true,
-  version: '0.14.0',
+  version: '1.0.0',
   dappId: 'my-feed',
   policy: 'strict'
 });
