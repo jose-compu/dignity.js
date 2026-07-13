@@ -124,6 +124,34 @@ export default function Lobby({
 
   return (
     <div className="lobby-layout">
+      <section className="lobby__history">
+        <div className="lobby__history-head">
+          <h2>Your games on this device</h2>
+          <button type="button" className="ghost" onClick={refreshGames} disabled={loadingGames}>
+            Refresh
+          </button>
+        </div>
+
+        {loadingGames ? (
+          <p className="muted">Loading saved games…</p>
+        ) : (
+          <div className="lobby__history-grid">
+            <GameList
+              title="Active"
+              games={activeGames}
+              emptyText="No active games. Start one or join from a link."
+              onOpen={handleOpenGame}
+            />
+            <GameList
+              title="Finished"
+              games={finishedGames}
+              emptyText="No finished games yet."
+              onOpen={handleOpenGame}
+            />
+          </div>
+        )}
+      </section>
+
       <section className="lobby lobby__top">
         <div className="lobby__hero">
           <p className="eyebrow">dignity.js v1.0.0 · decentralized demo</p>
@@ -248,34 +276,6 @@ export default function Lobby({
           {importMessage ? <p className="notice" role="status">{importMessage}</p> : null}
           {importError ? <p className="error-inline" role="alert">{importError}</p> : null}
         </div>
-      </section>
-
-      <section className="lobby__history">
-        <div className="lobby__history-head">
-          <h2>Your games on this device</h2>
-          <button type="button" className="ghost" onClick={refreshGames} disabled={loadingGames}>
-            Refresh
-          </button>
-        </div>
-
-        {loadingGames ? (
-          <p className="muted">Loading saved games…</p>
-        ) : (
-          <div className="lobby__history-grid">
-            <GameList
-              title="Active"
-              games={activeGames}
-              emptyText="No active games. Start one or join from a link."
-              onOpen={handleOpenGame}
-            />
-            <GameList
-              title="Finished"
-              games={finishedGames}
-              emptyText="No finished games yet."
-              onOpen={handleOpenGame}
-            />
-          </div>
-        )}
       </section>
     </div>
   );

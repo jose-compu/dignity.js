@@ -35525,6 +35525,7 @@ async function connectToRoomPeer(node2, remotePeerId) {
 
 // docs/chess/src/lib/localGames.js
 var SESSIONS_KEY = "dignity-chess-sessions";
+var PLAYER_KEYS_KEY = "dignity-chess-player-keys-v1";
 var COLLECTION = "chess-matches";
 var DB_NAME = "dignity";
 var STORE_NAME = "records";
@@ -35546,7 +35547,7 @@ function saveLocalGameSession(session) {
   const next = {
     ...sessions[index],
     ...session,
-    updatedAt: session.updatedAt || Date.now()
+    updatedAt: session.updatedAt ?? Date.now()
   };
   if (index >= 0) {
     sessions[index] = next;
@@ -35590,28 +35591,140 @@ function loadChessRecordsFromIndexedDB() {
     };
   });
 }
+function parseRoomKeyFromHash(hash) {
+  if (!hash) {
+    return null;
+  }
+  const normalized = hash.startsWith("#") ? hash.slice(1) : hash;
+  const params = new URLSearchParams(normalized);
+  return params.get("room") || null;
+}
+function recoverRoomKeyForGame(gameId) {
+  const savedLink = localStorage.getItem(`dignity-chess-resume-link:${gameId}`);
+  const fromResume = parseRoomKeyFromHash(savedLink);
+  if (fromResume) {
+    return fromResume;
+  }
+  const session = loadLocalGameSessions().find((entry) => entry.gameId === gameId);
+  if (session?.roomKey) {
+    return session.roomKey;
+  }
+  return null;
+}
+function loadPlayerKeySeats(gameId) {
+  try {
+    const raw = localStorage.getItem(PLAYER_KEYS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    const entry = parsed?.[gameId];
+    if (!entry || typeof entry !== "object") {
+      return { white: false, black: false };
+    }
+    return {
+      white: Boolean(entry.white),
+      black: Boolean(entry.black)
+    };
+  } catch (_error) {
+    return { white: false, black: false };
+  }
+}
+function inferRoleFromRecord(record, existingSession) {
+  if (existingSession?.role) {
+    return existingSession.role;
+  }
+  const seats = loadPlayerKeySeats(record.id);
+  if (seats.white && !seats.black) {
+    return "host";
+  }
+  if (seats.black && !seats.white) {
+    return "join";
+  }
+  if (record.ownerId && record.data?.whitePlayerId === record.ownerId) {
+    return "host";
+  }
+  if (record.data?.blackPlayerId && record.data.blackPlayerId !== record.data.whitePlayerId) {
+    return "resume";
+  }
+  return "resume";
+}
+function sessionFromRecord(record, existingSession) {
+  if (!record?.id) {
+    return null;
+  }
+  const data = record.data || {};
+  const roomKey = data.roomKey || existingSession?.roomKey || recoverRoomKeyForGame(record.id);
+  if (!roomKey) {
+    return null;
+  }
+  return {
+    gameId: record.id,
+    roomKey,
+    role: inferRoleFromRecord(record, existingSession),
+    hostPeer: data.whitePlayerId || existingSession?.hostPeer || null,
+    joinToken: data.joinToken || existingSession?.joinToken || null,
+    watchToken: data.watchToken || existingSession?.watchToken || null,
+    resumeToken: data.resumeToken || existingSession?.resumeToken || null,
+    joinTokenUsed: Boolean(data.joinTokenUsed),
+    nickname: existingSession?.nickname || data.whiteNickname || data.blackNickname || null,
+    status: data.status || existingSession?.status || "waiting",
+    winner: data.winner ?? existingSession?.winner ?? null,
+    moveCount: Array.isArray(data.moveHistory) ? data.moveHistory.length : existingSession?.moveCount || 0,
+    whitePlayerId: data.whitePlayerId || existingSession?.whitePlayerId || null,
+    blackPlayerId: data.blackPlayerId || existingSession?.blackPlayerId || null,
+    updatedAt: record.updatedAt || existingSession?.updatedAt || Date.now()
+  };
+}
 function mergeSessionWithRecord(session, record) {
   if (!record?.data) {
     return session;
   }
+  const data = record.data;
   return {
     ...session,
-    status: record.data.status || session.status || "waiting",
-    winner: record.data.winner ?? session.winner ?? null,
-    moveCount: Array.isArray(record.data.moveHistory) ? record.data.moveHistory.length : session.moveCount || 0,
-    whitePlayerId: record.data.whitePlayerId || session.whitePlayerId || null,
-    blackPlayerId: record.data.blackPlayerId || session.blackPlayerId || null,
+    roomKey: session.roomKey || data.roomKey || recoverRoomKeyForGame(session.gameId),
+    role: session.role || inferRoleFromRecord(record, session),
+    hostPeer: session.hostPeer || data.whitePlayerId || null,
+    joinToken: session.joinToken || data.joinToken || null,
+    watchToken: session.watchToken || data.watchToken || null,
+    resumeToken: session.resumeToken || data.resumeToken || null,
+    joinTokenUsed: session.joinTokenUsed ?? Boolean(data.joinTokenUsed),
+    status: data.status || session.status || "waiting",
+    winner: data.winner ?? session.winner ?? null,
+    moveCount: Array.isArray(data.moveHistory) ? data.moveHistory.length : session.moveCount || 0,
+    whitePlayerId: data.whitePlayerId || session.whitePlayerId || null,
+    blackPlayerId: data.blackPlayerId || session.blackPlayerId || null,
     updatedAt: record.updatedAt || session.updatedAt || Date.now()
   };
+}
+function sortByUpdatedAt(games) {
+  return [...games].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+}
+function buildGameListFromSources(sessions, records) {
+  const recordById = new Map(records.map((record) => [record.id, record]));
+  const sessionById = /* @__PURE__ */ new Map();
+  for (const session of sessions) {
+    const merged2 = mergeSessionWithRecord(session, recordById.get(session.gameId));
+    if (merged2?.gameId && merged2?.roomKey) {
+      sessionById.set(merged2.gameId, merged2);
+    }
+  }
+  for (const record of records) {
+    if (sessionById.has(record.id)) {
+      continue;
+    }
+    const recovered = sessionFromRecord(record, null);
+    if (recovered) {
+      sessionById.set(recovered.gameId, recovered);
+    }
+  }
+  const merged = sortByUpdatedAt([...sessionById.values()]);
+  const active = merged.filter((game) => game.status === "waiting" || game.status === "playing");
+  const finished = merged.filter((game) => game.status === "finished");
+  return { active, finished };
 }
 async function listLocalGames() {
   const sessions = loadLocalGameSessions();
   const records = await loadChessRecordsFromIndexedDB();
-  const recordById = new Map(records.map((record) => [record.id, record]));
-  const merged = sessions.map((session) => mergeSessionWithRecord(session, recordById.get(session.gameId)));
-  const active = merged.filter((game) => game.status === "waiting" || game.status === "playing");
-  const finished = merged.filter((game) => game.status === "finished");
-  return { active, finished };
+  return buildGameListFromSources(sessions, records);
 }
 function sessionResumeHash(session) {
   const savedLink = localStorage.getItem(`dignity-chess-resume-link:${session.gameId}`);
@@ -35619,23 +35732,38 @@ function sessionResumeHash(session) {
     const hashIndex = savedLink.indexOf("#");
     return hashIndex >= 0 ? savedLink.slice(hashIndex + 1) : savedLink;
   }
-  const role = session.role === "host" ? "host" : "resume";
+  let role = session.role || "resume";
+  if (role === "join" && (!session.joinToken || session.joinTokenUsed)) {
+    role = "resume";
+  }
+  if (role === "watch" && !session.watchToken) {
+    role = "resume";
+  }
+  if (!["host", "join", "watch", "resume"].includes(role)) {
+    role = "resume";
+  }
   const params = new URLSearchParams({
     game: session.gameId,
     room: session.roomKey,
     role,
     resume: session.resumeToken || ""
   });
-  if (session.hostPeer && session.role !== "resume") {
+  if (session.hostPeer) {
     params.set("host", session.hostPeer);
   }
   if (session.checkpointRef) {
     params.set("checkpointRef", session.checkpointRef);
   }
-  if (session.role === "host" && session.joinToken) {
+  if (role === "host" && session.joinToken) {
     params.set("join", session.joinToken);
   }
-  if (session.role === "host" && session.watchToken) {
+  if (role === "host" && session.watchToken) {
+    params.set("watch", session.watchToken);
+  }
+  if (role === "join" && session.joinToken) {
+    params.set("join", session.joinToken);
+  }
+  if (role === "watch" && session.watchToken) {
     params.set("watch", session.watchToken);
   }
   return params.toString();
@@ -36273,7 +36401,23 @@ function Lobby({
       setImportError(error2?.message || "Invalid portable checkpoint bundle");
     }
   }
-  return /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby-layout" }, /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.0.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
+  return /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby-layout" }, /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby__history" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__history-head" }, /* @__PURE__ */ import_react.default.createElement("h2", null, "Your games on this device"), /* @__PURE__ */ import_react.default.createElement("button", { type: "button", className: "ghost", onClick: refreshGames, disabled: loadingGames }, "Refresh")), loadingGames ? /* @__PURE__ */ import_react.default.createElement("p", { className: "muted" }, "Loading saved games\u2026") : /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__history-grid" }, /* @__PURE__ */ import_react.default.createElement(
+    GameList,
+    {
+      title: "Active",
+      games: activeGames,
+      emptyText: "No active games. Start one or join from a link.",
+      onOpen: handleOpenGame
+    }
+  ), /* @__PURE__ */ import_react.default.createElement(
+    GameList,
+    {
+      title: "Finished",
+      games: finishedGames,
+      emptyText: "No finished games yet.",
+      onOpen: handleOpenGame
+    }
+  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.0.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
       id: usernameInputId,
@@ -36374,23 +36518,7 @@ function Lobby({
       onClick: handleImportCheckpointBundle
     },
     "Import checkpoint and open resume"
-  ), importMessage ? /* @__PURE__ */ import_react.default.createElement("p", { className: "notice", role: "status" }, importMessage) : null, importError ? /* @__PURE__ */ import_react.default.createElement("p", { className: "error-inline", role: "alert" }, importError) : null)), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby__history" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__history-head" }, /* @__PURE__ */ import_react.default.createElement("h2", null, "Your games on this device"), /* @__PURE__ */ import_react.default.createElement("button", { type: "button", className: "ghost", onClick: refreshGames, disabled: loadingGames }, "Refresh")), loadingGames ? /* @__PURE__ */ import_react.default.createElement("p", { className: "muted" }, "Loading saved games\u2026") : /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__history-grid" }, /* @__PURE__ */ import_react.default.createElement(
-    GameList,
-    {
-      title: "Active",
-      games: activeGames,
-      emptyText: "No active games. Start one or join from a link.",
-      onOpen: handleOpenGame
-    }
-  ), /* @__PURE__ */ import_react.default.createElement(
-    GameList,
-    {
-      title: "Finished",
-      games: finishedGames,
-      emptyText: "No finished games yet.",
-      onOpen: handleOpenGame
-    }
-  ))));
+  ), importMessage ? /* @__PURE__ */ import_react.default.createElement("p", { className: "notice", role: "status" }, importMessage) : null, importError ? /* @__PURE__ */ import_react.default.createElement("p", { className: "error-inline", role: "alert" }, importError) : null)));
 }
 
 // docs/chess/src/components/JoinGate.jsx
@@ -69671,6 +69799,7 @@ function GameView({ route, nodeId, nickname, username, password, onBack }) {
         {
           fen: START_FEN,
           status: "waiting",
+          roomKey: route.roomKey,
           whitePlayerId: node2.nodeId,
           blackPlayerId: null,
           whiteNickname: nickname,
@@ -70188,6 +70317,10 @@ function GameView({ route, nodeId, nickname, username, password, onBack }) {
   (0, import_react7.useEffect)(() => {
     if (!node2 || !route.gameId || !route.roomKey) {
       return;
+    }
+    if (game && !game.data?.roomKey) {
+      node2.update(COLLECTION2, route.gameId, { roomKey: route.roomKey }).catch(() => {
+      });
     }
     saveLocalGameSession({
       gameId: route.gameId,

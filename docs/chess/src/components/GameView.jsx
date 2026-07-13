@@ -411,6 +411,7 @@ export default function GameView({ route, nodeId, nickname, username, password, 
         {
           fen: START_FEN,
           status: 'waiting',
+          roomKey: route.roomKey,
           whitePlayerId: node.nodeId,
           blackPlayerId: null,
           whiteNickname: nickname,
@@ -1024,6 +1025,10 @@ export default function GameView({ route, nodeId, nickname, username, password, 
   useEffect(() => {
     if (!node || !route.gameId || !route.roomKey) {
       return;
+    }
+
+    if (game && !game.data?.roomKey) {
+      node.update(COLLECTION, route.gameId, { roomKey: route.roomKey }).catch(() => {});
     }
 
     saveLocalGameSession({
