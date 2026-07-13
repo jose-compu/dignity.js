@@ -19,6 +19,7 @@ const {
   deserializeCheckpoint,
   validateCheckpointForResume,
   checkpointSeatForPublicKey,
+  getCheckpointSeatPublicKey,
   storeCheckpointRef,
   loadCheckpointRef,
   formatPortableCheckpointBundle,
@@ -32,7 +33,9 @@ const {
   loadPlayerKeyPair,
   findPlayerKeyPairByPublicKey,
   exportSeatKeyBackup,
-  importSeatKeyBackup
+  importSeatKeyBackup,
+  derivePlayerKeyPairFromCredentials,
+  resolveResumeKeysFromCheckpoint
 } = require('../../docs/chess/src/lib/playerKeys.js');
 
 const GAME_ID = 'Fischer-Spassky';
@@ -211,5 +214,66 @@ describe('playerKeys', () => {
   test('importSeatKeyBackup rejects malformed backup', () => {
     expect(() => importSeatKeyBackup('!!!')).toThrow('Invalid seat key backup');
     expect(() => importSeatKeyBackup(btoa(JSON.stringify({ gameId: GAME_ID })))).toThrow('Invalid seat key backup');
+  });
+
+  test('getCheckpointSeatPublicKey falls back to signatures when player slot is empty', () => {
+    const whiteKeys = createFreshKeyPair();
+    const blackKeys = createFreshKeyPair();
+    let checkpoint = buildCheckpointDraft({
+      gameId: GAME_ID,
+      roomKey: ROOM_KEY,
+      scope: `room:chess:${GAME_ID}`,
+      game: sampleGame(),
+      seat: 'white',
+      nickname: 'White',
+      publicKey: keyPairToPublicBundle(whiteKeys),
+      peerId: 'host-peer'
+    });
+    checkpoint = signCheckpoint(checkpoint, whiteKeys, 'white');
+    checkpoint = signCheckpoint(checkpoint, blackKeys, 'black');
+    checkpoint.black = {
+      ...checkpoint.black,
+      publicKey: null
+    };
+
+    expect(getCheckpointSeatPublicKey(checkpoint, 'black')?.signingPublicKey)
+      .toBe(keyPairToPublicBundle(blackKeys).signingPublicKey);
+    expect(checkpointSeatForPublicKey(checkpoint, keyPairToPublicBundle(blackKeys))).toBe('black');
+  });
+
+  test('resolveResumeKeysFromCheckpoint matches black credentials when player publicKey is null', async () => {
+    const username = 'player2';
+    const password = 'black-pass';
+    const blackKeys = await derivePlayerKeyPairFromCredentials({
+      gameId: GAME_ID,
+      seat: 'black',
+      username,
+      password
+    });
+    const whiteKeys = createFreshKeyPair();
+
+    let checkpoint = buildCheckpointDraft({
+      gameId: GAME_ID,
+      roomKey: ROOM_KEY,
+      scope: `room:chess:${GAME_ID}`,
+      game: sampleGame({ blackPlayerId: 'join-peer' }),
+      seat: 'white',
+      nickname: 'White',
+      publicKey: keyPairToPublicBundle(whiteKeys),
+      peerId: 'host-peer'
+    });
+    checkpoint = signCheckpoint(checkpoint, whiteKeys, 'white');
+    checkpoint = signCheckpoint(checkpoint, blackKeys, 'black');
+    checkpoint.black.publicKey = null;
+
+    const resolved = await resolveResumeKeysFromCheckpoint({
+      checkpoint,
+      gameId: GAME_ID,
+      username,
+      password
+    });
+
+    expect(resolved.seat).toBe('black');
+    expect(resolved.keyPair.signing.publicKey).toEqual(blackKeys.signing.publicKey);
   });
 });

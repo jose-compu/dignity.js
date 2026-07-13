@@ -35672,145 +35672,13 @@ function formatRoleLabel(game) {
 }
 
 // docs/chess/src/lib/playerKeys.js
-var import_tweetnacl = __toESM(require_nacl_fast());
-var import_tweetnacl_util = __toESM(require_nacl_util());
-var import_src = __toESM(require_src());
-var STORAGE_KEY = "dignity-chess-player-keys-v1";
-var DEMO_KDF_ITERATIONS = 1e4;
-function loadStore() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch (_error) {
-    return {};
-  }
-}
-function saveStore(store) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-}
-function serializeKeyPair(keyPair) {
-  return {
-    signingSecretKey: import_tweetnacl_util.default.encodeBase64(keyPair.signing.secretKey),
-    signingPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.signing.publicKey),
-    encryptionSecretKey: import_tweetnacl_util.default.encodeBase64(keyPair.encryption.secretKey),
-    encryptionPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.encryption.publicKey)
-  };
-}
-function deserializeKeyPair(record) {
-  if (!record?.signingSecretKey || !record?.encryptionSecretKey) {
-    return null;
-  }
-  return {
-    signing: {
-      secretKey: import_tweetnacl_util.default.decodeBase64(record.signingSecretKey),
-      publicKey: import_tweetnacl_util.default.decodeBase64(record.signingPublicKey)
-    },
-    encryption: {
-      secretKey: import_tweetnacl_util.default.decodeBase64(record.encryptionSecretKey),
-      publicKey: import_tweetnacl_util.default.decodeBase64(record.encryptionPublicKey)
-    }
-  };
-}
-function createFreshKeyPair() {
-  return {
-    signing: import_tweetnacl.default.sign.keyPair(),
-    encryption: import_tweetnacl.default.box.keyPair()
-  };
-}
-async function derivePlayerKeyPairFromCredentials({ gameId, seat, username, password }) {
-  if (!gameId || !seat || !username || !password) {
-    throw new Error("derivePlayerKeyPairFromCredentials requires gameId, seat, username, and password");
-  }
-  return (0, import_src.deriveKeyPairFromCredentials)({
-    username,
-    password,
-    pepper: `${gameId}:${seat}`,
-    kdfIterations: DEMO_KDF_ITERATIONS
-  });
-}
-function keyPairToPublicBundle(keyPair) {
-  return {
-    signingPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.signing.publicKey),
-    encryptionPublicKey: import_tweetnacl_util.default.encodeBase64(keyPair.encryption.publicKey)
-  };
-}
-function savePlayerKeyRecord(gameId, seat, keyPair, nickname) {
-  if (!gameId || !seat || !keyPair) {
-    return;
-  }
-  const store = loadStore();
-  const entryKey = `${gameId}:${seat}`;
-  store[entryKey] = {
-    gameId,
-    seat,
-    nickname: nickname || null,
-    ...serializeKeyPair(keyPair),
-    updatedAt: Date.now()
-  };
-  const fingerprint = keyPairToPublicBundle(keyPair).signingPublicKey;
-  store[`fp:${fingerprint}`] = entryKey;
-  saveStore(store);
-}
-function loadPlayerKeyPair(gameId, seat) {
-  const store = loadStore();
-  const record = store[`${gameId}:${seat}`];
-  return deserializeKeyPair(record);
-}
-function findPlayerKeyPairByPublicKey(publicKeyBundle) {
-  if (!publicKeyBundle?.signingPublicKey) {
-    return null;
-  }
-  const store = loadStore();
-  const entryKey = store[`fp:${publicKeyBundle.signingPublicKey}`];
-  if (!entryKey) {
-    return null;
-  }
-  return deserializeKeyPair(store[entryKey]);
-}
-function resolveKeyPairForResume({ gameId, seat, checkpointPlayer }) {
-  if (checkpointPlayer?.publicKey) {
-    const byFingerprint = findPlayerKeyPairByPublicKey(checkpointPlayer.publicKey);
-    if (byFingerprint) {
-      return byFingerprint;
-    }
-  }
-  if (gameId && seat) {
-    const bySeat = loadPlayerKeyPair(gameId, seat);
-    if (bySeat) {
-      return bySeat;
-    }
-  }
-  return createFreshKeyPair();
-}
-function exportSeatKeyBackup(gameId, seat) {
-  const record = loadStore()[`${gameId}:${seat}`];
-  if (!record) {
-    return null;
-  }
-  return btoa(JSON.stringify(record));
-}
-function importSeatKeyBackup(backupText) {
-  let record;
-  try {
-    record = JSON.parse(atob(String(backupText || "").trim()));
-  } catch (_error) {
-    throw new Error("Invalid seat key backup");
-  }
-  if (!record?.gameId || !record?.seat || record.seat !== "white" && record.seat !== "black") {
-    throw new Error("Invalid seat key backup");
-  }
-  const keyPair = deserializeKeyPair(record);
-  if (!keyPair) {
-    throw new Error("Invalid seat key backup");
-  }
-  savePlayerKeyRecord(record.gameId, record.seat, keyPair, record.nickname);
-  return { gameId: record.gameId, seat: record.seat, keyPair };
-}
-
-// docs/chess/src/lib/resumeCheckpoint.js
 var import_tweetnacl2 = __toESM(require_nacl_fast());
 var import_tweetnacl_util2 = __toESM(require_nacl_util());
+var import_src = __toESM(require_src());
+
+// docs/chess/src/lib/resumeCheckpoint.js
+var import_tweetnacl = __toESM(require_nacl_fast());
+var import_tweetnacl_util = __toESM(require_nacl_util());
 var CHECKPOINT_VERSION = 1;
 var CHECKPOINT_DB = "dignity-chess-checkpoints";
 var CHECKPOINT_STORE = "bundles";
@@ -35915,19 +35783,30 @@ function enrichCheckpointPlayerMetadata(checkpoint, game) {
   }
   return next;
 }
+function getCheckpointSeatPublicKey(checkpoint, seat) {
+  if (!checkpoint || seat !== "white" && seat !== "black") {
+    return null;
+  }
+  return checkpoint[seat]?.publicKey || checkpoint.signatures?.[seat]?.publicKey || null;
+}
 function signCheckpoint(checkpoint, keyPair, seat) {
   const payload = checkpointSigningPayload(checkpoint);
-  const signature = import_tweetnacl2.default.sign.detached(
-    import_tweetnacl_util2.default.decodeUTF8(payload),
+  const signature = import_tweetnacl.default.sign.detached(
+    import_tweetnacl_util.default.decodeUTF8(payload),
     keyPair.signing.secretKey
   );
+  const publicKey = keyPairToPublicBundle(keyPair);
   return {
     ...checkpoint,
+    [seat]: {
+      ...checkpoint[seat] || {},
+      publicKey
+    },
     signatures: {
       ...checkpoint.signatures || {},
       [seat]: {
-        signature: import_tweetnacl_util2.default.encodeBase64(signature),
-        publicKey: keyPairToPublicBundle(keyPair),
+        signature: import_tweetnacl_util.default.encodeBase64(signature),
+        publicKey,
         signedAt: Date.now()
       }
     }
@@ -35939,10 +35818,10 @@ function verifyCheckpointSignature(checkpoint, seat) {
     return false;
   }
   const payload = checkpointSigningPayload(checkpoint);
-  return import_tweetnacl2.default.sign.detached.verify(
-    import_tweetnacl_util2.default.decodeUTF8(payload),
-    import_tweetnacl_util2.default.decodeBase64(entry.signature),
-    import_tweetnacl_util2.default.decodeBase64(entry.publicKey.signingPublicKey)
+  return import_tweetnacl.default.sign.detached.verify(
+    import_tweetnacl_util.default.decodeUTF8(payload),
+    import_tweetnacl_util.default.decodeBase64(entry.signature),
+    import_tweetnacl_util.default.decodeBase64(entry.publicKey.signingPublicKey)
   );
 }
 function isCheckpointFullySigned(checkpoint) {
@@ -35954,23 +35833,23 @@ function checkpointSeatForPublicKey(checkpoint, publicKeyBundle) {
   if (!checkpoint || !publicKeyBundle?.signingPublicKey) {
     return null;
   }
-  if (checkpoint.white?.publicKey?.signingPublicKey === publicKeyBundle.signingPublicKey) {
+  if (getCheckpointSeatPublicKey(checkpoint, "white")?.signingPublicKey === publicKeyBundle.signingPublicKey) {
     return "white";
   }
-  if (checkpoint.black?.publicKey?.signingPublicKey === publicKeyBundle.signingPublicKey) {
+  if (getCheckpointSeatPublicKey(checkpoint, "black")?.signingPublicKey === publicKeyBundle.signingPublicKey) {
     return "black";
   }
   return null;
 }
 function serializeCheckpoint(checkpoint) {
-  return bytesToBase64Url(import_tweetnacl_util2.default.decodeUTF8(JSON.stringify(checkpoint)));
+  return bytesToBase64Url(import_tweetnacl_util.default.decodeUTF8(JSON.stringify(checkpoint)));
 }
 function deserializeCheckpoint(encoded) {
   if (!encoded) {
     return null;
   }
   try {
-    const json = import_tweetnacl_util2.default.encodeUTF8(base64UrlToBytes(encoded));
+    const json = import_tweetnacl_util.default.encodeUTF8(base64UrlToBytes(encoded));
     const parsed = JSON.parse(json);
     return parsed && typeof parsed === "object" ? parsed : null;
   } catch (_error) {
@@ -35992,7 +35871,7 @@ function openCheckpointDb() {
 }
 async function storeCheckpointRef(checkpoint) {
   const encoded = serializeCheckpoint(checkpoint);
-  const digest = import_tweetnacl_util2.default.encodeBase64(import_tweetnacl2.default.hash(import_tweetnacl_util2.default.decodeUTF8(encoded))).slice(0, 16);
+  const digest = import_tweetnacl_util.default.encodeBase64(import_tweetnacl.default.hash(import_tweetnacl_util.default.decodeUTF8(encoded))).slice(0, 16);
   const ref = `cp_${digest.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12)}`;
   if (typeof indexedDB === "undefined") {
     localStorage.setItem(`dignity-chess-checkpoint:${ref}`, encoded);
@@ -36107,7 +35986,9 @@ function gamePatchFromCheckpoint(checkpoint, localNodeId, seat) {
     turn: checkpoint.turn,
     winner: checkpoint.winner ?? null,
     joinToken: checkpoint.joinToken,
-    joinTokenUsed: Boolean(checkpoint.black?.peerId || checkpoint.black?.publicKey),
+    joinTokenUsed: Boolean(
+      checkpoint.black?.peerId || getCheckpointSeatPublicKey(checkpoint, "black")
+    ),
     watchToken: checkpoint.watchToken,
     resumeToken: null,
     resumeCheckpointId: checkpoint.createdAt,
@@ -36115,8 +35996,8 @@ function gamePatchFromCheckpoint(checkpoint, localNodeId, seat) {
     blackPlayerId,
     whiteNickname: checkpoint.white?.nickname || "White",
     blackNickname: checkpoint.black?.nickname || "Black",
-    whitePublicKey: checkpoint.white?.publicKey || null,
-    blackPublicKey: checkpoint.black?.publicKey || null,
+    whitePublicKey: getCheckpointSeatPublicKey(checkpoint, "white"),
+    blackPublicKey: getCheckpointSeatPublicKey(checkpoint, "black"),
     lastMove: null
   };
 }
@@ -36131,6 +36012,188 @@ function validateCheckpointForResume(checkpoint) {
     return { ok: false, reason: "incomplete-checkpoint" };
   }
   return { ok: true };
+}
+
+// docs/chess/src/lib/playerKeys.js
+var STORAGE_KEY = "dignity-chess-player-keys-v1";
+var DEMO_KDF_ITERATIONS = 1e4;
+function loadStore() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_error) {
+    return {};
+  }
+}
+function saveStore(store) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+}
+function serializeKeyPair(keyPair) {
+  return {
+    signingSecretKey: import_tweetnacl_util2.default.encodeBase64(keyPair.signing.secretKey),
+    signingPublicKey: import_tweetnacl_util2.default.encodeBase64(keyPair.signing.publicKey),
+    encryptionSecretKey: import_tweetnacl_util2.default.encodeBase64(keyPair.encryption.secretKey),
+    encryptionPublicKey: import_tweetnacl_util2.default.encodeBase64(keyPair.encryption.publicKey)
+  };
+}
+function deserializeKeyPair(record) {
+  if (!record?.signingSecretKey || !record?.encryptionSecretKey) {
+    return null;
+  }
+  return {
+    signing: {
+      secretKey: import_tweetnacl_util2.default.decodeBase64(record.signingSecretKey),
+      publicKey: import_tweetnacl_util2.default.decodeBase64(record.signingPublicKey)
+    },
+    encryption: {
+      secretKey: import_tweetnacl_util2.default.decodeBase64(record.encryptionSecretKey),
+      publicKey: import_tweetnacl_util2.default.decodeBase64(record.encryptionPublicKey)
+    }
+  };
+}
+function createFreshKeyPair() {
+  return {
+    signing: import_tweetnacl2.default.sign.keyPair(),
+    encryption: import_tweetnacl2.default.box.keyPair()
+  };
+}
+async function derivePlayerKeyPairFromCredentials({ gameId, seat, username, password }) {
+  if (!gameId || !seat || !username || !password) {
+    throw new Error("derivePlayerKeyPairFromCredentials requires gameId, seat, username, and password");
+  }
+  return (0, import_src.deriveKeyPairFromCredentials)({
+    username,
+    password,
+    pepper: `${gameId}:${seat}`,
+    kdfIterations: DEMO_KDF_ITERATIONS
+  });
+}
+function keyPairToPublicBundle(keyPair) {
+  return {
+    signingPublicKey: import_tweetnacl_util2.default.encodeBase64(keyPair.signing.publicKey),
+    encryptionPublicKey: import_tweetnacl_util2.default.encodeBase64(keyPair.encryption.publicKey)
+  };
+}
+function savePlayerKeyRecord(gameId, seat, keyPair, nickname) {
+  if (!gameId || !seat || !keyPair) {
+    return;
+  }
+  const store = loadStore();
+  const entryKey = `${gameId}:${seat}`;
+  store[entryKey] = {
+    gameId,
+    seat,
+    nickname: nickname || null,
+    ...serializeKeyPair(keyPair),
+    updatedAt: Date.now()
+  };
+  const fingerprint = keyPairToPublicBundle(keyPair).signingPublicKey;
+  store[`fp:${fingerprint}`] = entryKey;
+  saveStore(store);
+}
+function loadPlayerKeyPair(gameId, seat) {
+  const store = loadStore();
+  const record = store[`${gameId}:${seat}`];
+  return deserializeKeyPair(record);
+}
+function findPlayerKeyPairByPublicKey(publicKeyBundle) {
+  if (!publicKeyBundle?.signingPublicKey) {
+    return null;
+  }
+  const store = loadStore();
+  const entryKey = store[`fp:${publicKeyBundle.signingPublicKey}`];
+  if (!entryKey) {
+    return null;
+  }
+  return deserializeKeyPair(store[entryKey]);
+}
+async function resolveResumeKeysFromCheckpoint({
+  checkpoint,
+  gameId,
+  username,
+  password,
+  preferredSeat = null
+}) {
+  if (!checkpoint) {
+    return { seat: null, keyPair: null };
+  }
+  const seatsToTry = preferredSeat === "white" || preferredSeat === "black" ? [preferredSeat] : ["white", "black"];
+  for (const seat of seatsToTry) {
+    const publicKey = getCheckpointSeatPublicKey(checkpoint, seat);
+    const localKeys = findPlayerKeyPairByPublicKey(publicKey);
+    if (localKeys) {
+      return { seat, keyPair: localKeys };
+    }
+  }
+  if (username && password) {
+    for (const seat of seatsToTry) {
+      try {
+        const derived = await derivePlayerKeyPairFromCredentials({
+          gameId,
+          seat,
+          username,
+          password
+        });
+        const bundle = keyPairToPublicBundle(derived);
+        if (checkpointSeatForPublicKey(checkpoint, bundle) === seat) {
+          savePlayerKeyRecord(gameId, seat, derived, null);
+          return { seat, keyPair: derived };
+        }
+      } catch (_error) {
+      }
+    }
+  }
+  if (preferredSeat === "white" || preferredSeat === "black") {
+    return {
+      seat: preferredSeat,
+      keyPair: resolveKeyPairForResume({
+        gameId,
+        seat: preferredSeat,
+        checkpointPlayer: checkpoint[preferredSeat]
+      })
+    };
+  }
+  return { seat: null, keyPair: null };
+}
+function resolveKeyPairForResume({ gameId, seat, checkpointPlayer }) {
+  if (checkpointPlayer?.publicKey) {
+    const byFingerprint = findPlayerKeyPairByPublicKey(checkpointPlayer.publicKey);
+    if (byFingerprint) {
+      return byFingerprint;
+    }
+  }
+  if (gameId && seat) {
+    const bySeat = loadPlayerKeyPair(gameId, seat);
+    if (bySeat) {
+      return bySeat;
+    }
+  }
+  return createFreshKeyPair();
+}
+function exportSeatKeyBackup(gameId, seat) {
+  const record = loadStore()[`${gameId}:${seat}`];
+  if (!record) {
+    return null;
+  }
+  return btoa(JSON.stringify(record));
+}
+function importSeatKeyBackup(backupText) {
+  let record;
+  try {
+    record = JSON.parse(atob(String(backupText || "").trim()));
+  } catch (_error) {
+    throw new Error("Invalid seat key backup");
+  }
+  if (!record?.gameId || !record?.seat || record.seat !== "white" && record.seat !== "black") {
+    throw new Error("Invalid seat key backup");
+  }
+  const keyPair = deserializeKeyPair(record);
+  if (!keyPair) {
+    throw new Error("Invalid seat key backup");
+  }
+  savePlayerKeyRecord(record.gameId, record.seat, keyPair, record.nickname);
+  return { gameId: record.gameId, seat: record.seat, keyPair };
 }
 
 // docs/chess/src/components/Lobby.jsx
@@ -69350,9 +69413,12 @@ function GameView({ route, nodeId, nickname, username, password, onBack }) {
   const [resumeLink, setResumeLink] = (0, import_react7.useState)("");
   const restoredFromCheckpointRef = import_react7.default.useRef(false);
   (0, import_react7.useEffect)(() => {
+    if (route.role === "resume") {
+      return void 0;
+    }
     let cancelled = false;
     async function initSigningKeys() {
-      const seatForRole = route.role === "host" ? "white" : route.role === "join" ? "black" : route.role === "resume" && (route.seat === "white" || route.seat === "black") ? route.seat : null;
+      const seatForRole = route.role === "host" ? "white" : route.role === "join" ? "black" : null;
       if (route.role === "watch") {
         if (!cancelled) {
           setKeyPair(createFreshKeyPair());
@@ -69371,9 +69437,6 @@ function GameView({ route, nodeId, nickname, username, password, onBack }) {
           if (!cancelled) {
             setKeyPair(derived);
             savePlayerKeyRecord(route.gameId, seatForRole, derived, nickname);
-            if (route.role === "resume") {
-              setResumeSeat(seatForRole);
-            }
             setKeysReady(true);
           }
           return;
@@ -69413,31 +69476,30 @@ function GameView({ route, nodeId, nickname, username, password, onBack }) {
       setRouteCheckpoint(checkpoint);
       setCheckpointResolved(true);
       if (route.role !== "resume" || !checkpoint) {
+        if (route.role === "resume") {
+          setKeysReady(true);
+        }
         return;
       }
-      const whiteKeys = findPlayerKeyPairByPublicKey(checkpoint.white?.publicKey);
-      const blackKeys = findPlayerKeyPairByPublicKey(checkpoint.black?.publicKey);
-      if (whiteKeys) {
-        setKeyPair(whiteKeys);
-        setResumeSeat("white");
+      const resolved = await resolveResumeKeysFromCheckpoint({
+        checkpoint,
+        gameId: route.gameId,
+        username,
+        password,
+        preferredSeat: route.seat === "white" || route.seat === "black" ? route.seat : null
+      });
+      if (cancelled) {
         return;
       }
-      if (blackKeys) {
-        setKeyPair(blackKeys);
-        setResumeSeat("black");
-        return;
+      if (resolved.seat && resolved.keyPair) {
+        setKeyPair(resolved.keyPair);
+        setResumeSeat(resolved.seat);
+        savePlayerKeyRecord(route.gameId, resolved.seat, resolved.keyPair, nickname);
+      } else {
+        setResumeSeat(null);
+        setKeyPair(null);
       }
-      const hintedSeat = route.seat === "white" || route.seat === "black" ? route.seat : null;
-      if (hintedSeat) {
-        setKeyPair(resolveKeyPairForResume({
-          gameId: route.gameId,
-          seat: hintedSeat,
-          checkpointPlayer: checkpoint[hintedSeat]
-        }));
-        setResumeSeat(hintedSeat);
-        return;
-      }
-      setResumeSeat(null);
+      setKeysReady(true);
     }
     resolveCheckpoint().catch((resolveError) => {
       if (!cancelled) {
@@ -69448,7 +69510,7 @@ function GameView({ route, nodeId, nickname, username, password, onBack }) {
     return () => {
       cancelled = true;
     };
-  }, [route.role, route.checkpoint, route.checkpointRef, route.gameId, route.roomKey, route.seat]);
+  }, [route.role, route.checkpoint, route.checkpointRef, route.gameId, route.roomKey, route.seat, username, password, nickname]);
   const dignityConfig = (0, import_react7.useMemo)(
     () => keysReady && keyPair ? createDignityConfig({
       nodeId,
@@ -69885,7 +69947,7 @@ function GameView({ route, nodeId, nickname, username, password, onBack }) {
         if (isCheckpointFullySigned(checkpoint)) {
           setFinalizedCheckpoint(checkpoint);
           setPendingProposal(null);
-          const link = await buildResumeLink(checkpoint);
+          const link = await buildResumeLink(checkpoint, { seat: resumeSeat || mySeat });
           setResumeLink(link);
           setNotice("Dual-signed resume link is ready.");
         }
@@ -69893,7 +69955,7 @@ function GameView({ route, nodeId, nickname, username, password, onBack }) {
       }
       const isHostSide = route.role === "host" || route.role === "resume" && resumeSeat === "white";
       if (message.type === "resume-rejoin" && isHostSide) {
-        const expectedKey = game?.data?.blackPublicKey?.signingPublicKey || routeCheckpoint?.black?.publicKey?.signingPublicKey;
+        const expectedKey = game?.data?.blackPublicKey?.signingPublicKey || getCheckpointSeatPublicKey(routeCheckpoint, "black")?.signingPublicKey;
         if (message.payload?.publicKey?.signingPublicKey !== expectedKey) {
           return;
         }
@@ -70166,13 +70228,13 @@ function GameView({ route, nodeId, nickname, username, password, onBack }) {
     }
     setFinalizedCheckpoint(checkpoint);
     setPendingProposal(null);
-    const link = await buildResumeLink(checkpoint);
+    const link = await buildResumeLink(checkpoint, { seat: mySeat });
     setResumeLink(link);
     if (remotePeerId) {
       await node2.sendDirectMessage(remotePeerId, "resume-checkpoint-final", { checkpoint });
     }
     setNotice("Dual-signed resume link is ready.");
-  }, [node2]);
+  }, [node2, mySeat]);
   const handleFinalizedCheckpoint = (0, import_react7.useCallback)((checkpoint, link) => {
     setResumeLink(link);
     if (!node2) {

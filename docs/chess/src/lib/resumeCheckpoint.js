@@ -129,20 +129,35 @@ export function enrichCheckpointPlayerMetadata(checkpoint, game) {
   return next;
 }
 
+export function getCheckpointSeatPublicKey(checkpoint, seat) {
+  if (!checkpoint || (seat !== 'white' && seat !== 'black')) {
+    return null;
+  }
+
+  return checkpoint[seat]?.publicKey
+    || checkpoint.signatures?.[seat]?.publicKey
+    || null;
+}
+
 export function signCheckpoint(checkpoint, keyPair, seat) {
   const payload = checkpointSigningPayload(checkpoint);
   const signature = nacl.sign.detached(
     naclUtil.decodeUTF8(payload),
     keyPair.signing.secretKey
   );
+  const publicKey = keyPairToPublicBundle(keyPair);
 
   return {
     ...checkpoint,
+    [seat]: {
+      ...(checkpoint[seat] || {}),
+      publicKey
+    },
     signatures: {
       ...(checkpoint.signatures || {}),
       [seat]: {
         signature: naclUtil.encodeBase64(signature),
-        publicKey: keyPairToPublicBundle(keyPair),
+        publicKey,
         signedAt: Date.now()
       }
     }
@@ -176,10 +191,10 @@ export function checkpointSeatForPublicKey(checkpoint, publicKeyBundle) {
     return null;
   }
 
-  if (checkpoint.white?.publicKey?.signingPublicKey === publicKeyBundle.signingPublicKey) {
+  if (getCheckpointSeatPublicKey(checkpoint, 'white')?.signingPublicKey === publicKeyBundle.signingPublicKey) {
     return 'white';
   }
-  if (checkpoint.black?.publicKey?.signingPublicKey === publicKeyBundle.signingPublicKey) {
+  if (getCheckpointSeatPublicKey(checkpoint, 'black')?.signingPublicKey === publicKeyBundle.signingPublicKey) {
     return 'black';
   }
   return null;
@@ -362,7 +377,10 @@ export function gamePatchFromCheckpoint(checkpoint, localNodeId, seat) {
     turn: checkpoint.turn,
     winner: checkpoint.winner ?? null,
     joinToken: checkpoint.joinToken,
-    joinTokenUsed: Boolean(checkpoint.black?.peerId || checkpoint.black?.publicKey),
+    joinTokenUsed: Boolean(
+      checkpoint.black?.peerId
+      || getCheckpointSeatPublicKey(checkpoint, 'black')
+    ),
     watchToken: checkpoint.watchToken,
     resumeToken: null,
     resumeCheckpointId: checkpoint.createdAt,
@@ -370,8 +388,8 @@ export function gamePatchFromCheckpoint(checkpoint, localNodeId, seat) {
     blackPlayerId,
     whiteNickname: checkpoint.white?.nickname || 'White',
     blackNickname: checkpoint.black?.nickname || 'Black',
-    whitePublicKey: checkpoint.white?.publicKey || null,
-    blackPublicKey: checkpoint.black?.publicKey || null,
+    whitePublicKey: getCheckpointSeatPublicKey(checkpoint, 'white'),
+    blackPublicKey: getCheckpointSeatPublicKey(checkpoint, 'black'),
     lastMove: null
   };
 }

@@ -22,17 +22,17 @@ import { saveLocalGameSession } from '../lib/localGames.js';
 import {
   createFreshKeyPair,
   derivePlayerKeyPairFromCredentials,
-  findPlayerKeyPairByPublicKey,
   keyPairToPublicBundle,
   loadPlayerKeyPair,
   savePlayerKeyRecord,
-  resolveKeyPairForResume
+  resolveResumeKeysFromCheckpoint
 } from '../lib/playerKeys.js';
 import {
   buildResumeLink,
   checkpointSeatForPublicKey,
   deserializeCheckpoint,
   gamePatchFromCheckpoint,
+  getCheckpointSeatPublicKey,
   isCheckpointFullySigned,
   resolveCheckpointFromRoute,
   validateCheckpointForResume
@@ -93,6 +93,10 @@ export default function GameView({ route, nodeId, nickname, username, password, 
   const restoredFromCheckpointRef = React.useRef(false);
 
   useEffect(() => {
+    if (route.role === 'resume') {
+      return undefined;
+    }
+
     let cancelled = false;
 
     async function initSigningKeys() {
@@ -100,9 +104,7 @@ export default function GameView({ route, nodeId, nickname, username, password, 
         ? 'white'
         : route.role === 'join'
           ? 'black'
-          : route.role === 'resume' && (route.seat === 'white' || route.seat === 'black')
-            ? route.seat
-            : null;
+          : null;
 
       if (route.role === 'watch') {
         if (!cancelled) {
@@ -123,9 +125,6 @@ export default function GameView({ route, nodeId, nickname, username, password, 
           if (!cancelled) {
             setKeyPair(derived);
             savePlayerKeyRecord(route.gameId, seatForRole, derived, nickname);
-            if (route.role === 'resume') {
-              setResumeSeat(seatForRole);
-            }
             setKeysReady(true);
           }
           return;
@@ -175,36 +174,33 @@ export default function GameView({ route, nodeId, nickname, username, password, 
       setCheckpointResolved(true);
 
       if (route.role !== 'resume' || !checkpoint) {
+        if (route.role === 'resume') {
+          setKeysReady(true);
+        }
         return;
       }
 
-      const whiteKeys = findPlayerKeyPairByPublicKey(checkpoint.white?.publicKey);
-      const blackKeys = findPlayerKeyPairByPublicKey(checkpoint.black?.publicKey);
+      const resolved = await resolveResumeKeysFromCheckpoint({
+        checkpoint,
+        gameId: route.gameId,
+        username,
+        password,
+        preferredSeat: route.seat === 'white' || route.seat === 'black' ? route.seat : null
+      });
 
-      if (whiteKeys) {
-        setKeyPair(whiteKeys);
-        setResumeSeat('white');
+      if (cancelled) {
         return;
       }
 
-      if (blackKeys) {
-        setKeyPair(blackKeys);
-        setResumeSeat('black');
-        return;
+      if (resolved.seat && resolved.keyPair) {
+        setKeyPair(resolved.keyPair);
+        setResumeSeat(resolved.seat);
+        savePlayerKeyRecord(route.gameId, resolved.seat, resolved.keyPair, nickname);
+      } else {
+        setResumeSeat(null);
+        setKeyPair(null);
       }
-
-      const hintedSeat = route.seat === 'white' || route.seat === 'black' ? route.seat : null;
-      if (hintedSeat) {
-        setKeyPair(resolveKeyPairForResume({
-          gameId: route.gameId,
-          seat: hintedSeat,
-          checkpointPlayer: checkpoint[hintedSeat]
-        }));
-        setResumeSeat(hintedSeat);
-        return;
-      }
-
-      setResumeSeat(null);
+      setKeysReady(true);
     }
 
     resolveCheckpoint().catch((resolveError) => {
@@ -217,7 +213,7 @@ export default function GameView({ route, nodeId, nickname, username, password, 
     return () => {
       cancelled = true;
     };
-  }, [route.role, route.checkpoint, route.checkpointRef, route.gameId, route.roomKey, route.seat]);
+  }, [route.role, route.checkpoint, route.checkpointRef, route.gameId, route.roomKey, route.seat, username, password, nickname]);
 
   const dignityConfig = useMemo(
     () => (keysReady && keyPair
@@ -746,7 +742,7 @@ export default function GameView({ route, nodeId, nickname, username, password, 
         if (isCheckpointFullySigned(checkpoint)) {
           setFinalizedCheckpoint(checkpoint);
           setPendingProposal(null);
-          const link = await buildResumeLink(checkpoint);
+          const link = await buildResumeLink(checkpoint, { seat: resumeSeat || mySeat });
           setResumeLink(link);
           setNotice('Dual-signed resume link is ready.');
         }
@@ -756,7 +752,7 @@ export default function GameView({ route, nodeId, nickname, username, password, 
       const isHostSide = route.role === 'host' || (route.role === 'resume' && resumeSeat === 'white');
       if (message.type === 'resume-rejoin' && isHostSide) {
         const expectedKey = game?.data?.blackPublicKey?.signingPublicKey
-          || routeCheckpoint?.black?.publicKey?.signingPublicKey;
+          || getCheckpointSeatPublicKey(routeCheckpoint, 'black')?.signingPublicKey;
         if (message.payload?.publicKey?.signingPublicKey !== expectedKey) {
           return;
         }
@@ -1073,13 +1069,13 @@ export default function GameView({ route, nodeId, nickname, username, password, 
 
     setFinalizedCheckpoint(checkpoint);
     setPendingProposal(null);
-    const link = await buildResumeLink(checkpoint);
+    const link = await buildResumeLink(checkpoint, { seat: mySeat });
     setResumeLink(link);
     if (remotePeerId) {
       await node.sendDirectMessage(remotePeerId, 'resume-checkpoint-final', { checkpoint });
     }
     setNotice('Dual-signed resume link is ready.');
-  }, [node]);
+  }, [node, mySeat]);
 
   const handleFinalizedCheckpoint = useCallback((checkpoint, link) => {
     setResumeLink(link);

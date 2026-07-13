@@ -1,6 +1,10 @@
 import nacl from 'tweetnacl';
 import naclUtil from 'tweetnacl-util';
 import { deriveKeyPairFromCredentials } from '../../../../src/index.js';
+import {
+  checkpointSeatForPublicKey,
+  getCheckpointSeatPublicKey
+} from './resumeCheckpoint.js';
 
 const STORAGE_KEY = 'dignity-chess-player-keys-v1';
 const DEMO_KDF_ITERATIONS = 10000;
@@ -111,6 +115,63 @@ export function findPlayerKeyPairByPublicKey(publicKeyBundle) {
   }
 
   return deserializeKeyPair(store[entryKey]);
+}
+
+export async function resolveResumeKeysFromCheckpoint({
+  checkpoint,
+  gameId,
+  username,
+  password,
+  preferredSeat = null
+}) {
+  if (!checkpoint) {
+    return { seat: null, keyPair: null };
+  }
+
+  const seatsToTry = preferredSeat === 'white' || preferredSeat === 'black'
+    ? [preferredSeat]
+    : ['white', 'black'];
+
+  for (const seat of seatsToTry) {
+    const publicKey = getCheckpointSeatPublicKey(checkpoint, seat);
+    const localKeys = findPlayerKeyPairByPublicKey(publicKey);
+    if (localKeys) {
+      return { seat, keyPair: localKeys };
+    }
+  }
+
+  if (username && password) {
+    for (const seat of seatsToTry) {
+      try {
+        const derived = await derivePlayerKeyPairFromCredentials({
+          gameId,
+          seat,
+          username,
+          password
+        });
+        const bundle = keyPairToPublicBundle(derived);
+        if (checkpointSeatForPublicKey(checkpoint, bundle) === seat) {
+          savePlayerKeyRecord(gameId, seat, derived, null);
+          return { seat, keyPair: derived };
+        }
+      } catch (_error) {
+        // try next seat
+      }
+    }
+  }
+
+  if (preferredSeat === 'white' || preferredSeat === 'black') {
+    return {
+      seat: preferredSeat,
+      keyPair: resolveKeyPairForResume({
+        gameId,
+        seat: preferredSeat,
+        checkpointPlayer: checkpoint[preferredSeat]
+      })
+    };
+  }
+
+  return { seat: null, keyPair: null };
 }
 
 export function resolveKeyPairForResume({ gameId, seat, checkpointPlayer }) {
