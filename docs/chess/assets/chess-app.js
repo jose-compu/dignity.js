@@ -69100,7 +69100,7 @@ function LinkPanel({
   const resumeToken = game?.data?.resumeToken || resumeTokenProp;
   const resumeLinkOverride = resumeLinkProp || null;
   const [copied, setCopied] = (0, import_react4.useState)("");
-  const [collapsed, setCollapsed] = (0, import_react4.useState)(false);
+  const [collapsed, setCollapsed] = (0, import_react4.useState)(Boolean(prominent));
   const isPlayer = audience === "player";
   const links = buildLinks({
     gameId,
@@ -70359,7 +70359,17 @@ function GameView({ route, nodeId, nickname, username, password, onBack }) {
   if (route.role === "resume" && !routeCheckpoint && game && !canResume(route, game, routeCheckpoint)) {
     return /* @__PURE__ */ import_react7.default.createElement("section", { className: "panel error-panel" }, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Invalid resume link"), /* @__PURE__ */ import_react7.default.createElement("p", null, "Use a dual-signed resume link generated after both players co-sign the checkpoint."), /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", onClick: onBack }, "Back"));
   }
-  return /* @__PURE__ */ import_react7.default.createElement("div", { className: "game-layout" }, /* @__PURE__ */ import_react7.default.createElement("header", { className: "game-header" }, /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", className: "ghost", onClick: onBack }, "\u2190 Lobby"), /* @__PURE__ */ import_react7.default.createElement("div", null, /* @__PURE__ */ import_react7.default.createElement("h2", null, "Game ", route.gameId), /* @__PURE__ */ import_react7.default.createElement("p", { className: "status-line" }, "Network: ", status, joined ? " \xB7 in room" : roomConnected ? " \xB7 connecting room\u2026" : " \xB7 waiting for host peer\u2026", remoteHostPeer ? ` \xB7 host ${remoteHostPeer}` : "", connectionCount ? ` \xB7 ${connectionCount} link(s)` : "", error2 ? ` \xB7 ${error2.message}` : "")), /* @__PURE__ */ import_react7.default.createElement("div", { className: "badge" }, roleBadge)), notice ? /* @__PURE__ */ import_react7.default.createElement("p", { className: "notice" }, notice) : null, route.role === "host" && route.joinToken && route.watchToken ? /* @__PURE__ */ import_react7.default.createElement(
+  return /* @__PURE__ */ import_react7.default.createElement("div", { className: "game-layout" }, /* @__PURE__ */ import_react7.default.createElement("header", { className: "game-toolbar" }, /* @__PURE__ */ import_react7.default.createElement("button", { type: "button", className: "ghost game-toolbar__back", onClick: onBack }, "\u2190 Lobby"), /* @__PURE__ */ import_react7.default.createElement("div", { className: "game-toolbar__main" }, /* @__PURE__ */ import_react7.default.createElement("div", { className: "game-toolbar__title-row" }, /* @__PURE__ */ import_react7.default.createElement("h2", { className: "game-toolbar__title" }, "Game ", route.gameId), /* @__PURE__ */ import_react7.default.createElement("span", { className: "badge game-toolbar__badge" }, roleBadge)), /* @__PURE__ */ import_react7.default.createElement("p", { className: "game-toolbar__status" }, status, joined ? " \xB7 in room" : roomConnected ? " \xB7 connecting" : " \xB7 waiting for host", remoteHostPeer ? ` \xB7 host ${remoteHostPeer}` : "", connectionCount ? ` \xB7 ${connectionCount} link(s)` : "", error2 ? ` \xB7 ${error2.message}` : ""), notice ? /* @__PURE__ */ import_react7.default.createElement("p", { className: "game-toolbar__notice" }, notice) : null)), /* @__PURE__ */ import_react7.default.createElement("div", { className: "game-grid" }, /* @__PURE__ */ import_react7.default.createElement(
+    Board3D,
+    {
+      fen: game?.data?.fen || routeCheckpoint?.fen || START_FEN,
+      selectedSquare,
+      legalTargets,
+      onSquareClick: handleSquareClick,
+      orientation: myColor || "w",
+      interactive: canMove
+    }
+  ), /* @__PURE__ */ import_react7.default.createElement("aside", { className: "side-panel" }, route.role === "host" && route.joinToken && route.watchToken ? /* @__PURE__ */ import_react7.default.createElement(
     LinkPanel,
     {
       prominent: true,
@@ -70373,6 +70383,19 @@ function GameView({ route, nodeId, nickname, username, password, onBack }) {
       resumeToken: route.resumeToken,
       resumeLink,
       onRegenerateResume: game ? regenerateResumeLink : void 0
+    }
+  ) : null, route.role === "join" && myColor === "b" && game ? /* @__PURE__ */ import_react7.default.createElement(
+    LinkPanel,
+    {
+      prominent: true,
+      audience: "player",
+      gameId: route.gameId,
+      roomKey,
+      hostPeer: remoteHostPeer,
+      game,
+      watchToken: route.watchToken,
+      resumeToken: route.resumeToken,
+      resumeLink
     }
   ) : null, mySeat && game?.data?.status === "playing" ? /* @__PURE__ */ import_react7.default.createElement(
     ResumePanel,
@@ -70393,30 +70416,7 @@ function GameView({ route, nodeId, nickname, username, password, onBack }) {
       onDeclineProposal: () => setPendingProposal(null),
       onFinalized: handleFinalizedCheckpoint
     }
-  ) : null, route.role === "join" && myColor === "b" && game ? /* @__PURE__ */ import_react7.default.createElement(
-    LinkPanel,
-    {
-      prominent: true,
-      audience: "player",
-      gameId: route.gameId,
-      roomKey,
-      hostPeer: remoteHostPeer,
-      game,
-      watchToken: route.watchToken,
-      resumeToken: route.resumeToken,
-      resumeLink
-    }
-  ) : null, /* @__PURE__ */ import_react7.default.createElement("div", { className: "game-grid" }, /* @__PURE__ */ import_react7.default.createElement(
-    Board3D,
-    {
-      fen: game?.data?.fen || routeCheckpoint?.fen || START_FEN,
-      selectedSquare,
-      legalTargets,
-      onSquareClick: handleSquareClick,
-      orientation: myColor || "w",
-      interactive: canMove
-    }
-  ), /* @__PURE__ */ import_react7.default.createElement("aside", { className: "side-panel" }, /* @__PURE__ */ import_react7.default.createElement(
+  ) : null, /* @__PURE__ */ import_react7.default.createElement(
     MovePanel,
     {
       chess,

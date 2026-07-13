@@ -1294,72 +1294,23 @@ export default function GameView({ route, nodeId, nickname, username, password, 
 
   return (
     <div className="game-layout">
-      <header className="game-header">
-        <button type="button" className="ghost" onClick={onBack}>← Lobby</button>
-        <div>
-          <h2>Game {route.gameId}</h2>
-          <p className="status-line">
-            Network: {status}
-            {joined ? ' · in room' : roomConnected ? ' · connecting room…' : ' · waiting for host peer…'}
+      <header className="game-toolbar">
+        <button type="button" className="ghost game-toolbar__back" onClick={onBack}>← Lobby</button>
+        <div className="game-toolbar__main">
+          <div className="game-toolbar__title-row">
+            <h2 className="game-toolbar__title">Game {route.gameId}</h2>
+            <span className="badge game-toolbar__badge">{roleBadge}</span>
+          </div>
+          <p className="game-toolbar__status">
+            {status}
+            {joined ? ' · in room' : roomConnected ? ' · connecting' : ' · waiting for host'}
             {remoteHostPeer ? ` · host ${remoteHostPeer}` : ''}
             {connectionCount ? ` · ${connectionCount} link(s)` : ''}
             {error ? ` · ${error.message}` : ''}
           </p>
+          {notice ? <p className="game-toolbar__notice">{notice}</p> : null}
         </div>
-        <div className="badge">{roleBadge}</div>
       </header>
-
-      {notice ? <p className="notice">{notice}</p> : null}
-
-      {route.role === 'host' && route.joinToken && route.watchToken ? (
-        <LinkPanel
-          prominent
-          audience="host"
-          gameId={route.gameId}
-          roomKey={roomKey}
-          hostPeer={node?.nodeId}
-          game={game}
-          joinToken={route.joinToken}
-          watchToken={route.watchToken}
-          resumeToken={route.resumeToken}
-          resumeLink={resumeLink}
-          onRegenerateResume={game ? regenerateResumeLink : undefined}
-        />
-      ) : null}
-
-      {mySeat && game?.data?.status === 'playing' ? (
-        <ResumePanel
-          game={game}
-          gameId={route.gameId}
-          roomKey={roomKey}
-          scope={scope}
-          node={node}
-          keyPair={keyPair}
-          nickname={nickname}
-          mySeat={mySeat}
-          remotePeerId={remotePlayerPeer}
-          pendingProposal={pendingProposal}
-          finalizedCheckpoint={finalizedCheckpoint}
-          onPropose={handleProposeCheckpoint}
-          onAcceptProposal={handleAcceptCheckpoint}
-          onDeclineProposal={() => setPendingProposal(null)}
-          onFinalized={handleFinalizedCheckpoint}
-        />
-      ) : null}
-
-      {route.role === 'join' && myColor === 'b' && game ? (
-        <LinkPanel
-          prominent
-          audience="player"
-          gameId={route.gameId}
-          roomKey={roomKey}
-          hostPeer={remoteHostPeer}
-          game={game}
-          watchToken={route.watchToken}
-          resumeToken={route.resumeToken}
-          resumeLink={resumeLink}
-        />
-      ) : null}
 
       <div className="game-grid">
         <Board3D
@@ -1372,6 +1323,56 @@ export default function GameView({ route, nodeId, nickname, username, password, 
         />
 
         <aside className="side-panel">
+          {route.role === 'host' && route.joinToken && route.watchToken ? (
+            <LinkPanel
+              prominent
+              audience="host"
+              gameId={route.gameId}
+              roomKey={roomKey}
+              hostPeer={node?.nodeId}
+              game={game}
+              joinToken={route.joinToken}
+              watchToken={route.watchToken}
+              resumeToken={route.resumeToken}
+              resumeLink={resumeLink}
+              onRegenerateResume={game ? regenerateResumeLink : undefined}
+            />
+          ) : null}
+
+          {route.role === 'join' && myColor === 'b' && game ? (
+            <LinkPanel
+              prominent
+              audience="player"
+              gameId={route.gameId}
+              roomKey={roomKey}
+              hostPeer={remoteHostPeer}
+              game={game}
+              watchToken={route.watchToken}
+              resumeToken={route.resumeToken}
+              resumeLink={resumeLink}
+            />
+          ) : null}
+
+          {mySeat && game?.data?.status === 'playing' ? (
+            <ResumePanel
+              game={game}
+              gameId={route.gameId}
+              roomKey={roomKey}
+              scope={scope}
+              node={node}
+              keyPair={keyPair}
+              nickname={nickname}
+              mySeat={mySeat}
+              remotePeerId={remotePlayerPeer}
+              pendingProposal={pendingProposal}
+              finalizedCheckpoint={finalizedCheckpoint}
+              onPropose={handleProposeCheckpoint}
+              onAcceptProposal={handleAcceptCheckpoint}
+              onDeclineProposal={() => setPendingProposal(null)}
+              onFinalized={handleFinalizedCheckpoint}
+            />
+          ) : null}
+
           <MovePanel
             chess={chess}
             canMove={canMove}

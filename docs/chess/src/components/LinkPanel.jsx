@@ -19,7 +19,7 @@ export default function LinkPanel({
   const resumeToken = game?.data?.resumeToken || resumeTokenProp;
   const resumeLinkOverride = resumeLinkProp || null;
   const [copied, setCopied] = useState('');
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(Boolean(prominent));
   const isPlayer = audience === 'player';
 
   const links = buildLinks({
