@@ -23,8 +23,34 @@ describe('Dignity App client SDK', () => {
     collections: ['posts']
   }).manifest;
 
-  test('createDignityAppClient query and list over MessageChannel', async () => {
+  const openChannels = [];
+
+  function createChannel() {
     const channel = new MessageChannel();
+    openChannels.push(channel);
+    return channel;
+  }
+
+  afterEach(() => {
+    while (openChannels.length) {
+      const channel = openChannels.pop();
+      try {
+        channel.port1.onmessage = null;
+        channel.port1.close();
+      } catch (_error) {
+        // ignore
+      }
+      try {
+        channel.port2.onmessage = null;
+        channel.port2.close();
+      } catch (_error) {
+        // ignore
+      }
+    }
+  });
+
+  test('createDignityAppClient query and list over MessageChannel', async () => {
+    const channel = createChannel();
     const replica = {
       list() {
         return [{ id: 'p1', data: { text: 'hi' } }];
@@ -72,7 +98,7 @@ describe('Dignity App client SDK', () => {
   });
 
   test('client surfaces RPC errors', async () => {
-    const channel = new MessageChannel();
+    const channel = createChannel();
     const handler = createHostRpcHandler({ manifest, replica: null });
     channel.port1.onmessage = async (event) => {
       channel.port1.postMessage(await handler.handle(event.data));
@@ -86,7 +112,7 @@ describe('Dignity App client SDK', () => {
   });
 
   test('client log, error, and runStoredCommand RPC methods', async () => {
-    const channel = new MessageChannel();
+    const channel = createChannel();
     const logs = [];
     const errors = [];
     const handler = createHostRpcHandler({
@@ -111,7 +137,7 @@ describe('Dignity App client SDK', () => {
   });
 
   test('client ignores malformed port responses', async () => {
-    const channel = new MessageChannel();
+    const channel = createChannel();
     channel.port1.onmessage = (event) => {
       if (!event.data?.rpcId) {
         return;
@@ -132,7 +158,7 @@ describe('Dignity App client SDK', () => {
   });
 
   test('client rejects RPC with error envelope', async () => {
-    const channel = new MessageChannel();
+    const channel = createChannel();
     channel.port1.onmessage = (event) => {
       channel.port1.postMessage({
         rpcId: event.data.rpcId,
@@ -149,7 +175,7 @@ describe('Dignity App client SDK', () => {
   });
 
   test('connectDignityAppClient resolves on parent handshake', async () => {
-    const channel = new MessageChannel();
+    const channel = createChannel();
     const connectPromise = connectDignityAppClient({ timeoutMs: 3000 });
 
     window.dispatchEvent(new MessageEvent('message', {
@@ -172,7 +198,7 @@ describe('Dignity App client SDK', () => {
   });
 
   test('connectDignityAppClient ignores unrelated postMessage', async () => {
-    const channel = new MessageChannel();
+    const channel = createChannel();
     const connectPromise = connectDignityAppClient({ timeoutMs: 3000 });
 
     window.dispatchEvent(new MessageEvent('message', { data: { type: 'other' } }));
@@ -220,7 +246,7 @@ describe('Dignity App client SDK', () => {
       }]
     }).manifest;
 
-    const channel = new MessageChannel();
+    const channel = createChannel();
     const handler = createHostRpcHandler({ manifest: cmdManifest, node: publisher });
     channel.port1.onmessage = async (event) => {
       channel.port1.postMessage(await handler.handle(event.data));
@@ -238,7 +264,7 @@ describe('Dignity App client SDK', () => {
   });
 
   test('client onmessage ignores host responses without rpcId', async () => {
-    const channel = new MessageChannel();
+    const channel = createChannel();
     const client = createDignityAppClient(channel.port2);
     channel.port2.start();
     channel.port1.start();

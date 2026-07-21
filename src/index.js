@@ -35,6 +35,13 @@ const {
 } = require('./security/message-security-service');
 const { deriveKeyPairFromCredentials, keyPairToPublicBundle, deriveColdRecoverySigningKey } = require('./security/derive-key-pair');
 const {
+  exportIdentityMnemonic,
+  importIdentityMnemonic,
+  exportIdentityMnemonicEncrypted,
+  importIdentityMnemonicEncrypted,
+  normalizeMnemonicPhrase
+} = require('./security/identity-mnemonic');
+const {
   createIdentityRotation,
   verifyIdentityRotation,
   revokeAndRotateIdentity,
@@ -143,6 +150,11 @@ module.exports = {
   deriveKeyPairFromCredentials,
   deriveColdRecoverySigningKey,
   keyPairToPublicBundle,
+  exportIdentityMnemonic,
+  importIdentityMnemonic,
+  exportIdentityMnemonicEncrypted,
+  importIdentityMnemonicEncrypted,
+  normalizeMnemonicPhrase,
   createIdentityRotation,
   verifyIdentityRotation,
   revokeAndRotateIdentity,

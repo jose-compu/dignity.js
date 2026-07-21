@@ -3,7 +3,7 @@
 This tutorial walks you through dignity.js from zero to a working multi-peer app. No prior P2P experience required.
 
 **Time:** ~35 minutes  
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **Full docs:** [docs site](https://jose-compu.github.io/dignity.js/) · [README](./README.md)
 
 **Lessons:** [1](#lesson-1--two-peers-one-shared-note) · [2](#lesson-2--rooms-and-discovery) · [3](#lesson-3--ownership-and-updates) · [4](#lesson-4--collaborators) · [4b](#lesson-4b--verification-policies-115117) · [5](#lesson-5--versions-and-conflicts) · [6](#lesson-6--browser-and-real-networks) · [7](#lesson-7--small-groups-vs-big-audiences) · [8](#lesson-8--big-feeds-with-cqrs-v08) · [9](#lesson-9--persist-across-reloads-browser) · [Cheat sheet](#cheat-sheet)
@@ -480,6 +480,7 @@ node.on('warning', handler);
 2. **Forgetting `await node.start()`** — messages are never received.
 3. **Using in-memory adapter in production** — switch to PeerJS for real browsers.
 4. **Leaving default password** — set a strong `appPassword`; never ship `change-this-app-password`.
+5. **Losing identity keys** — use `exportIdentityMnemonic` (v1.1) for offline backup, or `deriveKeyPairFromCredentials` so username/password can recreate keys.
 5. **Updating without checking ownership** — only owner/collaborators can `update`.
 6. **Forgetting `peerGroupId` on writes** — domain events only auto-publish when the write is linked to a joined publisher group (v0.8+).
 

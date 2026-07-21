@@ -274,6 +274,17 @@ declare module 'dignity.js' {
   export function deriveKeyPairFromCredentials(options: JsonObject): Promise<JsonObject>;
   export function deriveColdRecoverySigningKey(options: JsonObject): Promise<Uint8Array>;
   export function keyPairToPublicBundle(keyPair: unknown): JsonObject;
+  export function exportIdentityMnemonic(keyPair: unknown): Promise<string>;
+  export function importIdentityMnemonic(phrase: string): Promise<JsonObject>;
+  export function exportIdentityMnemonicEncrypted(
+    keyPair: unknown,
+    options: { passphrase: string; kdfIterations?: number }
+  ): Promise<string>;
+  export function importIdentityMnemonicEncrypted(
+    encrypted: string,
+    options: { passphrase: string }
+  ): Promise<JsonObject>;
+  export function normalizeMnemonicPhrase(phrase: string): string[];
   export function createIdentityRotation(options: JsonObject): JsonObject;
   export function verifyIdentityRotation(rotation: unknown, options?: JsonObject): boolean;
   export function revokeAndRotateIdentity(options: JsonObject): Promise<JsonObject>;

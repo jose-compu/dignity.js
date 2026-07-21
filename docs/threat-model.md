@@ -1,4 +1,4 @@
-# Threat model (v1.0.0)
+# Threat model (v1.1.0)
 
 Concise STRIDE analysis for dignity.js production deployments. Complements the [production runbook](./production-runbook.md) and automated audits (`tests/unit/security-audit-v060.test.js`, `tests/unit/security-audit-v0130.test.js`, issue #122).
 
@@ -72,16 +72,20 @@ Concise STRIDE analysis for dignity.js production deployments. Complements the [
 
 **Controls:** `record.hash`, `restoreRecord` warnings, `persistence-failed` warning subtype.
 
-### 5. Identity rotation & cold recovery
+### 5. Identity rotation, cold recovery & mnemonic backup
 
 | Threat | Description | Mitigations | Residual risk |
 |--------|-------------|-------------|---------------|
 | **S** Spoofing | Fake `identity:rotate` | Signed rotation messages; generation monotonicity (`shouldApplyIdentityRotation`) | — |
 | **T** Tampering | Rollback to old generation | Reject lower generations | Stale peers may need manual re-trust |
 | **I** Disclosure | Cold recovery password brute force | PBKDF2-SHA256 (`kdfIterations` default 100k) | Weak passwords |
+| **I** Disclosure | Plain recovery phrase theft | App UI should blur-by-default; optional `exportIdentityMnemonicEncrypted` for vault storage | Anyone with the 48-word phrase reconstructs signing + encryption keys |
 | **E** Elevation | Stolen cold recovery key | `revokeAndRotateDerivedIdentity`; bump generation | Recovery key is powerful by design |
+| **E** Elevation | Stolen mnemonic or encrypted blob + passphrase | Treat as full identity compromise; rotate generation | Phrase/passphrase are root secrets by design |
 
-**Controls:** `deriveKeyPairFromCredentials`, `enrollColdRecoveryPassword`, `broadcastIdentityRotation`.
+**Controls:** `deriveKeyPairFromCredentials`, `exportIdentityMnemonic` / `importIdentityMnemonic` (#130), encrypted mnemonic helpers, `enrollColdRecoveryPassword`, `broadcastIdentityRotation`.
+
+**Complementary roles:** username/password derive recreates keys; mnemonic backups an existing keyPair offline; cold password blocks rotation lockout — they are not substitutes for each other.
 
 ### 6. Dignity Apps (sandboxed iframes)
 
@@ -125,7 +129,7 @@ flowchart LR
   Registry --> DignityP2P
 ```
 
-## Residual risks (accepted for v1.0)
+## Residual risks (accepted for v1.1)
 
 1. **Signaling operator visibility** — connection metadata is visible; payload confidentiality depends on E2E crypto and strong passwords.
 2. **Advisory verification policy** — default `advisory` logs mismatches but does not block; production apps should choose `strict` or `patch-only` where appropriate.
