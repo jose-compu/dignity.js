@@ -1,4 +1,14 @@
 const nacl = require('tweetnacl');
+
+// Ensure Web Crypto exists for runtimes where Jest/Node omit globalThis.crypto.subtle
+if (!globalThis.crypto || !globalThis.crypto.subtle) {
+  const { webcrypto } = require('crypto');
+  Object.defineProperty(globalThis, 'crypto', {
+    value: webcrypto,
+    configurable: true
+  });
+}
+
 const {
   exportIdentityMnemonic,
   importIdentityMnemonic,

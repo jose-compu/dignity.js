@@ -26,10 +26,17 @@ function binaryToBytes(binary) {
 
 async function sha256(bytes) {
   const subtle = globalThis.crypto && globalThis.crypto.subtle;
-  if (!subtle) {
-    throw new Error('SHA-256 requires Web Crypto (crypto.subtle)');
+  if (subtle) {
+    return new Uint8Array(await subtle.digest('SHA-256', bytes));
   }
-  return new Uint8Array(await subtle.digest('SHA-256', bytes));
+
+  // Node.js fallback when Web Crypto is unavailable (some CI / older runtimes)
+  try {
+    const { createHash } = require('crypto');
+    return new Uint8Array(createHash('sha256').update(Buffer.from(bytes)).digest());
+  } catch (_ignored) {
+    throw new Error('SHA-256 requires Web Crypto (crypto.subtle) or Node crypto');
+  }
 }
 
 function normalizeUnicode(value) {
