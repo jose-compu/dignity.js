@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "The scalable data layer of the decentralized browser application ecosystem — P2P object replication with CQRS read replicas, Dignity Apps, and verification policies",
   "lifecycle": {
     "start": "attach network message handler and begin receiving",
@@ -298,9 +298,16 @@
       "DEFAULT_CLOUDFLARE_SIGNALING_URLS": "default Cloudflare relay URLs",
       "DEFAULT_SIGNALING_FALLBACK_URLS": "default public fallback URLs"
     },
+    "identityExports": {
+      "exportIdentityMnemonic": "BIP39-style 48-word phrase encoding Ed25519 seed + Curve25519 secret (#130)",
+      "importIdentityMnemonic": "restore keyPair from 48-word phrase; normalizes case/whitespace/NFC",
+      "exportIdentityMnemonicEncrypted": "passphrase-encrypted identity backup for password managers",
+      "importIdentityMnemonicEncrypted": "decrypt passphrase-protected identity backup to keyPair",
+      "normalizeMnemonicPhrase": "trim, lowercase, NFC, and split recovery words"
+    },
     "packageExports": {
-      "security": "VDF, SlothPermutation, MessageSecurityService, DEFAULT_SECURITY_OPTIONS, DEFAULT_APP_PASSWORD, deriveKeyPairFromCredentials, deriveColdRecoverySigningKey, keyPairToPublicBundle",
-      "identity": "createIdentityRotation, verifyIdentityRotation, revokeAndRotateIdentity, rotateIdentityPassword, enrollColdRecoveryPassword, verifyColdRecoveryEnrollment, shouldApplyIdentityRotation",
+      "security": "VDF, SlothPermutation, MessageSecurityService, DEFAULT_SECURITY_OPTIONS, DEFAULT_APP_PASSWORD, deriveKeyPairFromCredentials, deriveColdRecoverySigningKey, keyPairToPublicBundle, exportIdentityMnemonic, importIdentityMnemonic, exportIdentityMnemonicEncrypted, importIdentityMnemonicEncrypted, normalizeMnemonicPhrase",
+      "identity": "createIdentityRotation, verifyIdentityRotation, revokeAndRotateIdentity, rotateIdentityPassword, enrollColdRecoveryPassword, verifyColdRecoveryEnrollment, shouldApplyIdentityRotation, exportIdentityMnemonic, importIdentityMnemonic, exportIdentityMnemonicEncrypted, importIdentityMnemonicEncrypted",
       "gossip": "PEER_GROUP_SCOPE_PREFIX, DEFAULT_PEER_GROUP_OPTIONS, peerGroupScope, parsePeerGroupScope, selectFanoutPeers",
       "apps": "DIGNITY_APP_MANIFEST_SCHEMA_VERSION"
     }

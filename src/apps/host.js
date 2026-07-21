@@ -180,14 +180,27 @@ class DignityAppHost extends EventEmitter {
 
   _invalidateChannel() {
     this.channelReady = false;
+    const channel = this.channel;
+
     if (this.hostPort) {
       try {
+        this.hostPort.onmessage = null;
         this.hostPort.close();
       } catch (error) {
         // ignore
       }
       this.hostPort = null;
     }
+
+    if (channel) {
+      try {
+        channel.port2.onmessage = null;
+        channel.port2.close();
+      } catch (error) {
+        // ignore — port2 may already be transferred or closed
+      }
+    }
+
     this.channel = null;
   }
 

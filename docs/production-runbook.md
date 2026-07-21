@@ -13,6 +13,7 @@ See also: [browser-compatibility.md](./browser-compatibility.md), [api-stability
 | TURN relay (production mesh) | Recommended | Corporate VPN / symmetric NAT often block direct UDP |
 | Custom `appPassword` | Yes | Never ship `DEFAULT_APP_PASSWORD` in production |
 | Broadcast scope passwords | Per room/game | `security.broadcastPasswords` keyed by `broadcastScope` |
+| Identity backup | Recommended | `deriveKeyPairFromCredentials` and/or `exportIdentityMnemonic` / encrypted mnemonic (#130); treat phrases as root secrets |
 | Persistence strategy | Optional | `IndexedDBPersistence` with `collections` filter for large apps |
 | Verification registration | Recommended | `registerVerification` or `registerPublisherVerification` per collection |
 | Monitoring hooks | Recommended | Subscribe to `securityerror`, `peerbanned`, `chainbroken`, `policyrejected` |

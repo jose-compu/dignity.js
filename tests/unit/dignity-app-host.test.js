@@ -25,8 +25,27 @@ describe('DignityAppHost', () => {
     }
   };
 
+  const openHosts = [];
+
+  function createHost(options) {
+    const host = new DignityAppHost(options);
+    openHosts.push(host);
+    return host;
+  }
+
+  afterEach(() => {
+    while (openHosts.length) {
+      const host = openHosts.pop();
+      try {
+        host.unmount();
+      } catch (_error) {
+        // ignore teardown errors
+      }
+    }
+  });
+
   test('mount uses sandbox allow-scripts only and injects CSP meta first in head', () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     const container = document.createElement('div');
     document.body.appendChild(container);
 
@@ -44,12 +63,12 @@ describe('DignityAppHost', () => {
   });
 
   test('RPC before channel ready throws', async () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     await expect(host.rpc('query', { collection: 'posts' })).rejects.toThrow('channel is not ready');
   });
 
   test('handshake establishes channel and query returns replica data', async () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     host._openChannel();
 
     const clientPort = host.channel.port2;
@@ -67,7 +86,7 @@ describe('DignityAppHost', () => {
   });
 
   test('channel invalidated on iframe reload', async () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     host._openChannel();
 
     const clientPort = host.channel.port2;
@@ -81,7 +100,7 @@ describe('DignityAppHost', () => {
   });
 
   test('forwards CSP violation postMessage as apperror', () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     const errors = [];
     host.on('apperror', (e) => errors.push(e));
 
@@ -103,25 +122,25 @@ describe('DignityAppHost', () => {
   });
 
   test('rejects invalid manifest', () => {
-    expect(() => new DignityAppHost({ manifest: { id: '' }, document })).toThrow('Invalid Dignity App manifest');
+    expect(() => createHost({ manifest: { id: '' }, document })).toThrow('Invalid Dignity App manifest');
   });
 
   test('accepts pre-validated manifest with schemaVersion', () => {
-    const host = new DignityAppHost({ manifest: { ...manifest, schemaVersion: 1 }, replica, document });
+    const host = createHost({ manifest: { ...manifest, schemaVersion: 1 }, replica, document });
     expect(host.manifest.id).toBe('demo');
   });
 
   test('mount requires document and container', () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     host.document = null;
     expect(() => host.mount(document.createElement('div'), '<html></html>')).toThrow('requires a DOM document');
 
-    const host2 = new DignityAppHost({ manifest, replica, document });
+    const host2 = createHost({ manifest, replica, document });
     expect(() => host2.mount(null, '<html></html>')).toThrow('requires a container element');
   });
 
   test('rpc propagates handler errors', async () => {
-    const host = new DignityAppHost({ manifest, replica: null, document });
+    const host = createHost({ manifest, replica: null, document });
     host._openChannel();
     host.channelReady = true;
 
@@ -129,7 +148,7 @@ describe('DignityAppHost', () => {
   });
 
   test('rpc returns non-list results', async () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     host._openChannel();
     host.channelReady = true;
 
@@ -138,7 +157,7 @@ describe('DignityAppHost', () => {
   });
 
   test('mount without head prepends bootstrap script', () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     const container = document.createElement('div');
     host.mount(container, '<p>no head</p>');
     expect(container.querySelector('iframe').srcdoc).toContain('window.dignity');
@@ -146,7 +165,7 @@ describe('DignityAppHost', () => {
   });
 
   test('iframe load posts handshake MessagePort', () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     host._openChannel();
     const posted = [];
     host.iframe = {
@@ -163,14 +182,14 @@ describe('DignityAppHost', () => {
   });
 
   test('_onIframeLoad no-ops when contentWindow is missing', () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     host._openChannel();
     host.iframe = { contentWindow: null };
     expect(() => host._onIframeLoad()).not.toThrow();
   });
 
   test('_onIframeLoad is no-op without iframe or channel', () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     expect(() => host._onIframeLoad()).not.toThrow();
     host.iframe = {};
     expect(() => host._onIframeLoad()).not.toThrow();
@@ -179,13 +198,13 @@ describe('DignityAppHost', () => {
   test('_openChannel throws when MessageChannel is unavailable', () => {
     const saved = global.MessageChannel;
     delete global.MessageChannel;
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     expect(() => host._openChannel()).toThrow('MessageChannel is not available');
     global.MessageChannel = saved;
   });
 
   test('emits applog when iframe client sends log RPC', async () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     const logs = [];
     host.on('applog', (e) => logs.push(e));
     host._openChannel();
@@ -199,20 +218,20 @@ describe('DignityAppHost', () => {
   });
 
   test('_prepareHtml prepends bootstrap when html has no head tag', () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     const out = host._prepareHtml('<p>bare fragment</p>');
     expect(out).toContain('window.dignity');
     expect(out).toContain('<p>bare fragment</p>');
   });
 
   test('unmount tolerates detached iframe', () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     host.iframe = document.createElement('iframe');
     expect(() => host.unmount()).not.toThrow();
   });
 
   test('_invalidateChannel swallows port.close errors', () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     host._openChannel();
     host.hostPort.close = () => {
       throw new Error('already closed');
@@ -221,7 +240,7 @@ describe('DignityAppHost', () => {
   });
 
   test('rpc uses default error message when handler omits text', async () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     host._openChannel();
     host.channelReady = true;
     host.rpcHandler.handle = async () => ({ ok: false, error: { code: 'x' } });
@@ -229,7 +248,7 @@ describe('DignityAppHost', () => {
   });
 
   test('error RPC emits apperror via onError callback', async () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     const errors = [];
     host.on('apperror', (e) => errors.push(e));
     host._openChannel();
@@ -248,7 +267,7 @@ describe('DignityAppHost', () => {
   });
 
   test('hostPort emits apprpcerror when query RPC fails', async () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     const rpcErrors = [];
     host.on('apprpcerror', (e) => rpcErrors.push(e));
     host._openChannel();
@@ -271,7 +290,7 @@ describe('DignityAppHost', () => {
   });
 
   test('_prepareHtml prepends bootstrap when prepared html has no closing head', () => {
-    const host = new DignityAppHost({ manifest, replica, document });
+    const host = createHost({ manifest, replica, document });
     const malformed = '<html><head><title>App</title><body>content</body></html>';
     const out = host._prepareHtml(malformed);
     expect(out.indexOf('window.dignity')).toBeLessThan(out.indexOf('<body>'));

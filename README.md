@@ -67,6 +67,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Optional React hooks via `dignity.js/react`
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **v1.1.0** — BIP39-style identity mnemonic export/import (#130), optional passphrase-encrypted backup
 - **v1.0.0** — Stable public API (#94), threat model (#96), openapi normalization (#126), chess credential login (#128)
 - **v0.14.0** — TypeScript definitions (#14), production deployment runbook (#95), API consistency audit (#124)
 - **v0.13.0** — Verification code hashing (#115), optional semver versioning (#116), compatibility policies (#117), security audit v0.7–v0.13 (#122)
@@ -75,7 +76,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - **v0.10.1** — README logo PNG aspect-ratio fix (export from SVG)
 - **v0.10.0** — cross-device chess resume, portable checkpoints, browser tic-tac-toe demo, PeerJS ICE/TURN docs, Playwright e2e smoke
 - **`DignityQueryReplica`** — read-only materialized views with hash-chain verification
-- Credential-derived keys, identity rotation, and cold-recovery co-sign (v0.7+)
+- Credential-derived keys, identity rotation, cold-recovery co-sign (v0.7+), and BIP39-style mnemonic backup (v1.1+)
 - Browser-first: published npm package includes IIFE, ESM, and CJS builds
 
 ## Install
@@ -273,6 +274,41 @@ const alice = new DignityP2P({
 ```
 
 `appPassword` is for broadcast encryption and is separate from the identity password. Password strength affects offline brute-force resistance; compromising the identity password exposes signing keys retroactively.
+
+### Recovery phrase backup (v1.1.0, #130)
+
+Export any `keyPair` (random or credential-derived) as a BIP39-style **48-word** English phrase encoding the 32-byte Ed25519 seed plus the 32-byte Curve25519 secret. This is a portable offline backup — complementary to username/password derive and cold-recovery co-sign.
+
+```js
+const {
+  exportIdentityMnemonic,
+  importIdentityMnemonic,
+  exportIdentityMnemonicEncrypted,
+  importIdentityMnemonicEncrypted
+} = require('dignity.js');
+
+const phrase = await exportIdentityMnemonic(keyPair);
+// store offline / paper — anyone with the phrase controls the identity
+
+const restored = await importIdentityMnemonic(phrase);
+
+// Optional: passphrase-encrypted blob for password managers
+const encrypted = await exportIdentityMnemonicEncrypted(keyPair, {
+  passphrase: 'vault-passphrase'
+});
+const fromVault = await importIdentityMnemonicEncrypted(encrypted, {
+  passphrase: 'vault-passphrase'
+});
+```
+
+| Mechanism | Use when |
+|-----------|----------|
+| `deriveKeyPairFromCredentials` | Same username/password must recreate keys on any device |
+| `exportIdentityMnemonic` | Paper / offline backup of an existing keyPair |
+| Encrypted mnemonic | Clipboard or password-manager storage of that backup |
+| Cold recovery password | Prevent rotation lockout after primary password theft |
+
+UI guidance: blur phrases by default; warn that possession of the phrase (or phrase + passphrase) is full identity control. See [`docs/threat-model.md`](./docs/threat-model.md).
 
 ### Compromise recovery (key #2, #3, …)
 
@@ -672,9 +708,9 @@ joiner.on('proposalresult', (result) => {
 
 See `docs/tictactoe/` for a full PeerJS demo. `transferOwnership` remains available when you want to hand off the record entirely.
 
-## Migration to v1.0.0
+## Migration to v1.1.0
 
-v1.0.0 declares the public npm API stable with no intentional breaking changes from v0.14.0. Bump your dependency and review [`docs/api-stability.md`](./docs/api-stability.md). Full 0.7 → 1.0 notes: issue #97.
+v1.1.0 adds mnemonic backup helpers and is a non-breaking minor on the v1.0 stable API. Bump your dependency; no code changes required unless you adopt the new exports. See [`docs/api-stability.md`](./docs/api-stability.md). Full 0.7 → 1.0 notes: issue #97.
 
 ## TypeScript (v0.14.0+)
 
@@ -759,8 +795,8 @@ Dignity App manifests may pin `dappVersion` + `logicHash` + `publisherId`. Store
 
 - **Documentation:** [jose-compu.github.io/dignity.js](https://jose-compu.github.io/dignity.js/)
 - **API reference:** [`docs/api-reference.md`](./docs/api-reference.md) (generated from `openapi-like.json`)
-- **API stability (v1.0):** [`docs/api-stability.md`](./docs/api-stability.md) (#94)
-- **Threat model (v1.0):** [`docs/threat-model.md`](./docs/threat-model.md) (#96)
+- **API stability (v1.x):** [`docs/api-stability.md`](./docs/api-stability.md) (#94)
+- **Threat model (v1.1):** [`docs/threat-model.md`](./docs/threat-model.md) (#96, #130)
 - **Browser compatibility:** [`docs/browser-compatibility.md`](./docs/browser-compatibility.md) (#91)
 - **Production runbook:** [`docs/production-runbook.md`](./docs/production-runbook.md) (#95)
 - **Benchmarks:** [`docs/benchmarks/results.json`](./docs/benchmarks/results.json) — `npm run benchmark` (#92)

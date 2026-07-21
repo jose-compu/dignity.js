@@ -19,6 +19,19 @@ describe('Dignity App error panel (#106)', () => {
     collections: ['posts']
   }).manifest;
 
+  let openHost = null;
+
+  afterEach(() => {
+    if (openHost) {
+      try {
+        openHost.unmount();
+      } catch (_error) {
+        // ignore
+      }
+      openHost = null;
+    }
+  });
+
   test('attachErrorPanel requires host and container', () => {
     expect(() => attachErrorPanel(null, null)).toThrow('host and container');
     expect(() => attachErrorPanel(new EventEmitter(), null)).toThrow('host and container');
@@ -97,6 +110,7 @@ describe('Dignity App error panel (#106)', () => {
 
   test('host.rpc emits apprpcerror on failure', async () => {
     const host = new DignityAppHost({ manifest, replica: null, document });
+    openHost = host;
     host._openChannel();
 
     const errors = [];

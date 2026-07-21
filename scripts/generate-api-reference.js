@@ -95,10 +95,7 @@ function buildMarkdown() {
 
   if (spec.resources.packageExports) {
     lines.push(heading(3, 'Package-level exports'));
-    for (const [section, desc] of Object.entries(spec.resources.packageExports)) {
-      lines.push(`- **${section}** — ${desc}`);
-    }
-    lines.push('\n');
+    lines.push(`${Object.entries(spec.resources.packageExports).map(([section, desc]) => `- **${section}** — ${desc}`).join('\n')}\n\n`);
   }
 
   if (spec.resources.network) {
@@ -109,6 +106,11 @@ function buildMarkdown() {
   if (spec.resources.signalingExports) {
     lines.push(heading(3, 'Signaling exports'));
     lines.push(`${Object.entries(spec.resources.signalingExports).map(([k, v]) => `- **\`${k}\`** — ${v}`).join('\n')}\n\n`);
+  }
+
+  if (spec.resources.identityExports) {
+    lines.push(heading(3, 'Identity mnemonic exports'));
+    lines.push(`${Object.entries(spec.resources.identityExports).map(([k, v]) => `- **\`${k}\`** — ${v}`).join('\n')}\n\n`);
   }
 
   if (spec.resources.verification) {
