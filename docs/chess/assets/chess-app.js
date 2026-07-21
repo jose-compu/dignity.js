@@ -33589,10 +33589,15 @@ var require_identity_mnemonic = __commonJS({
     }
     async function sha256(bytes) {
       const subtle = globalThis.crypto && globalThis.crypto.subtle;
-      if (!subtle) {
-        throw new Error("SHA-256 requires Web Crypto (crypto.subtle)");
+      if (subtle) {
+        return new Uint8Array(await subtle.digest("SHA-256", bytes));
       }
-      return new Uint8Array(await subtle.digest("SHA-256", bytes));
+      try {
+        const { createHash } = __require("crypto");
+        return new Uint8Array(createHash("sha256").update(Buffer.from(bytes)).digest());
+      } catch (_ignored) {
+        throw new Error("SHA-256 requires Web Crypto (crypto.subtle) or Node crypto");
+      }
     }
     function normalizeUnicode(value) {
       const text = String(value || "");
@@ -34936,12 +34941,21 @@ var require_host = __commonJS({
       }
       _invalidateChannel() {
         this.channelReady = false;
+        const channel = this.channel;
         if (this.hostPort) {
           try {
+            this.hostPort.onmessage = null;
             this.hostPort.close();
           } catch (error2) {
           }
           this.hostPort = null;
+        }
+        if (channel) {
+          try {
+            channel.port2.onmessage = null;
+            channel.port2.close();
+          } catch (error2) {
+          }
         }
         this.channel = null;
       }
