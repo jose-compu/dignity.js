@@ -805,6 +805,7 @@ Dignity App manifests may pin `dappVersion` + `logicHash` + `publisherId`. Store
 - **Browser tic-tac-toe:** `docs/tictactoe/` — PeerJS onboarding + delegated move proposals → [local tictactoe](http://127.0.0.1:4173/tictactoe/) when `docs:dev` is running
 - **Dignity Apps registry:** `docs/apps/` — searchable app index + timeline read-only demo
 - API metadata: `docs/openapi-like.json`
+- **Examples index:** [`examples/README.md`](./examples/README.md) (#132)
 - Minimal demos:
   - `examples/decentralized-tictactoe.js`
   - `examples/decentralized-chess-lite.js`
