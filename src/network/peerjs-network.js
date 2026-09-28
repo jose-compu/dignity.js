@@ -1,6 +1,22 @@
 const { DEFAULT_CLOUDFLARE_SIGNALING_URLS } = require('../signaling/default-signaling-config');
 const parsePeerJsServerUrl = require('../signaling/parse-peerjs-url');
 
+const DEFAULT_START_ATTEMPTS = 4;
+const DEFAULT_START_RETRY_DELAYS_MS = Object.freeze([250, 500, 1000]);
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function isFatalSignalingError(error) {
+  const type = String(error?.type || '');
+  const message = String(error?.message || error || '');
+  return /unavailable-id|invalid-key/i.test(type)
+    || /unavailable-id|invalid-key|is taken|invalid api key/i.test(message);
+}
+
 function resolvePeerImplementation(PeerImpl) {
   if (PeerImpl) {
     return PeerImpl;
@@ -21,7 +37,11 @@ class PeerJSNetworkAdapter {
     PeerImpl,
     connectTimeoutMs = 12000,
     iceServers = null,
-    peerOptions = null
+    peerOptions = null,
+    startAttempts = DEFAULT_START_ATTEMPTS,
+    startRetryDelaysMs = DEFAULT_START_RETRY_DELAYS_MS,
+    reconnectBaseDelayMs = 500,
+    reconnectMaxDelayMs = 15000
   } = {}) {
     this.urls = urls || (url ? [url] : [...DEFAULT_CLOUDFLARE_SIGNALING_URLS]);
     this.url = this.urls[0];
@@ -29,11 +49,20 @@ class PeerJSNetworkAdapter {
     this.connectTimeoutMs = connectTimeoutMs;
     this.iceServers = iceServers;
     this.peerOptions = peerOptions;
+    this.startAttempts = startAttempts;
+    this.startRetryDelaysMs = startRetryDelaysMs;
+    this.reconnectBaseDelayMs = reconnectBaseDelayMs;
+    this.reconnectMaxDelayMs = reconnectMaxDelayMs;
     this.nodeId = null;
     this.peer = null;
     this.connections = new Map();
     this.pendingConnections = new Map();
     this.messageHandlers = new Set();
+    this._stopped = false;
+    this._session = 0;
+    this._reconnectAttempt = 0;
+    this._reconnectTimer = null;
+    this._reconnectInflight = false;
   }
 
   async start(nodeId) {
@@ -45,18 +74,37 @@ class PeerJSNetworkAdapter {
       throw new Error('PeerJS implementation is not available');
     }
 
-    if (this.peer) {
-      await this.stop();
-    }
+    this._session += 1;
+    const session = this._session;
+    this._stopped = false;
+    this._reconnectAttempt = 0;
+    this._clearReconnectTimer();
+    this._destroyPeer();
 
     let lastError;
     for (const candidateUrl of this.urls) {
-      try {
-        await this.startWithUrl(nodeId, candidateUrl);
-        this.url = candidateUrl;
-        return;
-      } catch (error) {
-        lastError = error;
+      for (let attempt = 1; attempt <= this.startAttempts; attempt += 1) {
+        if (this._stopped || this._session !== session) {
+          throw new Error('PeerJS network adapter stopped');
+        }
+        try {
+          await this.startWithUrl(nodeId, candidateUrl);
+          if (this._stopped || this._session !== session) {
+            this._destroyPeer();
+            throw new Error('PeerJS network adapter stopped');
+          }
+          this.url = candidateUrl;
+          return;
+        } catch (error) {
+          lastError = error;
+          if (isFatalSignalingError(error) || attempt >= this.startAttempts) {
+            break;
+          }
+          const delay = this.startRetryDelaysMs[attempt - 1] ?? 1000;
+          if (delay > 0) {
+            await wait(delay);
+          }
+        }
       }
     }
 
@@ -85,14 +133,37 @@ class PeerJSNetworkAdapter {
       }
 
       const peer = new this.PeerImpl(nodeId, peerConfig);
+      let opened = false;
 
       const timeout = setTimeout(() => {
         peer.destroy?.();
         reject(new Error(`Unable to connect PeerJS network adapter to ${url}`));
       }, this.connectTimeoutMs);
 
-      peer.on('open', () => {
+      const onStartupError = (error) => {
+        if (opened) {
+          return;
+        }
         clearTimeout(timeout);
+        peer.destroy?.();
+        reject(error || new Error(`Unable to connect PeerJS network adapter to ${url}`));
+      };
+
+      const onRuntimeError = () => {
+        // A dead dial or a dropped socket must not destroy the Peer.
+        // WebRTC links stay up, and disconnect schedules a signaling reconnect.
+      };
+
+      peer.on('open', () => {
+        if (opened) {
+          return;
+        }
+        opened = true;
+        clearTimeout(timeout);
+        if (typeof peer.off === 'function') {
+          peer.off('error', onStartupError);
+        }
+        peer.on('error', onRuntimeError);
         this.peer = peer;
         resolve();
       });
@@ -101,12 +172,97 @@ class PeerJSNetworkAdapter {
         this.attachConnectionHandlers(connection);
       });
 
-      peer.on('error', (error) => {
-        clearTimeout(timeout);
-        peer.destroy?.();
-        reject(error || new Error(`Unable to connect PeerJS network adapter to ${url}`));
+      peer.on('error', onStartupError);
+      peer.on('disconnected', () => {
+        if (!opened || this._stopped || this.peer !== peer) {
+          return;
+        }
+        this._scheduleReconnect();
       });
     });
+  }
+
+  _clearReconnectTimer() {
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+  }
+
+  _destroyPeer() {
+    const peer = this.peer;
+    this.peer = null;
+    if (peer && typeof peer.destroy === 'function') {
+      peer.destroy();
+    }
+  }
+
+  _scheduleReconnect() {
+    if (this._stopped || this._reconnectTimer || this._reconnectInflight) {
+      return;
+    }
+    const session = this._session;
+    const delay = Math.min(
+      this.reconnectMaxDelayMs,
+      this.reconnectBaseDelayMs * (2 ** this._reconnectAttempt)
+    );
+    this._reconnectAttempt += 1;
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
+      if (this._stopped || this._session !== session) {
+        return;
+      }
+      this._reconnectSignaling(session).catch(() => undefined);
+    }, delay);
+  }
+
+  async _reconnectSignaling(session) {
+    if (this._stopped || this._session !== session || this._reconnectInflight) {
+      return;
+    }
+    this._reconnectInflight = true;
+    try {
+      const peer = this.peer;
+      if (peer && !peer.destroyed && peer.disconnected && typeof peer.reconnect === 'function') {
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            cleanup();
+            reject(new Error('PeerJS reconnect timeout'));
+          }, Math.min(this.connectTimeoutMs, 8000));
+          const onOpen = () => {
+            cleanup();
+            resolve();
+          };
+          function cleanup() {
+            clearTimeout(timer);
+            if (typeof peer.off === 'function') {
+              peer.off('open', onOpen);
+            }
+          }
+          peer.on('open', onOpen);
+          try {
+            peer.reconnect();
+          } catch (error) {
+            cleanup();
+            reject(error);
+          }
+        });
+        if (!this._stopped && this._session === session) {
+          this._reconnectAttempt = 0;
+        }
+        return;
+      }
+      if (!this._stopped && this._session === session && this.nodeId) {
+        this._reconnectInflight = false;
+        await this.start(this.nodeId);
+      }
+    } catch (error) {
+      if (!this._stopped && !this.peer) {
+        this._scheduleReconnect();
+      }
+    } finally {
+      this._reconnectInflight = false;
+    }
   }
 
   attachConnectionHandlers(connection) {
@@ -153,6 +309,11 @@ class PeerJSNetworkAdapter {
         reliable: true,
         serialization: 'json'
       });
+
+      if (!connection || typeof connection.on !== 'function') {
+        reject(new Error(`PeerJS connect() returned no DataConnection for ${remotePeerId}`));
+        return;
+      }
 
       const timeout = setTimeout(() => {
         reject(new Error(`Unable to connect to peer ${remotePeerId}`));
@@ -247,6 +408,9 @@ class PeerJSNetworkAdapter {
   }
 
   async stop() {
+    this._stopped = true;
+    this._session += 1;
+    this._clearReconnectTimer();
     for (const connection of this.connections.values()) {
       if (typeof connection.close === 'function') {
         connection.close();
@@ -256,11 +420,7 @@ class PeerJSNetworkAdapter {
     this.connections.clear();
     this.pendingConnections.clear();
 
-    if (this.peer && typeof this.peer.destroy === 'function') {
-      this.peer.destroy();
-    }
-
-    this.peer = null;
+    this._destroyPeer();
     this.nodeId = null;
   }
 }

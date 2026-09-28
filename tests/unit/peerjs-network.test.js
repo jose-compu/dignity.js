@@ -132,23 +132,19 @@ describe('PeerJSNetworkAdapter', () => {
   });
 
   test('fails over to second signaling url', async () => {
-    let attempts = 0;
-    class FailOncePeer extends MockPeer {
+    class FailFirstHostPeer extends MockPeer {
       constructor(id, options) {
+        MockPeer.failOpen = options?.host === 'bad.example';
         super(id, options);
-        attempts += 1;
-        if (attempts === 1) {
-          MockPeer.failOpen = true;
-        } else {
-          MockPeer.failOpen = false;
-        }
       }
     }
 
     const adapter = new PeerJSNetworkAdapter({
       urls: ['wss://bad.example/peerjs', 'wss://peerjs.92k.de/peerjs?key=peerjs'],
-      PeerImpl: FailOncePeer,
-      connectTimeoutMs: 500
+      PeerImpl: FailFirstHostPeer,
+      connectTimeoutMs: 500,
+      startAttempts: 2,
+      startRetryDelaysMs: [0]
     });
 
     await adapter.start('alice');
@@ -294,6 +290,98 @@ describe('PeerJSNetworkAdapter', () => {
     });
     await adapter.start('alice');
     await expect(adapter.connectToPeer('missing')).rejects.toThrow('Unable to connect');
+    await adapter.stop();
+  });
+
+  test('retries a refused socket on the same host', async () => {
+    let constructed = 0;
+    class FlakyPeer extends MockPeer {
+      constructor(id, options) {
+        constructed += 1;
+        MockPeer.failOpen = constructed < 3;
+        super(id, options);
+      }
+    }
+
+    const adapter = new PeerJSNetworkAdapter({
+      url: 'wss://peerjs.92k.de/peerjs?key=peerjs',
+      PeerImpl: FlakyPeer,
+      connectTimeoutMs: 500,
+      startAttempts: 4,
+      startRetryDelaysMs: [0, 0, 0]
+    });
+
+    await adapter.start('alice');
+    expect(constructed).toBe(3);
+    expect(adapter.peer).toBeTruthy();
+    await adapter.stop();
+  });
+
+  test('does not retry when the peer id is taken', async () => {
+    let constructed = 0;
+    class TakenPeer extends MockPeer {
+      constructor(id, options) {
+        constructed += 1;
+        MockPeer.failOpen = true;
+        const openError = new Error('ID "alice" is taken');
+        openError.type = 'unavailable-id';
+        MockPeer.openError = openError;
+        super(id, options);
+      }
+    }
+
+    const adapter = new PeerJSNetworkAdapter({
+      url: 'wss://peerjs.92k.de/peerjs?key=peerjs',
+      PeerImpl: TakenPeer,
+      connectTimeoutMs: 500,
+      startAttempts: 4,
+      startRetryDelaysMs: [0, 0, 0]
+    });
+
+    await expect(adapter.start('alice')).rejects.toThrow(/taken/);
+    expect(constructed).toBe(1);
+    await adapter.stop();
+  });
+
+  test('keeps the peer after a runtime peer-unavailable error', async () => {
+    const adapter = new PeerJSNetworkAdapter({
+      url: 'wss://peerjs.92k.de/peerjs?key=peerjs',
+      PeerImpl: MockPeer,
+      connectTimeoutMs: 1000
+    });
+    await adapter.start('alice');
+    const peer = adapter.peer;
+    peer.handlers.error({ type: 'peer-unavailable', message: 'Could not connect to peer' });
+    expect(adapter.peer).toBe(peer);
+    expect(MockPeer.peers.has('alice')).toBe(true);
+    await adapter.stop();
+  });
+
+  test('reconnects the same peer after the signaling socket drops', async () => {
+    const adapter = new PeerJSNetworkAdapter({
+      url: 'wss://peerjs.92k.de/peerjs?key=peerjs',
+      PeerImpl: MockPeer,
+      connectTimeoutMs: 1000,
+      reconnectBaseDelayMs: 0
+    });
+    await adapter.start('alice');
+    const peer = adapter.peer;
+    let reconnects = 0;
+    peer.disconnected = true;
+    peer.destroyed = false;
+    peer.reconnect = () => {
+      reconnects += 1;
+      peer.disconnected = false;
+      setTimeout(() => {
+        if (peer.handlers.open) {
+          peer.handlers.open(peer.id);
+        }
+      }, 0);
+    };
+    peer.handlers.disconnected();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(reconnects).toBe(1);
+    expect(adapter.peer).toBe(peer);
     await adapter.stop();
   });
 });

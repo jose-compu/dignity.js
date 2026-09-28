@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "The scalable data layer of the decentralized browser application ecosystem — P2P object replication with CQRS read replicas, Dignity Apps, and verification policies",
   "lifecycle": {
     "start": "attach network message handler and begin receiving",
