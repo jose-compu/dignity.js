@@ -6,6 +6,7 @@
 [![npm version](https://img.shields.io/npm/v/dignity.js?color=cb3837&label=npm)](https://www.npmjs.com/package/dignity.js)
 [![npm downloads](https://img.shields.io/npm/dm/dignity.js?color=blue)](https://www.npmjs.com/package/dignity.js)
 [![CI](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml/badge.svg)](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml)
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/jose-compu/dignity.js?utm_source=badge)
 ![tests](https://img.shields.io/badge/tests-530%2B%20passing-brightgreen)
 ![coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)
 ![license](https://img.shields.io/badge/license-Apache%202.0-black)
@@ -584,6 +585,7 @@ See **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup, tests, and PR expectations
 | `npm run stress:peer-group` | CLI stress harness with JSON metrics. | Example: `node scripts/stress-peer-group.js --subscribers 1000 --json`. |
 | `npm run test:cloudflare-live` | Run the live Cloudflare signaling integration test. | Opt-in; set `RUN_CLOUDFLARE_LIVE_TESTS=1`. |
 | `npm run test:pow-calibrate` | Run the Sloth VDF timing calibration test without coverage. | Opt-in; set `RUN_POW_CALIBRATE=1`. |
+| `npm run bench` | Run the Vitest micro-benchmarks in `bench/`. | Tracked in CI by [CodSpeed](https://app.codspeed.io/jose-compu/dignity.js); CPU simulation mode. |
 | `npm run build` | Build the published package bundles into `dist/`. | Run after changing library source files. |
 | `npm run build:chess` | Rebuild the browser chess demo bundle only. | Used by the docs site and local chess demo. |
 | `npm run docs:favicon` | Regenerate the docs favicon assets. | Docs maintenance helper. |

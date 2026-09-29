@@ -65,6 +65,7 @@
     "docs:api-reference": "node scripts/generate-api-reference.js",
     "benchmark": "node scripts/run-benchmarks.js --write docs/benchmarks/results.json",
     "benchmark:quick": "node scripts/run-benchmarks.js --quick",
+    "bench": "vitest bench --run",
     "docs:check": "node -e \"const fs=require('fs');['docs/index.html','docs/favicon.ico','docs/api-reference.md','docs/api-stability.md','docs/threat-model.md','docs/browser-compatibility.md','docs/production-runbook.md','docs/benchmarks/results.json','docs/playground/index.html','docs/assets/playground.js','docs/assets/playground-demos.js','docs/assets/playground.css','docs/chess/index.html','docs/chess/favicon.ico','docs/assets/favicon.svg','docs/chess/assets/chess-app.js','docs/tictactoe/index.html','docs/tictactoe/favicon.ico','docs/tictactoe/assets/tictactoe-app.js','docs/apps/index.html','docs/apps/registry.json','docs/apps/timeline/index.html','docs/assets/dignity-logo.png','docs/assets/dignity.esm.js','docs/assets/highlight/highlight.min.js','docs/assets/highlight/github.min.css','docs/assets/highlight/github-dark.min.css'].forEach(p=>fs.accessSync(p));\"",
     "example:tictactoe": "node examples/decentralized-tictactoe.js",
     "example:chess": "node examples/decentralized-chess-lite.js",
@@ -87,6 +88,7 @@
     }
   },
   "devDependencies": {
+    "@codspeed/vitest-plugin": "^5.7.1",
     "@playwright/test": "^1.52.0",
     "@testing-library/react": "^16.3.0",
     "chess.js": "^1.4.0",
@@ -98,7 +100,8 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "three": "^0.184.0",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.11"
   },
   "dependencies": {
     "acorn": "^8.17.0",
