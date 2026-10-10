@@ -169,4 +169,4 @@ RUN_BROWSER_E2E=1 npm run test:e2e:browser
 RUN_CLOUDFLARE_LIVE_TESTS=1 npm run test:cloudflare-live   # optional signaling check
 ```
 
-Manual: [playground](https://jose-compu.github.io/dignity.js/playground/), chess demo, timeline app on target browsers.
+Manual: [playground](https://dignity.js.org/playground/), chess demo, timeline app on target browsers.

@@ -30,11 +30,11 @@ dignity.js targets **modern evergreen browsers** with WebRTC, IndexedDB, Web Cry
 
 | Page | Exercises |
 | --- | --- |
-| [Playground](https://jose-compu.github.io/dignity.js/playground/) | Core CRUD, CQRS, Dignity Apps, **v0.13 verification** demos |
-| [Chess demo](https://jose-compu.github.io/dignity.js/chess/) | PeerJS mesh, ownership transfer, resume checkpoints |
-| [Tic-tac-toe](https://jose-compu.github.io/dignity.js/tictactoe/) | Turn-based ownership, browser PeerJS |
-| [Timeline app](https://jose-compu.github.io/dignity.js/apps/timeline/) | `DignityAppHost`, sandboxed iframe, stored commands |
-| [Apps registry](https://jose-compu.github.io/dignity.js/apps/) | Manifest listing, search |
+| [Playground](https://dignity.js.org/playground/) | Core CRUD, CQRS, Dignity Apps, **v0.13 verification** demos |
+| [Chess demo](https://dignity.js.org/chess/) | PeerJS mesh, ownership transfer, resume checkpoints |
+| [Tic-tac-toe](https://dignity.js.org/tictactoe/) | Turn-based ownership, browser PeerJS |
+| [Timeline app](https://dignity.js.org/apps/timeline/) | `DignityAppHost`, sandboxed iframe, stored commands |
+| [Apps registry](https://dignity.js.org/apps/) | Manifest listing, search |
 
 ## CI coverage
 
@@ -124,4 +124,4 @@ const networkAdapter = createPeerJSNetworkAdapter({
 | Dignity App iframe blank | CSP or sandbox violation | Check host error panel / browser console CSP events |
 | Verification mismatch across peers | Different bundled function sources | Use `reflective: true` on equivalent source, or pin `dappVersion` + `logicHash` |
 
-If a browser-specific failure is reproducible on the [playground](https://jose-compu.github.io/dignity.js/playground/), chess, tic-tac-toe, or timeline demos, open an issue with browser version, OS, and console errors.
+If a browser-specific failure is reproducible on the [playground](https://dignity.js.org/playground/), chess, tic-tac-toe, or timeline demos, open an issue with browser version, OS, and console errors.
