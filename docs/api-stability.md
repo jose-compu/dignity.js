@@ -1,6 +1,6 @@
 # API stability guarantee (v1.x)
 
-dignity.js **v1.0.0** declared the public npm API stable; **v1.1.0** adds non-breaking exports under the same guarantee. This document defines what is frozen, what counts as a breaking change, and how deprecations are handled.
+dignity.js **v1.0.0** declared the public npm API stable; **v1.1.x** adds non-breaking exports under the same guarantee. This document defines what is frozen, what counts as a breaking change, and how deprecations are handled.
 
 See also: [`types/index.d.ts`](../types/index.d.ts), [`docs/openapi-like.json`](./openapi-like.json), [`docs/threat-model.md`](./threat-model.md).
 
@@ -61,7 +61,7 @@ All events documented in `openapi-like.json` → `events`, `warningSubtypes`, `q
 3. **Support window** — deprecated APIs remain functional for at least **one full minor release** (e.g. deprecated in 1.1, removed no earlier than 2.0).
 4. **Remove** — only in a major release (2.0+), with migration notes.
 
-No public APIs are currently deprecated as of v1.1.0.
+No public APIs are currently deprecated as of v1.1.2.
 
 ## Internal and non-guaranteed surfaces
 
