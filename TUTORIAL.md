@@ -4,7 +4,7 @@ This tutorial walks you through dignity.js from zero to a working multi-peer app
 
 **Time:** ~35 minutes  
 **Version:** 1.1.0  
-**Full docs:** [docs site](https://jose-compu.github.io/dignity.js/) · [README](./README.md)
+**Full docs:** [docs site](https://dignity.js.org/) · [README](./README.md)
 
 **Lessons:** [1](#lesson-1--two-peers-one-shared-note) · [2](#lesson-2--rooms-and-discovery) · [3](#lesson-3--ownership-and-updates) · [4](#lesson-4--collaborators) · [4b](#lesson-4b--verification-policies-115117) · [5](#lesson-5--versions-and-conflicts) · [6](#lesson-6--browser-and-real-networks) · [7](#lesson-7--small-groups-vs-big-audiences) · [8](#lesson-8--big-feeds-with-cqrs-v08) · [9](#lesson-9--persist-across-reloads-browser) · [Cheat sheet](#cheat-sheet)
 
@@ -248,9 +248,9 @@ alice.on('verificationmismatch', (event) => {
 });
 ```
 
-**Playground:** [verification policies](https://jose-compu.github.io/dignity.js/playground/#verification-policies) · [reflective hashing](https://jose-compu.github.io/dignity.js/playground/#reflective-logic-hashing) · [publisher trust](https://jose-compu.github.io/dignity.js/playground/#publisher-official-version)
+**Playground:** [verification policies](https://dignity.js.org/playground/#verification-policies) · [reflective hashing](https://dignity.js.org/playground/#reflective-logic-hashing) · [publisher trust](https://dignity.js.org/playground/#publisher-official-version)
 
-**Docs:** [verification policies](https://jose-compu.github.io/dignity.js/#verification-policies)
+**Docs:** [verification policies](https://dignity.js.org/#verification-policies)
 
 ---
 
@@ -291,7 +291,7 @@ const node = new DignityP2P({ nodeId: 'player-1', networkAdapter, security });
 await node.start();
 ```
 
-Try the live demo: [docs/chess](https://jose-compu.github.io/dignity.js/chess/) (open two tabs).
+Try the live demo: [docs/chess](https://dignity.js.org/chess/) (open two tabs).
 
 ---
 
@@ -328,7 +328,7 @@ await spectator.joinPeerGroup('spectate:chess:game-42', {
 await white.publishRecordToPeerGroup('spectate:chess:game-42', 'chess-matches', 'game-42');
 ```
 
-See the [PeerGroup docs](https://jose-compu.github.io/dignity.js/#peer-groups) for details.
+See the [PeerGroup docs](https://dignity.js.org/#peer-groups) for details.
 
 ---
 
@@ -385,7 +385,7 @@ console.log(replica.verifyChain().ok);       // hash chain OK
 - `DignityQueryReplica` — `read` / `list` from a local materialized view
 - `tiered: true` + `liveCap` — split live vs bulk subscribers when the audience grows
 
-Try it in the browser: [live playground → CQRS demo](https://jose-compu.github.io/dignity.js/playground/).
+Try it in the browser: [live playground → CQRS demo](https://dignity.js.org/playground/).
 
 ---
 
@@ -462,15 +462,15 @@ node.on('warning', handler);
 
 | Resource | What it covers |
 |----------|----------------|
-| [docs site](https://jose-compu.github.io/dignity.js/) | Full guide: CQRS, security, verification, API reference |
-| [docs/playground/](https://jose-compu.github.io/dignity.js/playground/) | Live demos: v0.13 verification, reflective hashing, publisher trust, CQRS |
+| [docs site](https://dignity.js.org/) | Full guide: CQRS, security, verification, API reference |
+| [docs/playground/](https://dignity.js.org/playground/) | Live demos: v0.13 verification, reflective hashing, publisher trust, CQRS |
 | [docs/api-reference.md](./docs/api-reference.md) | Generated API reference from `openapi-like.json` |
 | [docs/production-runbook.md](./docs/production-runbook.md) | Production deployment checklist (#95) |
 | [docs/browser-compatibility.md](./docs/browser-compatibility.md) | Supported browsers and platform requirements |
-| [docs/apps/](https://jose-compu.github.io/dignity.js/apps/) | Dignity Apps registry + timeline demo |
+| [docs/apps/](https://dignity.js.org/apps/) | Dignity Apps registry + timeline demo |
 | [docs/benchmarks/results.json](./docs/benchmarks/results.json) | Gossip latency and IndexedDB hydration benchmarks |
-| [docs/tictactoe/](https://jose-compu.github.io/dignity.js/tictactoe/) | Browser tic-tac-toe (PeerJS + delegated proposals) |
-| [docs/chess/](https://jose-compu.github.io/dignity.js/chess/) | Full 3D chess + spectators + dual-signed resume |
+| [docs/tictactoe/](https://dignity.js.org/tictactoe/) | Browser tic-tac-toe (PeerJS + delegated proposals) |
+| [docs/chess/](https://dignity.js.org/chess/) | Full 3D chess + spectators + dual-signed resume |
 | [examples/decentralized-tictactoe.js](./examples/decentralized-tictactoe.js) | Small multiplayer game (Node CLI) |
 | [README.md](./README.md) | Security model, React hooks, signaling, verification |
 

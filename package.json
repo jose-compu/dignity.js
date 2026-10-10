@@ -1,8 +1,8 @@
 {
   "name": "dignity.js",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "The scalable data layer of the decentralized browser application ecosystem.",
-  "homepage": "https://jose-compu.github.io/dignity.js/",
+  "homepage": "https://dignity.js.org/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jose-compu/dignity.js.git"

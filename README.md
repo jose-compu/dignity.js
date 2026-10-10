@@ -2,7 +2,7 @@
 
 ![dignity.js logo](./docs/assets/dignity-logo.png)
 
-[![docs](https://img.shields.io/badge/docs-online-5B7FFF)](https://jose-compu.github.io/dignity.js/)
+[![docs](https://img.shields.io/badge/docs-online-5B7FFF)](https://dignity.js.org/)
 [![npm version](https://img.shields.io/npm/v/dignity.js?color=cb3837&label=npm)](https://www.npmjs.com/package/dignity.js)
 [![npm downloads](https://img.shields.io/npm/dm/dignity.js?color=blue)](https://www.npmjs.com/package/dignity.js)
 [![CI](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml/badge.svg)](https://github.com/jose-compu/dignity.js/actions/workflows/ci.yml)
@@ -27,13 +27,13 @@
 
 <p align="center">
   <strong>Docs:</strong>
-  <a href="https://jose-compu.github.io/dignity.js/">Site</a> ·
-  <a href="https://jose-compu.github.io/dignity.js/#tutorial">Tutorial</a> ·
-  <a href="https://jose-compu.github.io/dignity.js/#api-reference">API</a> ·
-  <a href="https://jose-compu.github.io/dignity.js/playground/">Playground</a> ·
-  <a href="https://jose-compu.github.io/dignity.js/chess/">Chess</a> ·
-  <a href="https://jose-compu.github.io/dignity.js/tictactoe/">Tic-tac-toe</a> ·
-  <a href="https://jose-compu.github.io/dignity.js/apps/">Apps registry</a> ·
+  <a href="https://dignity.js.org/">Site</a> ·
+  <a href="https://dignity.js.org/#tutorial">Tutorial</a> ·
+  <a href="https://dignity.js.org/#api-reference">API</a> ·
+  <a href="https://dignity.js.org/playground/">Playground</a> ·
+  <a href="https://dignity.js.org/chess/">Chess</a> ·
+  <a href="https://dignity.js.org/tictactoe/">Tic-tac-toe</a> ·
+  <a href="https://dignity.js.org/apps/">Apps registry</a> ·
   <a href="./docs/api-reference.md">API (MD)</a> ·
   <a href="./docs/production-runbook.md">Production</a> ·
   <a href="./docs/api-stability.md">API stability</a> ·
@@ -87,7 +87,7 @@ npm install dignity.js
 
 ## Tutorial
 
-**New to dignity.js?** Start with [TUTORIAL.md](./TUTORIAL.md) — short lessons from two in-memory peers through verification policies, browser PeerJS, PeerGroup spectators, and Dignity Apps. The [docs site tutorial](https://jose-compu.github.io/dignity.js/#tutorial) covers the same path.
+**New to dignity.js?** Start with [TUTORIAL.md](./TUTORIAL.md) — short lessons from two in-memory peers through verification policies, browser PeerJS, PeerGroup spectators, and Dignity Apps. The [docs site tutorial](https://dignity.js.org/#tutorial) covers the same path.
 
 ## Quick Start
 
@@ -187,7 +187,7 @@ await node.leavePeerGroup('feed:alice');
 
 Inner gossip message types: `operation`, `record:snapshot`, `domain:event`, `domain:checkpoint`, and app-defined payloads (via `peergroupmessage` events).
 
-Small collaborations (chess players, document co-editing) should keep using direct `connectToPeers` mesh. Large read-only audiences (chess spectators, public timelines) should use PeerGroup gossip. See the [docs PeerGroup section](https://jose-compu.github.io/dignity.js/#peer-groups).
+Small collaborations (chess players, document co-editing) should keep using direct `connectToPeers` mesh. Large read-only audiences (chess spectators, public timelines) should use PeerGroup gossip. See the [docs PeerGroup section](https://dignity.js.org/#peer-groups).
 
 ### CQRS tiers, domain events, and query replicas (v0.8+)
 
@@ -735,7 +735,7 @@ Smoke example: [`examples/typescript-consumer/`](./examples/typescript-consumer/
 
 ## Verification policies (v0.13.0)
 
-Bind each collection to canonical validation logic so peers loaded from different webs cannot silently diverge (#115–#117). Full guide: [docs — verification policies](https://jose-compu.github.io/dignity.js/#verification-policies).
+Bind each collection to canonical validation logic so peers loaded from different webs cannot silently diverge (#115–#117). Full guide: [docs — verification policies](https://dignity.js.org/#verification-policies).
 
 ```js
 const { hashReflectiveLogic } = require('dignity.js');
@@ -793,7 +793,7 @@ Dignity App manifests may pin `dappVersion` + `logicHash` + `publisherId`. Store
 
 ## Docs and Examples
 
-- **Documentation:** [jose-compu.github.io/dignity.js](https://jose-compu.github.io/dignity.js/)
+- **Documentation:** [dignity.js.org](https://dignity.js.org/)
 - **API reference:** [`docs/api-reference.md`](./docs/api-reference.md) (generated from `openapi-like.json`)
 - **API stability (v1.x):** [`docs/api-stability.md`](./docs/api-stability.md) (#94)
 - **Threat model (v1.1):** [`docs/threat-model.md`](./docs/threat-model.md) (#96, #130)
