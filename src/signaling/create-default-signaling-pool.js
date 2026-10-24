@@ -14,7 +14,7 @@ function createDefaultSignalingPool(options = {}) {
   const providers = [];
 
   cloudflareUrls.forEach((url, index) => {
-    const usePeerJsProvider = /^wss:\/\/(peerjs\.92k\.de|0\.peerjs\.com)(\/|$)/.test(url);
+    const usePeerJsProvider = /\/peerjs(?:\?|$)/.test(url);
     const ProviderClass = usePeerJsProvider ? PeerJSSignalingProvider : WebSocketSignalingProvider;
 
     providers.push(

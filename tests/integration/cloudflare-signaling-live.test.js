@@ -118,10 +118,13 @@ describeLive('Cloudflare signaling live integration', () => {
       for (const baseUrl of DEFAULT_CLOUDFLARE_SIGNALING_URLS) {
         const senderId = `sender_${Math.random().toString(36).slice(2, 10)}`;
         const receiverId = `receiver_${Math.random().toString(36).slice(2, 10)}`;
-        const sender = await openPeerSocket(baseUrl, senderId);
-        const receiver = await openPeerSocket(baseUrl, receiverId);
+        let sender;
+        let receiver;
 
         try {
+          sender = await openPeerSocket(baseUrl, senderId);
+          receiver = await openPeerSocket(baseUrl, receiverId);
+
           const senderOpen = await sender.nextMessage(`sender OPEN from ${baseUrl}`);
           const receiverOpen = await receiver.nextMessage(`receiver OPEN from ${baseUrl}`);
           expect(senderOpen).toMatchObject({ type: 'OPEN' });
@@ -141,8 +144,8 @@ describeLive('Cloudflare signaling live integration', () => {
         } catch (error) {
           relayFailures.push(`${baseUrl}: ${error.message}`);
         } finally {
-          sender.socket.close();
-          receiver.socket.close();
+          if (sender) sender.socket.close();
+          if (receiver) receiver.socket.close();
         }
       }
 
