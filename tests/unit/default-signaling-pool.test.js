@@ -17,7 +17,7 @@ describe('createDefaultSignalingPool', () => {
 
   test('uses hardcoded Cloudflare signaling defaults from config', () => {
     expect(DEFAULT_CLOUDFLARE_SIGNALING_URLS).toEqual([
-      'wss://peerjs.92k.de/peerjs?key=peerjs',
+      'wss://dechess-org-peerjs.vercel.app/peerjs?key=peerjs',
       'wss://0.peerjs.com/peerjs?key=peerjs'
     ]);
 

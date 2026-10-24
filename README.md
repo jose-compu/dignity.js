@@ -479,7 +479,7 @@ Messages from peers running older versions that used the legacy single-hash KDF 
 
 Default signaling URLs include PeerJS-compatible public endpoints:
 
-- `wss://peerjs.92k.de/peerjs?key=peerjs`
+- `wss://dechess-org-peerjs.vercel.app/peerjs?key=peerjs`
 - `wss://0.peerjs.com/peerjs?key=peerjs`
 
 You can also deploy your own server with [peerjs-server](https://github.com/peers/peerjs-server) and point `createDefaultSignalingPool` (or `WebSocketSignalingProvider`) to your own `wss://.../peerjs?key=...` URL.

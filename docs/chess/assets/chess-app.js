@@ -26158,7 +26158,7 @@ var require_websocket_signaling_provider = __commonJS({
         });
       }
       buildConnectionUrl() {
-        const peerJsHostPattern = /^wss:\/\/(peerjs\.92k\.de|0\.peerjs\.com)(\/|$)/;
+        const peerJsHostPattern = /\/peerjs(?:\?|$)/;
         if (!peerJsHostPattern.test(this.url)) {
           return this.url;
         }
@@ -32998,7 +32998,7 @@ var require_peerjs_signaling_provider = __commonJS({
 var require_default_signaling_config = __commonJS({
   "src/signaling/default-signaling-config.js"(exports, module) {
     var DEFAULT_CLOUDFLARE_SIGNALING_URLS2 = [
-      "wss://peerjs.92k.de/peerjs?key=peerjs",
+      "wss://dechess-org-peerjs.vercel.app/peerjs?key=peerjs",
       "wss://0.peerjs.com/peerjs?key=peerjs"
     ];
     var DEFAULT_SIGNALING_FALLBACK_URLS = [
@@ -33028,7 +33028,7 @@ var require_create_default_signaling_pool = __commonJS({
       const WebSocketImpl = options.WebSocketImpl;
       const providers = [];
       cloudflareUrls.forEach((url, index) => {
-        const usePeerJsProvider = /^wss:\/\/(peerjs\.92k\.de|0\.peerjs\.com)(\/|$)/.test(url);
+        const usePeerJsProvider = /\/peerjs(?:\?|$)/.test(url);
         const ProviderClass = usePeerJsProvider ? PeerJSSignalingProvider : WebSocketSignalingProvider;
         providers.push(
           new ProviderClass({

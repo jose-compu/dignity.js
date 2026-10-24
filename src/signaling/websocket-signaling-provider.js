@@ -54,7 +54,7 @@ class WebSocketSignalingProvider {
   }
 
   buildConnectionUrl() {
-    const peerJsHostPattern = /^wss:\/\/(peerjs\.92k\.de|0\.peerjs\.com)(\/|$)/;
+    const peerJsHostPattern = /\/peerjs(?:\?|$)/;
     if (!peerJsHostPattern.test(this.url)) {
       return this.url;
     }
