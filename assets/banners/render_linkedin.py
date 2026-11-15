@@ -20,12 +20,13 @@ FRAME = (72, 48, WIDTH - 72, HEIGHT - 48)
 FRAME_RADIUS = 26
 FRAME_OUTLINE_W = 3
 INSET = 28
-LINE_GAP = 8
-CONTENT_PAD = 12
+LINE_GAP = 6
+CONTENT_PAD = 3
 MIN_READABLE = 26
+MIN_SUBTITLE = 29
 MIN_HIGHLIGHT = 24
-BASE_VERSION = 56
-BASE_TITLE = 28
+BASE_VERSION = 60
+VERSION_GAP_AFTER = 8
 
 
 @dataclass(frozen=True)
@@ -129,15 +130,15 @@ def _build_lines(
     head_scale: float,
     highlight_px: int,
 ) -> list[TextLine]:
-    version_font = _load_font(max(38, int(BASE_VERSION * head_scale)), bold=True)
-    title_font = _load_font(max(20, int(BASE_TITLE * head_scale)), bold=True)
+    version_font = _load_font(max(40, int(BASE_VERSION * head_scale)), bold=True)
+    title_font = _load_font(MIN_SUBTITLE, bold=True)
     highlight_font = _load_font(highlight_px)
     readable_font = _load_font(MIN_READABLE)
     mono_font = _load_font(MIN_READABLE)
 
     lines: list[TextLine] = []
     version_label = version if version.startswith("v") else f"v{version}"
-    lines.append(TextLine(version_label, version_font, INK))
+    lines.append(TextLine(version_label, version_font, INK, gap_after=VERSION_GAP_AFTER))
 
     if title:
         lines.append(TextLine(title, title_font, INK))
@@ -170,7 +171,7 @@ def _fits(
     if any(_text_width(draw, ln.text, ln.font) > max_width for ln in lines if ln.text):
         return False
     _, top, bottom = _layout_positions(draw, lines, text_x, start_y)
-    return top >= inner_top and bottom + CONTENT_PAD <= inner_bottom
+    return top >= inner_top and bottom <= inner_bottom - CONTENT_PAD
 
 
 def render_banner(
