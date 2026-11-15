@@ -1,4 +1,4 @@
-# Threat model (v1.1.3)
+# Threat model (v1.1.4)
 
 Concise STRIDE analysis for dignity.js production deployments. Complements the [production runbook](./production-runbook.md) and automated audits (`tests/unit/security-audit-v060.test.js`, `tests/unit/security-audit-v0130.test.js`, issue #122).
 

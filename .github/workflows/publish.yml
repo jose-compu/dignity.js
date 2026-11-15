@@ -1,0 +1,49 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - v*
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Upgrade npm and assert toolchain versions
+        run: |
+          npm install -g npm@11
+          node -e "const v=process.versions.node.split('.').map(Number); if (v[0]<22||(v[0]===22&&v[1]<14)) { console.error('Node must be >= 22.14.0, got', process.versions.node); process.exit(1); }"
+          npm -v | node -e "const s=require('fs').readFileSync(0,'utf8').trim(); const m=s.match(/^(\\d+)\\.(\\d+)\\.(\\d+)/); const major=+m[1], minor=+m[2]; if (major!==11||minor<5) { console.error('npm must be >= 11.5.1 and < 12, got', s); process.exit(1); } if (major>=12) { console.error('npm must be < 12, got', s); process.exit(1); }"
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Verify tag matches package version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "Tag $TAG does not match package.json version $VERSION (expected v$VERSION)"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build bundles
+        run: npm run build
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public --ignore-scripts

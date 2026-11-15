@@ -7,8 +7,10 @@ import {
   type DignityRecord
 } from 'dignity.js';
 
+// In-memory hub + adapter: wires multiple local nodes without WebRTC (smoke / typecheck only).
 const hub = new InMemoryNetworkHub();
 const node: DignityP2P = new DignityP2P({
+  // nodeId is this peer's public identity in the mesh (here a fixed label for the example).
   nodeId: 'ts-smoke',
   networkAdapter: new InMemoryNetworkAdapter(hub),
   security: { powEnabled: false, signingEnabled: false, encryptionEnabled: false }
@@ -16,6 +18,7 @@ const node: DignityP2P = new DignityP2P({
 
 const policy: CompatibilityPolicy = 'strict';
 
+// registerVerification pins collection rules and optional reflective logic versioning on this node.
 node.registerVerification('scores', {
   code: {
     max: 100,
@@ -28,6 +31,7 @@ node.registerVerification('scores', {
   policy
 });
 
+// hashReflectiveLogic fingerprints verifier code under the chosen compatibility policy.
 const reflective = hashReflectiveLogic({ check() { return true; } }, { policy });
 const hashPrefix: string = reflective.hash.slice(0, 7);
 
