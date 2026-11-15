@@ -17,6 +17,17 @@ BG = (250, 246, 238)
 INK = (26, 26, 26)
 MUTED = (90, 86, 82)
 ACCENT = (37, 99, 235)
+BULLET_COLORS = (
+    ACCENT,
+    (234, 179, 8),
+    (34, 197, 94),
+)
+
+MIN_INNER_MARGIN_Y = 60
+HIGHLIGHT_LINE_GAP = 8
+HIGHLIGHT_BLOCK_GAP = 28
+BULLET_SIZE = 14
+BULLET_TEXT_GAP = 12
 
 
 @dataclass(frozen=True)
@@ -33,11 +44,31 @@ class CanvasLayout:
 
 
 @dataclass(frozen=True)
-class TextLine:
+class TextRun:
     text: str
     font: ImageFont.FreeTypeFont | ImageFont.ImageFont
     fill: tuple[int, int, int]
-    gap_after: int
+    x: int
+    y: int
+
+
+@dataclass(frozen=True)
+class BulletRun:
+    color: tuple[int, int, int]
+    x: int
+    y: int
+    size: int
+
+
+@dataclass(frozen=True)
+class FontScale:
+    version: int
+    title: int
+    date: int
+    highlight: int
+    meta: int
+    group_gap: int
+    title_tight: int
 
 
 def _canvas_layout(width: int, height: int) -> CanvasLayout:
@@ -54,7 +85,7 @@ def _canvas_layout(width: int, height: int) -> CanvasLayout:
         inset=inset,
         content_pad=max(24, height // 28),
         text_logo_gap=max(40, width // 38),
-        logo_max_h=min(int(inner_h * 0.45), 220),
+        logo_max_h=min(int(inner_h * 0.52), 280),
     )
 
 
@@ -85,6 +116,13 @@ def _text_width(
     return box[2] - box[0]
 
 
+def _line_height(
+    draw: ImageDraw.ImageDraw, font: ImageFont.FreeTypeFont | ImageFont.ImageFont
+) -> int:
+    box = draw.textbbox((0, 0), "Ag", font=font)
+    return box[3] - box[1]
+
+
 def _wrap_on_spaces(
     draw: ImageDraw.ImageDraw,
     text: str,
@@ -107,25 +145,114 @@ def _wrap_on_spaces(
     return lines
 
 
-def _layout_positions(
+def _font_scale_for(inner_h: int, scale: float) -> FontScale:
+    return FontScale(
+        version=max(1, int(96 * scale)),
+        title=max(1, int(40 * scale)),
+        date=max(1, int(32 * scale)),
+        highlight=max(1, int(48 * scale)),
+        meta=max(1, int(34 * scale)),
+        group_gap=max(20, int(32 * scale)),
+        title_tight=max(6, int(10 * scale)),
+    )
+
+
+def _bullet_indent() -> int:
+    return BULLET_SIZE + BULLET_TEXT_GAP
+
+
+@dataclass
+class MeasuredBlock:
+    text_runs: list[TextRun]
+    bullets: list[BulletRun]
+    height: int
+    top_offset: int
+
+
+def _measure_content(
     draw: ImageDraw.ImageDraw,
-    lines: list[TextLine],
+    *,
     text_x: int,
-    start_y: int,
-) -> tuple[list[tuple[TextLine, int]], int, int]:
-    y = start_y
-    top = start_y
-    bottom = start_y
-    placed: list[tuple[TextLine, int]] = []
-    for line in lines:
-        if not line.text:
-            continue
-        box = draw.textbbox((text_x, y), line.text, font=line.font)
-        top = min(top, box[1])
-        bottom = max(bottom, box[3])
-        placed.append((line, y))
-        y = box[3] + line.gap_after
-    return placed, top, bottom
+    max_text_w: int,
+    version: str,
+    title: str,
+    date: str,
+    highlights: list[str],
+    packages: list[str],
+    install_line: str,
+    fonts: FontScale,
+) -> MeasuredBlock:
+    version_font = _load_font(fonts.version, bold=True)
+    title_font = _load_font(fonts.title, bold=True)
+    date_font = _load_font(fonts.date)
+    highlight_font = _load_font(fonts.highlight, bold=True)
+    meta_font = _load_font(fonts.meta)
+
+    text_runs: list[TextRun] = []
+    bullets: list[BulletRun] = []
+    y = 0
+    content_top: int | None = None
+    content_bottom = 0
+
+    def place_text(text: str, font, fill: tuple[int, int, int], gap_after: int) -> None:
+        nonlocal y, content_top, content_bottom
+        box = draw.textbbox((text_x, y), text, font=font)
+        if content_top is None:
+            content_top = box[1]
+        top_offset = content_top
+        text_runs.append(TextRun(text, font, fill, text_x, y - top_offset))
+        content_bottom = max(content_bottom, box[3])
+        y = box[3] + gap_after
+
+    version_label = version if version.startswith("v") else f"v{version}"
+    place_text(version_label, version_font, INK, fonts.title_tight)
+
+    if title:
+        place_text(title, title_font, INK, fonts.group_gap)
+
+    if date:
+        place_text(date, date_font, MUTED, fonts.group_gap)
+
+    highlight_indent = _bullet_indent()
+    highlight_text_w = max_text_w - highlight_indent
+    hl_line_h = _line_height(draw, highlight_font)
+
+    for hi, highlight in enumerate(highlights):
+        segments = _wrap_on_spaces(draw, highlight, highlight_font, highlight_text_w)
+        bullet_color = BULLET_COLORS[hi % len(BULLET_COLORS)]
+        for i, segment in enumerate(segments):
+            line_x = text_x + highlight_indent
+            line_y = y
+            box = draw.textbbox((line_x, line_y), segment, font=highlight_font)
+            if content_top is None:
+                content_top = box[1]
+            top_offset = content_top
+            rel_y = line_y - top_offset
+            if i == 0:
+                bullet_y = rel_y + (hl_line_h - BULLET_SIZE) // 2
+                bullets.append(BulletRun(bullet_color, text_x, bullet_y, BULLET_SIZE))
+            text_runs.append(TextRun(segment, highlight_font, INK, line_x, rel_y))
+            content_bottom = max(content_bottom, box[3])
+            gap = HIGHLIGHT_LINE_GAP if i < len(segments) - 1 else 0
+            y = box[3] + gap
+        if hi < len(highlights) - 1:
+            y += HIGHLIGHT_BLOCK_GAP
+            content_bottom = max(content_bottom, y)
+        else:
+            y += fonts.group_gap
+            content_bottom = max(content_bottom, y)
+
+    for pkg in packages:
+        gap = 8 if install_line else 0
+        place_text(pkg, meta_font, ACCENT, gap)
+
+    if install_line:
+        place_text(install_line, meta_font, MUTED, 0)
+
+    if content_top is None:
+        content_top = 0
+    block_height = content_bottom - content_top
+    return MeasuredBlock(text_runs, bullets, block_height, content_top)
 
 
 def _rounded_rect(
@@ -138,93 +265,77 @@ def _rounded_rect(
     draw.rounded_rectangle(xy, radius=radius, outline=outline, width=width)
 
 
-def _build_lines(
-    draw: ImageDraw.ImageDraw,
-    *,
-    version: str,
-    title: str,
-    date: str,
-    highlights: list[str],
-    packages: list[str],
-    install_line: str,
-    max_width: int,
-    group_gap: int,
-) -> list[TextLine]:
-    version_font = _load_font(96, bold=True)
-    title_font = _load_font(40, bold=True)
-    date_font = _load_font(32)
-    highlight_font = _load_font(48, bold=True)
-    meta_font = _load_font(34)
-
-    lines: list[TextLine] = []
-    version_label = version if version.startswith("v") else f"v{version}"
-    lines.append(TextLine(version_label, version_font, INK, gap_after=10))
-
-    if title:
-        lines.append(TextLine(title, title_font, INK, gap_after=group_gap))
-
-    if date:
-        lines.append(TextLine(date, date_font, MUTED, gap_after=group_gap))
-
-    for hi, highlight in enumerate(highlights):
-        segments = _wrap_on_spaces(draw, highlight, highlight_font, max_width)
-        for i, segment in enumerate(segments):
-            if i < len(segments) - 1:
-                gap = 16
-            elif hi < len(highlights) - 1:
-                gap = 16
-            else:
-                gap = group_gap
-            lines.append(TextLine(segment, highlight_font, INK, gap_after=gap))
-
-    for pkg in packages:
-        gap = 8 if install_line else 0
-        lines.append(TextLine(pkg, meta_font, ACCENT, gap_after=gap))
-
-    if install_line:
-        lines.append(TextLine(install_line, meta_font, MUTED, gap_after=0))
-
-    return lines
-
-
-def _fits(
-    draw: ImageDraw.ImageDraw,
-    lines: list[TextLine],
-    text_x: int,
-    start_y: int,
-    inner_top: int,
-    inner_bottom: int,
-    max_width: int,
-    content_pad: int,
-) -> bool:
-    if any(_text_width(draw, ln.text, ln.font) > max_width for ln in lines if ln.text):
-        return False
-    _, top, bottom = _layout_positions(draw, lines, text_x, start_y)
-    return top >= inner_top and bottom <= inner_bottom - content_pad
-
-
 def _layout_logo(
     layout: CanvasLayout,
     logo_path: Path,
     inner_top: int,
     inner_bottom: int,
-) -> tuple[Image.Image, int, int, int, int]:
+    block_cy: int,
+) -> tuple[Image.Image, int, int, int]:
     logo = Image.open(logo_path).convert("RGBA")
     inner_w = layout.frame[2] - layout.frame[0] - 2 * layout.inset
-    max_logo_w = int(inner_w * 0.38)
-    logo_h = min(layout.logo_max_h, inner_bottom - inner_top)
+    max_logo_w = int(inner_w * 0.44)
+    inner_h = inner_bottom - inner_top
+    logo_h = min(layout.logo_max_h, inner_h - 2 * MIN_INNER_MARGIN_Y)
     logo_w = int(logo.width * (logo_h / logo.height))
     if logo_w > max_logo_w:
         logo_w = max_logo_w
         logo_h = int(logo.height * (logo_w / logo.width))
     logo = logo.resize((logo_w, logo_h), Image.Resampling.LANCZOS)
     logo_x = layout.frame[0] + layout.inset
-    logo_y = (layout.height - logo_h) // 2
-    logo_cy = logo_y + logo_h // 2
+    logo_y = block_cy - logo_h // 2
+    logo_y = max(inner_top + MIN_INNER_MARGIN_Y, min(logo_y, inner_bottom - MIN_INNER_MARGIN_Y - logo_h))
     text_x = logo_x + logo_w + layout.text_logo_gap
     text_right = layout.frame[2] - layout.inset
     max_text_w = text_right - text_x
-    return logo, logo_x, logo_y, logo_cy, max_text_w
+    return logo, logo_x, logo_y, max_text_w
+
+
+def _pick_font_scale(
+    draw: ImageDraw.ImageDraw,
+    inner_h: int,
+    *,
+    text_x: int,
+    max_text_w: int,
+    version: str,
+    title: str,
+    date: str,
+    highlights: list[str],
+    packages: list[str],
+    install_line: str,
+) -> tuple[FontScale, MeasuredBlock]:
+    scale = 1.0
+    while scale >= 0.82:
+        fonts = _font_scale_for(inner_h, scale)
+        block = _measure_content(
+            draw,
+            text_x=text_x,
+            max_text_w=max_text_w,
+            version=version,
+            title=title,
+            date=date,
+            highlights=highlights,
+            packages=packages,
+            install_line=install_line,
+            fonts=fonts,
+        )
+        if block.height <= inner_h - 2 * MIN_INNER_MARGIN_Y:
+            return fonts, block
+        scale -= 0.04
+    fonts = _font_scale_for(inner_h, scale)
+    block = _measure_content(
+        draw,
+        text_x=text_x,
+        max_text_w=max_text_w,
+        version=version,
+        title=title,
+        date=date,
+        highlights=highlights,
+        packages=packages,
+        install_line=install_line,
+        fonts=fonts,
+    )
+    return fonts, block
 
 
 def render_banner(
@@ -241,7 +352,6 @@ def render_banner(
     height: int = DEFAULT_HEIGHT,
 ) -> None:
     layout = _canvas_layout(width, height)
-    group_gap = 32 if height >= 600 else 24
     canvas = Image.new("RGBA", (layout.width, layout.height), BG + (255,))
     draw = ImageDraw.Draw(canvas)
 
@@ -255,30 +365,63 @@ def render_banner(
 
     inner_top = layout.frame[1] + layout.frame_outline_w + layout.inset
     inner_bottom = layout.frame[3] - layout.frame_outline_w - layout.inset
+    inner_h = inner_bottom - inner_top
 
-    logo, logo_x, logo_y, logo_cy, max_text_w = _layout_logo(layout, logo_path, inner_top, inner_bottom)
-    canvas.paste(logo, (logo_x, logo_y), logo)
+    provisional_text_x = layout.frame[0] + layout.inset + int(inner_h * 0.44) + layout.text_logo_gap
+    text_right = layout.frame[2] - layout.inset
+    provisional_max_w = text_right - provisional_text_x
 
-    text_x = logo_x + logo.width + layout.text_logo_gap
-    lines = _build_lines(
+    _, block = _pick_font_scale(
         draw,
+        inner_h,
+        text_x=provisional_text_x,
+        max_text_w=provisional_max_w,
         version=version,
         title=title,
         date=date,
         highlights=highlights,
         packages=packages,
         install_line=install_line,
-        max_width=max_text_w,
-        group_gap=group_gap,
     )
-    _, top_at_zero, bottom_at_zero = _layout_positions(draw, lines, text_x, 0)
-    block_h = bottom_at_zero - top_at_zero
-    max_start = inner_bottom - layout.content_pad - block_h
-    start_y = max(inner_top, min(logo_cy - block_h // 2, max_start))
 
-    placed, _, _ = _layout_positions(draw, lines, text_x, start_y)
-    for line, y in placed:
-        draw.text((text_x, y), line.text, font=line.font, fill=line.fill)
+    block_cy = inner_top + inner_h // 2
+    start_y = inner_top + (inner_h - block.height) // 2
+
+    logo, logo_x, logo_y, max_text_w = _layout_logo(
+        layout, logo_path, inner_top, inner_bottom, block_cy
+    )
+    text_x = logo_x + logo.width + layout.text_logo_gap
+
+    _, block = _pick_font_scale(
+        draw,
+        inner_h,
+        text_x=text_x,
+        max_text_w=max_text_w,
+        version=version,
+        title=title,
+        date=date,
+        highlights=highlights,
+        packages=packages,
+        install_line=install_line,
+    )
+    start_y = inner_top + (inner_h - block.height) // 2
+
+    canvas.paste(logo, (logo_x, logo_y), logo)
+
+    for bullet in block.bullets:
+        draw.rounded_rectangle(
+            (
+                bullet.x,
+                start_y + bullet.y,
+                bullet.x + bullet.size,
+                start_y + bullet.y + bullet.size,
+            ),
+            radius=3,
+            fill=bullet.color,
+        )
+
+    for run in block.text_runs:
+        draw.text((run.x, start_y + run.y), run.text, font=run.font, fill=run.fill)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     canvas.convert("RGB").save(output, format="PNG", optimize=True)
