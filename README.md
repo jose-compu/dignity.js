@@ -67,6 +67,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Optional React hooks via `dignity.js/react`
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **v1.1.3** — Default PeerJS pool leads with `dechess-org-peerjs.vercel.app`; `peerjs.92k.de` removed (#140)
 - **v1.1.2** — Homepage at [dignity.js.org](https://dignity.js.org/); PeerJS retries refused sockets and keeps the peer after dial errors (#138)
 - **v1.1.0** — BIP39-style identity mnemonic export/import (#130), optional passphrase-encrypted backup
 - **v1.0.0** — Stable public API (#94), threat model (#96), openapi normalization (#126), chess credential login (#128)
