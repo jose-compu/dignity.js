@@ -19,14 +19,20 @@ ACCENT = (37, 99, 235)
 FRAME = (72, 48, WIDTH - 72, HEIGHT - 48)
 FRAME_RADIUS = 26
 FRAME_OUTLINE_W = 3
-INSET = 28
-LINE_GAP = 6
+INSET = 22
+LINE_GAP = 4
+META_GAP = 2
+HIGHLIGHT_GAP = 5
 CONTENT_PAD = 3
-MIN_READABLE = 26
+MIN_READABLE = 28
 MIN_SUBTITLE = 29
-MIN_HIGHLIGHT = 24
+BASE_HIGHLIGHT = 42
+MIN_HIGHLIGHT = 38
+HIGHLIGHT_MAX_LINES = 2
 BASE_VERSION = 60
-VERSION_GAP_AFTER = 8
+VERSION_GAP_AFTER = 6
+LOGO_MAX_H = 108
+TEXT_LOGO_GAP = 32
 
 
 @dataclass(frozen=True)
@@ -86,6 +92,29 @@ def _wrap_on_spaces(
     return lines
 
 
+def _wrap_highlight(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    max_width: int,
+    max_lines: int = HIGHLIGHT_MAX_LINES,
+) -> list[str]:
+    lines = _wrap_on_spaces(draw, text, font, max_width)
+    if len(lines) <= max_lines:
+        return lines
+    words = text.split()
+    if len(words) < 2:
+        return lines[:max_lines]
+    best: list[str] | None = None
+    for split in range(1, len(words)):
+        first = " ".join(words[:split])
+        second = " ".join(words[split:])
+        if _text_width(draw, first, font) <= max_width and _text_width(draw, second, font) <= max_width:
+            best = [first, second]
+            break
+    return best if best else lines[:max_lines]
+
+
 def _layout_positions(
     draw: ImageDraw.ImageDraw,
     lines: list[TextLine],
@@ -132,9 +161,9 @@ def _build_lines(
 ) -> list[TextLine]:
     version_font = _load_font(max(40, int(BASE_VERSION * head_scale)), bold=True)
     title_font = _load_font(MIN_SUBTITLE, bold=True)
-    highlight_font = _load_font(highlight_px)
+    highlight_font = _load_font(highlight_px, bold=True)
     readable_font = _load_font(MIN_READABLE)
-    mono_font = _load_font(MIN_READABLE)
+    meta_font = _load_font(MIN_READABLE)
 
     lines: list[TextLine] = []
     version_label = version if version.startswith("v") else f"v{version}"
@@ -144,17 +173,19 @@ def _build_lines(
         lines.append(TextLine(title, title_font, INK))
 
     if date:
-        lines.append(TextLine(date, readable_font, MUTED))
+        lines.append(TextLine(date, readable_font, MUTED, gap_after=META_GAP))
 
     for highlight in highlights:
-        for segment in _wrap_on_spaces(draw, highlight, highlight_font, max_width):
-            lines.append(TextLine(segment, highlight_font, INK))
+        segments = _wrap_highlight(draw, highlight, highlight_font, max_width)
+        for i, segment in enumerate(segments):
+            gap = HIGHLIGHT_GAP if i < len(segments) - 1 else LINE_GAP
+            lines.append(TextLine(segment, highlight_font, INK, gap_after=gap))
 
     for pkg in packages:
-        lines.append(TextLine(pkg, readable_font, ACCENT))
+        lines.append(TextLine(pkg, readable_font, ACCENT, gap_after=META_GAP))
 
     if install_line:
-        lines.append(TextLine(install_line, mono_font, MUTED, gap_after=0))
+        lines.append(TextLine(install_line, meta_font, MUTED, gap_after=0))
 
     return lines
 
@@ -172,6 +203,20 @@ def _fits(
         return False
     _, top, bottom = _layout_positions(draw, lines, text_x, start_y)
     return top >= inner_top and bottom <= inner_bottom - CONTENT_PAD
+
+
+def _layout_logo_and_text_x(logo_path: Path, inner_top: int, inner_bottom: int) -> tuple[Image.Image, int, int, int, int]:
+    logo = Image.open(logo_path).convert("RGBA")
+    logo_h = min(LOGO_MAX_H, inner_bottom - inner_top)
+    logo_w = int(logo.width * (logo_h / logo.height))
+    logo = logo.resize((logo_w, logo_h), Image.Resampling.LANCZOS)
+    logo_x = FRAME[0] + INSET
+    logo_y = (HEIGHT - logo_h) // 2
+    logo_cy = logo_y + logo_h // 2
+    text_x = logo_x + logo_w + TEXT_LOGO_GAP
+    text_right = FRAME[2] - INSET
+    max_text_w = text_right - text_x
+    return logo, logo_x, logo_y, logo_cy, max_text_w
 
 
 def render_banner(
@@ -193,25 +238,17 @@ def render_banner(
     inner_top = FRAME[1] + FRAME_OUTLINE_W + INSET
     inner_bottom = FRAME[3] - FRAME_OUTLINE_W - INSET
 
-    logo = Image.open(logo_path).convert("RGBA")
-    logo_h = min(132, inner_bottom - inner_top)
-    logo_w = int(logo.width * (logo_h / logo.height))
-    logo = logo.resize((logo_w, logo_h), Image.Resampling.LANCZOS)
-    logo_x = FRAME[0] + INSET
-    logo_y = (HEIGHT - logo_h) // 2
-    logo_cy = logo_y + logo_h // 2
+    logo, logo_x, logo_y, logo_cy, max_text_w = _layout_logo_and_text_x(
+        logo_path, inner_top, inner_bottom
+    )
     canvas.paste(logo, (logo_x, logo_y), logo)
 
-    text_x = logo_x + logo_w + 48
-    text_right = FRAME[2] - INSET
-    max_text_w = text_right - text_x
-
     head_scale = 1.0
-    highlight_px = MIN_READABLE
+    highlight_px = BASE_HIGHLIGHT
     lines: list[TextLine] = []
     start_y = inner_top
 
-    for _ in range(24):
+    for _ in range(28):
         lines = _build_lines(
             draw,
             version=version,
@@ -224,24 +261,25 @@ def render_banner(
             head_scale=head_scale,
             highlight_px=highlight_px,
         )
-        _, _, bottom = _layout_positions(draw, lines, text_x, start_y)
-        _, top_at_zero, bottom_at_zero = _layout_positions(draw, lines, text_x, 0)
+        _, top_at_zero, bottom_at_zero = _layout_positions(draw, lines, logo_x + logo.width + TEXT_LOGO_GAP, 0)
         block_h = bottom_at_zero - top_at_zero
         start_y = logo_cy - block_h // 2
+        text_x = logo_x + logo.width + TEXT_LOGO_GAP
         if _fits(draw, lines, text_x, start_y, inner_top, inner_bottom, max_text_w):
             break
-        if head_scale > 0.55:
-            head_scale *= 0.94
-            continue
         if highlight_px > MIN_HIGHLIGHT:
-            highlight_px = MIN_HIGHLIGHT
+            highlight_px -= 1
+            continue
+        if head_scale > 0.88:
+            head_scale *= 0.97
             continue
         start_y = max(
             inner_top,
-            inner_bottom - (bottom_at_zero - top_at_zero) - CONTENT_PAD,
+            inner_bottom - block_h - CONTENT_PAD,
         )
         break
 
+    text_x = logo_x + logo.width + TEXT_LOGO_GAP
     placed, _, _ = _layout_positions(draw, lines, text_x, start_y)
     for line, y in placed:
         draw.text((text_x, y), line.text, font=line.font, fill=line.fill)
