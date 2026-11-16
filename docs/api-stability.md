@@ -61,7 +61,7 @@ All events documented in `openapi-like.json` → `events`, `warningSubtypes`, `q
 3. **Support window** — deprecated APIs remain functional for at least **one full minor release** (e.g. deprecated in 1.1, removed no earlier than 2.0).
 4. **Remove** — only in a major release (2.0+), with migration notes.
 
-No public APIs are currently deprecated as of v1.1.4.
+No public APIs are currently deprecated as of v1.1.5.
 
 ## Internal and non-guaranteed surfaces
 

@@ -28,6 +28,9 @@ HIGHLIGHT_LINE_GAP = 8
 HIGHLIGHT_BLOCK_GAP = 28
 BULLET_SIZE = 14
 BULLET_TEXT_GAP = 12
+TAGLINE_SIZE = 34
+TAGLINE_GAP = 36
+TAGLINE_LINE_GAP = 10
 
 
 @dataclass(frozen=True)
@@ -350,6 +353,7 @@ def render_banner(
     install_line: str,
     width: int = DEFAULT_WIDTH,
     height: int = DEFAULT_HEIGHT,
+    tagline: str = "",
 ) -> None:
     layout = _canvas_layout(width, height)
     canvas = Image.new("RGBA", (layout.width, layout.height), BG + (255,))
@@ -406,7 +410,24 @@ def render_banner(
     )
     start_y = inner_top + (inner_h - block.height) // 2
 
+    tag_lines: list[str] = []
+    tag_font = _load_font(TAGLINE_SIZE)
+    tag_line_h = _line_height(draw, tag_font)
+    tag_block_h = 0
+    if tagline:
+        tag_lines = _wrap_on_spaces(draw, tagline, tag_font, logo.width)
+        tag_block_h = TAGLINE_GAP + len(tag_lines) * tag_line_h + (len(tag_lines) - 1) * TAGLINE_LINE_GAP
+        group_h = logo.height + tag_block_h
+        logo_y = max(inner_top, inner_top + (inner_h - group_h) // 2)
+
     canvas.paste(logo, (logo_x, logo_y), logo)
+
+    ty = logo_y + logo.height + TAGLINE_GAP
+    for line in tag_lines:
+        lw = _text_width(draw, line, tag_font)
+        top = draw.textbbox((0, 0), line, font=tag_font)[1]
+        draw.text((logo_x + (logo.width - lw) // 2, ty - top), line, font=tag_font, fill=MUTED)
+        ty += tag_line_h + TAGLINE_LINE_GAP
 
     for bullet in block.bullets:
         draw.rounded_rectangle(
@@ -465,6 +486,7 @@ def main() -> None:
         help="Package line (repeatable)",
     )
     parser.add_argument("--install", default="", help="Install command line")
+    parser.add_argument("--tagline", default="", help="Short line under the logo saying what dignity.js is")
     args = parser.parse_args()
 
     width = args.width
@@ -483,6 +505,7 @@ def main() -> None:
         install_line=args.install,
         width=width,
         height=height,
+        tagline=args.tagline,
     )
 
 
