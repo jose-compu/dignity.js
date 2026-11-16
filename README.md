@@ -67,6 +67,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Optional React hooks via `dignity.js/react`
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **v1.1.5** — npm releases publish from GitHub Actions through Trusted Publishing (OIDC) with provenance; v1.1.4 was not published to npm, so v1.1.5 is the first release from CI
 - **v1.1.4** — npm trusted publishing from GitHub Actions on `v*` tags (#134 teaching comments on TypeScript consumer)
 - **v1.1.3** — Default PeerJS pool leads with `dechess-org-peerjs.vercel.app`; `peerjs.92k.de` removed (#140)
 - **v1.1.2** — Homepage at [dignity.js.org](https://dignity.js.org/); PeerJS retries refused sockets and keeps the peer after dial errors (#138)
@@ -814,7 +815,7 @@ Dignity App manifests may pin `dappVersion` + `logicHash` + `publisherId`. Store
 
 ## Publish
 
-Maintainers cut an npm release by pushing a version tag after merging to `main`. GitHub Actions (`.github/workflows/publish.yml`) runs tests, build, and `npm publish --provenance` when a `v*` tag is pushed. The tag must match `package.json` (for example tag `v1.1.4` for version `1.1.4`). Configure npm trusted publishing for this repository before the first automated publish.
+Maintainers cut an npm release by pushing a version tag after merging to `main`. GitHub Actions (`.github/workflows/publish.yml`) runs tests, build, and `npm publish --provenance` when a `v*` tag is pushed. The tag must match `package.json` (for example tag `v1.1.5` for version `1.1.5`). Configure npm trusted publishing for this repository before the first automated publish.
 
 The `prepublishOnly` script still runs tests and build locally when you invoke `npm publish` by hand.
 
