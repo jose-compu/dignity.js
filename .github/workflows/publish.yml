@@ -14,12 +14,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
 
       - name: Upgrade npm and assert toolchain versions
         run: |
@@ -44,6 +43,28 @@ jobs:
 
       - name: Build bundles
         run: npm run build
+
+      - name: Assert Trusted Publishing (no npm token auth)
+        run: |
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "NODE_AUTH_TOKEN must not be set; npm publish should use OIDC Trusted Publishing"
+            exit 1
+          fi
+          TOKEN=$(npm config get //registry.npmjs.org/:_authToken 2>/dev/null || true)
+          case "$TOKEN" in
+            ''|undefined|"(empty)")
+              ;;
+            *)
+              echo "registry.npmjs.org _authToken is set; remove registry-url from setup-node so OIDC is used"
+              exit 1
+              ;;
+          esac
+          for f in "$HOME/.npmrc" .npmrc; do
+            if [ -f "$f" ] && grep -q '_authToken' "$f"; then
+              echo "Found _authToken in $f; OIDC publish requires no token in npmrc"
+              exit 1
+            fi
+          done
 
       - name: Publish to npm
         run: npm publish --provenance --access public --ignore-scripts
