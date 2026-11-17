@@ -293,6 +293,8 @@ await node.start();
 
 Try the live demo: [docs/chess](https://dignity.js.org/chess/) (open two tabs).
 
+If the first PeerJS run never connects, see the [README Troubleshooting section](./README.md#troubleshooting) (signaling URLs, retries, recovery phrase, hard refresh after local rebuilds).
+
 ---
 
 ## Lesson 7 — Small groups vs big audiences
@@ -472,6 +474,7 @@ node.on('warning', handler);
 | [docs/tictactoe/](https://dignity.js.org/tictactoe/) | Browser tic-tac-toe (PeerJS + delegated proposals) |
 | [docs/chess/](https://dignity.js.org/chess/) | Full 3D chess + spectators + dual-signed resume |
 | [examples/decentralized-tictactoe.js](./examples/decentralized-tictactoe.js) | Small multiplayer game (Node CLI) |
+| [README.md#troubleshooting](./README.md#troubleshooting) | Signaling failures, 48-word restore, demo cache refresh (#133) |
 | [README.md](./README.md) | Security model, React hooks, signaling, verification |
 
 ## Common beginner mistakes
@@ -481,8 +484,9 @@ node.on('warning', handler);
 3. **Using in-memory adapter in production** — switch to PeerJS for real browsers.
 4. **Leaving default password** — set a strong `appPassword`; never ship `change-this-app-password`.
 5. **Losing identity keys** — use `exportIdentityMnemonic` (v1.1) for offline backup, or `deriveKeyPairFromCredentials` so username/password can recreate keys.
-5. **Updating without checking ownership** — only owner/collaborators can `update`.
-6. **Forgetting `peerGroupId` on writes** — domain events only auto-publish when the write is linked to a joined publisher group (v0.8+).
+6. **Signaling never connects** — check default URLs, fatal `invalid-key` / `unavailable-id` errors, and [README Troubleshooting](./README.md#troubleshooting).
+7. **Updating without checking ownership** — only owner/collaborators can `update`.
+8. **Forgetting `peerGroupId` on writes** — domain events only auto-publish when the write is linked to a joined publisher group (v0.8+).
 
 ---
 

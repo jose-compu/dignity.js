@@ -67,6 +67,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Optional React hooks via `dignity.js/react`
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **v1.1.6** — Troubleshooting for an unreachable signaling socket, 48-word identity restore, and a hard refresh after local demo rebuilds (#133)
 - **v1.1.5** — npm releases publish from GitHub Actions through Trusted Publishing (OIDC) with provenance; v1.1.4 was not published to npm, so v1.1.5 is the first release from CI
 - **v1.1.4** — npm trusted publishing from GitHub Actions on `v*` tags (#134 teaching comments on TypeScript consumer)
 - **v1.1.3** — Default PeerJS pool leads with `dechess-org-peerjs.vercel.app`; `peerjs.92k.de` removed (#140)
@@ -570,7 +571,35 @@ const networkAdapter = createPeerJSNetworkAdapter({
 
 **Reconnect:** If signaling drops mid-session, call `await adapter.stop()` then `await adapter.start(nodeId)` and re-run `connectToPeer` for each remote peer. If messages stop but signaling looks healthy, verify open data channels with `getConnectionStats()` and push a fresh snapshot after reconnect.
 
-See [docs/browser-compatibility.md](./docs/browser-compatibility.md#peerjs-ice-turn) for troubleshooting.
+See [ICE/TURN for production browsers](#iceturn-for-production-browsers) and [docs/browser-compatibility.md](./docs/browser-compatibility.md#peerjs-ice-turn). If signaling never connects on the first run, see [Troubleshooting](#troubleshooting).
+
+## Troubleshooting
+
+### Signaling server unreachable
+
+`createPeerJSNetworkAdapter` builds a `PeerJSNetworkAdapter` whose `start(nodeId)` walks the `urls` pool. Defaults match the [Signaling Servers](#signaling-servers) list: `wss://dechess-org-peerjs.vercel.app/peerjs?key=peerjs` and `wss://0.peerjs.com/peerjs?key=peerjs`.
+
+For each URL the adapter makes up to **4** attempts (`startAttempts`, default 4). Failed attempts wait **250 ms**, then **500 ms**, then **1000 ms** (`startRetryDelaysMs`) before the next try on the same URL. Startup gives up on a URL after `connectTimeoutMs` (default **12000**) with `Unable to connect PeerJS network adapter to ${url}`.
+
+These errors stop retries on that URL immediately (type or message matching `unavailable-id`, `invalid-key`, `is taken`, or `invalid api key`). A typical browser failure is a failed `wss://` socket: down host, firewall, `ws://` on an https page, or wrong path/key. dignity.js has **no CORS option** for signaling.
+
+After a mid-session drop: `await adapter.stop()`, then `await adapter.start(nodeId)`, then `connectToPeer` again for each remote peer. `getConnectionStats()` reports open data channels (`openCount`, `peerIds`). For NAT/TURN failures after signaling succeeds, see [ICE/TURN for production browsers](#iceturn-for-production-browsers) and [docs/browser-compatibility.md](./docs/browser-compatibility.md).
+
+### Recovery phrase
+
+`exportIdentityMnemonic(keyPair)` returns a **48-word** BIP39-style phrase. `importIdentityMnemonic(phrase)` restores `{ signing, encryption }` and normalizes NFC, case, and whitespace. Common errors:
+
+- `Recovery phrase must contain exactly 48 words`
+- `Unknown recovery word: …`
+- `Invalid recovery phrase checksum`
+
+For vault-style storage use `exportIdentityMnemonicEncrypted` / `importIdentityMnemonicEncrypted` with `{ passphrase }`. Pass the restored `keyPair` into `new DignityP2P({ security: { keyPair } })`. This **does not** rotate generations and is separate from `deriveKeyPairFromCredentials` and cold-recovery enrollment.
+
+The chess demo keeps nickname and username in `localStorage` and the password in `sessionStorage` (`docs/chess/src/App.jsx`). Restoring from a phrase does not clear those keys.
+
+### Hard refresh after local rebuilds
+
+`npm run build:chess` and `npm run docs:build` rewrite `docs/chess/assets/chess-app.js`. `npm run build` writes `dist/`, which is not committed. After a local rebuild, **hard-refresh** the demo tab before judging behavior. `localStorage` and `sessionStorage` survive that refresh, so the peer identity stays.
 
 ## Contributing
 
@@ -802,6 +831,7 @@ Dignity App manifests may pin `dappVersion` + `logicHash` + `publisherId`. Store
 - **API stability (v1.x):** [`docs/api-stability.md`](./docs/api-stability.md) (#94)
 - **Threat model (v1.1):** [`docs/threat-model.md`](./docs/threat-model.md) (#96, #130)
 - **Browser compatibility:** [`docs/browser-compatibility.md`](./docs/browser-compatibility.md) (#91)
+- **Troubleshooting:** [README § Troubleshooting](#troubleshooting) — signaling, recovery phrase, hard refresh (#133)
 - **Production runbook:** [`docs/production-runbook.md`](./docs/production-runbook.md) (#95)
 - **Benchmarks:** [`docs/benchmarks/results.json`](./docs/benchmarks/results.json) — `npm run benchmark` (#92)
 - Docs site source: `docs/index.html` (local: `npm run docs:dev`)
@@ -815,7 +845,7 @@ Dignity App manifests may pin `dappVersion` + `logicHash` + `publisherId`. Store
 
 ## Publish
 
-Maintainers cut an npm release by pushing a version tag after merging to `main`. GitHub Actions (`.github/workflows/publish.yml`) runs tests, build, and `npm publish --provenance` when a `v*` tag is pushed. The tag must match `package.json` (for example tag `v1.1.5` for version `1.1.5`). Configure npm trusted publishing for this repository before the first automated publish.
+Maintainers cut an npm release by pushing a version tag after merging to `main`. GitHub Actions (`.github/workflows/publish.yml`) runs tests, build, and `npm publish --provenance` when a `v*` tag is pushed. The tag must match `package.json` (for example tag `v1.1.6` for version `1.1.6`). Configure npm trusted publishing for this repository before the first automated publish.
 
 The `prepublishOnly` script still runs tests and build locally when you invoke `npm publish` by hand.
 
