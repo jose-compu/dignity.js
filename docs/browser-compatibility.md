@@ -1,6 +1,6 @@
 # Browser compatibility (#91)
 
-dignity.js targets **modern evergreen browsers** with WebRTC, IndexedDB, Web Crypto, and (for Dignity Apps) `MessageChannel` + sandboxed iframes. **v1.1.5** bundles verification, CQRS replicas, Dignity Apps, TypeScript definitions, BIP39-style identity mnemonic helpers, PeerJS start-retry, and the Vercel default signaling endpoint via `dist/dignity.esm.js`.
+dignity.js targets **modern evergreen browsers** with WebRTC, IndexedDB, Web Crypto, and (for Dignity Apps) `MessageChannel` + sandboxed iframes. **v1.1.6** bundles verification, CQRS replicas, Dignity Apps, TypeScript definitions, BIP39-style identity mnemonic helpers, PeerJS start-retry, and the Vercel default signaling endpoint via `dist/dignity.esm.js`.
 
 ## Required platform APIs
 
@@ -117,6 +117,7 @@ const networkAdapter = createPeerJSNetworkAdapter({
 
 | Symptom | Likely cause | Mitigation |
 | --- | --- | --- |
+| Signaling socket fails on first run | Down URL, firewall, `ws://` on https, wrong key | [README Troubleshooting — signaling](https://github.com/jose-compu/dignity.js/blob/main/README.md#signaling-server-unreachable) |
 | Signaling connected, no messages | No open data channel | `connectToPeer`, `bootstrapPeerIds` |
 | Works on LAN, fails on VPN/corp network | UDP blocked | Deploy TURN, set `iceServers` |
 | Safari tab backgrounded | WebRTC throttled | Keep tab focused during connect |
