@@ -24,17 +24,17 @@ BULLET_COLORS = (
     (34, 197, 94),
 )
 
-MIN_INNER_MARGIN_Y = 60
+MIN_INNER_MARGIN_Y = 36
 HIGHLIGHT_LINE_GAP = 8
 HIGHLIGHT_BLOCK_GAP = 28
-BULLET_SIZE = 14
+BULLET_SIZE = 16
 BULLET_TEXT_GAP = 12
-TAGLINE_SIZE = 34
+TAGLINE_SIZE = 38
 TAGLINE_GAP = 36
 TAGLINE_LINE_GAP = 10
 FONT_SCALE_STEP = 0.02
 REF_CANVAS_HEIGHT = 792
-REF_HIGHLIGHT_SIZE = 48
+REF_HIGHLIGHT_SIZE = 54
 MIN_HIGHLIGHT_AT_REF = 30
 
 
@@ -191,11 +191,11 @@ def _wrap_on_spaces(
 
 def _font_scale_for(inner_h: int, scale: float) -> FontScale:
     return FontScale(
-        version=max(1, int(96 * scale)),
-        title=max(1, int(40 * scale)),
-        date=max(1, int(32 * scale)),
+        version=max(1, int(106 * scale)),
+        title=max(1, int(46 * scale)),
+        date=max(1, int(36 * scale)),
         highlight=max(1, int(REF_HIGHLIGHT_SIZE * scale)),
-        meta=max(1, int(34 * scale)),
+        meta=max(1, int(38 * scale)),
         group_gap=max(20, int(32 * scale)),
         title_tight=max(6, int(10 * scale)),
     )
