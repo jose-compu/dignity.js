@@ -131,11 +131,24 @@ const {
 const {
   STREAM_ACCESS_MODES,
   STREAMING_API_EXPERIMENTAL,
+  STREAM_MESSAGE_TYPES,
+  MEDIA_CHUNK_VERSION,
   normalizePrivateRecipients,
   validateStreamAccessConfig,
   StreamSession,
   createStreamSession,
-  canJoinStream
+  canJoinStream,
+  createSignedMediaChunk,
+  verifyMediaChunk,
+  decodeMediaChunkPayload,
+  InMemoryStreamSignalingBus,
+  createInMemoryStreamSignalingBus,
+  createPublicStreamBroadcaster,
+  createPublicStreamViewer,
+  createPublicStreamRelay,
+  PublicStreamBroadcaster,
+  PublicStreamViewer,
+  PublicStreamRelay
 } = require('./streaming');
 
 module.exports = {
@@ -228,9 +241,22 @@ module.exports = {
   collectReflectiveFingerprints,
   STREAM_ACCESS_MODES,
   STREAMING_API_EXPERIMENTAL,
+  STREAM_MESSAGE_TYPES,
+  MEDIA_CHUNK_VERSION,
   normalizePrivateRecipients,
   validateStreamAccessConfig,
   StreamSession,
   createStreamSession,
-  canJoinStream
+  canJoinStream,
+  createSignedMediaChunk,
+  verifyMediaChunk,
+  decodeMediaChunkPayload,
+  InMemoryStreamSignalingBus,
+  createInMemoryStreamSignalingBus,
+  createPublicStreamBroadcaster,
+  createPublicStreamViewer,
+  createPublicStreamRelay,
+  PublicStreamBroadcaster,
+  PublicStreamViewer,
+  PublicStreamRelay
 };

@@ -65,9 +65,10 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Auto `connectToPeers` on create/update/delete replication (owner + collaborators)
 - Optional IndexedDB persistence for browser reload survival
 - Optional React hooks via `dignity.js/react`
-- **Live P2P AV (v1.2.0 research)** — [`docs/live-streaming-design.md`](./docs/live-streaming-design.md) covers 10M fan-out topology, latency budget, and access modes; experimental `createStreamSession` / `StreamSession` API ([#152](https://github.com/jose-compu/dignity.js/issues/152); **no media transport yet**)
+- **Live P2P AV (v1.3.0 prototype)** — [`docs/live-streaming-design.md`](./docs/live-streaming-design.md) plus signed public-mode chunk helpers (`createSignedMediaChunk`, `createPublicStreamBroadcaster`, relay) over an injectable signaling bus ([#152](https://github.com/jose-compu/dignity.js/issues/152); **no WebRTC camera path yet**)
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **v1.3.0** — Public live stream chunk path (signed chunks, join handshake, one-hop relay), live-stream demo page, runbook streaming note (#152, #95)
 - **v1.2.0** — Live streaming design doc, experimental stream access-mode API, examples index (#132, thanks [@ShahbazCoder1](https://github.com/ShahbazCoder1) #135)
 - **v1.1.6** — Troubleshooting for an unreachable signaling socket, 48-word identity restore, and a hard refresh after local demo rebuilds (#133)
 - **v1.1.5** — npm releases publish from GitHub Actions through Trusted Publishing (OIDC) with provenance; v1.1.4 was not published to npm, so v1.1.5 is the first release from CI
@@ -832,7 +833,7 @@ Dignity App manifests may pin `dappVersion` + `logicHash` + `publisherId`. Store
 - **API reference:** [`docs/api-reference.md`](./docs/api-reference.md) (generated from `openapi-like.json`)
 - **API stability (v1.x):** [`docs/api-stability.md`](./docs/api-stability.md) (#94)
 - **Threat model (v1.1):** [`docs/threat-model.md`](./docs/threat-model.md) (#96, #130)
-- **Live streaming design (v1.2.0):** [`docs/live-streaming-design.md`](./docs/live-streaming-design.md) (#152)
+- **Live streaming design (v1.3.0):** [`docs/live-streaming-design.md`](./docs/live-streaming-design.md) (#152); demo [`docs/live-stream-demo.html`](./docs/live-stream-demo.html)
 - **Browser compatibility:** [`docs/browser-compatibility.md`](./docs/browser-compatibility.md) (#91)
 - **Troubleshooting:** [README § Troubleshooting](#troubleshooting) — signaling, recovery phrase, hard refresh (#133)
 - **Production runbook:** [`docs/production-runbook.md`](./docs/production-runbook.md) (#95)
@@ -849,7 +850,7 @@ Dignity App manifests may pin `dappVersion` + `logicHash` + `publisherId`. Store
 
 ## Publish
 
-Maintainers cut an npm release by pushing a version tag after merging to `main`. GitHub Actions (`.github/workflows/publish.yml`) runs tests, build, and `npm publish --provenance` when a `v*` tag is pushed. The tag must match `package.json` (for example tag `v1.2.0` for version `1.2.0`). Configure npm trusted publishing for this repository before the first automated publish.
+Maintainers cut an npm release by pushing a version tag after merging to `main`. GitHub Actions (`.github/workflows/publish.yml`) runs tests, build, and `npm publish --provenance` when a `v*` tag is pushed. The tag must match `package.json` (for example tag `v1.3.0` for version `1.3.0`). Configure npm trusted publishing for this repository before the first automated publish.
 
 The `prepublishOnly` script still runs tests and build locally when you invoke `npm publish` by hand.
 

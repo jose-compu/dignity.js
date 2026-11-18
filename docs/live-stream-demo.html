@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Live stream prototype (experimental) — dignity.js</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 52rem; line-height: 1.5; }
+    code, pre { background: #f4f4f4; padding: 0.15rem 0.35rem; border-radius: 4px; }
+    pre { padding: 1rem; overflow: auto; }
+    .warn { color: #9a3412; }
+  </style>
+</head>
+<body>
+  <h1>Public live stream prototype</h1>
+  <p class="warn"><strong>Experimental.</strong> This page exercises the v1.3.0 in-memory public stream path only. There is no camera capture, WebRTC data channel, relay tree, ABR, or private E2E modes yet.</p>
+  <p>See <a href="./live-streaming-design.md">live-streaming-design.md</a> and issue <a href="https://github.com/jose-compu/dignity.js/issues/152">#152</a>.</p>
+  <button id="run" type="button">Simulate broadcaster → relay → viewer</button>
+  <pre id="log" aria-live="polite"></pre>
+  <script type="module">
+    import {
+      deriveKeyPairFromCredentials,
+      keyPairToPublicBundle,
+      createInMemoryStreamSignalingBus,
+      createPublicStreamBroadcaster,
+      createPublicStreamViewer,
+      createPublicStreamRelay,
+      decodeMediaChunkPayload
+    } from './assets/dignity.esm.js';
+
+  const logEl = document.getElementById('log');
+  function log(line) {
+    logEl.textContent += `${line}\n`;
+  }
+
+  document.getElementById('run').addEventListener('click', async () => {
+    logEl.textContent = '';
+    const bus = createInMemoryStreamSignalingBus();
+    const keyPair = await deriveKeyPairFromCredentials({ username: 'demo-broadcaster', password: 'demo' });
+    const { signingPublicKey } = keyPairToPublicBundle(keyPair);
+    const signingSecretKey = keyPair.signing.secretKey;
+
+    const broadcaster = createPublicStreamBroadcaster({
+      sessionId: 'demo-public',
+      broadcasterId: 'broadcaster',
+      signingSecretKey,
+      signingPublicKey,
+      bus,
+      initialViewerIds: ['relay']
+    });
+
+    createPublicStreamRelay({
+      relayId: 'relay',
+      upstreamId: 'broadcaster',
+      sessionId: 'demo-public',
+      broadcasterSigningPublicKey: signingPublicKey,
+      broadcasterId: 'broadcaster',
+      bus,
+      downstreamViewerIds: ['viewer']
+    });
+
+    const viewer = createPublicStreamViewer({
+      viewerId: 'viewer',
+      sessionId: 'demo-public',
+      broadcasterId: 'broadcaster',
+      broadcasterSigningPublicKey: signingPublicKey,
+      bus
+    });
+
+    broadcaster.announce();
+    viewer.requestJoin();
+    const chunk = broadcaster.publishChunk(new TextEncoder().encode('fake-webm-chunk'));
+    const bytes = decodeMediaChunkPayload(chunk);
+    log(`viewer joined: ${viewer.joined}`);
+    log(`chunks received: ${viewer.chunks.length}`);
+    log(`payload: ${new TextDecoder().decode(bytes)}`);
+  });
+  </script>
+</body>
+</html>

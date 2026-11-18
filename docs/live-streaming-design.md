@@ -1,6 +1,6 @@
 # Live P2P video and audio — design document (v1.2.0)
 
-**Status:** Research plus an experimental API skeleton. **No working media transport** ships in dignity.js v1.2.0. This document records topology, security, and scale assumptions for [issue #152](https://github.com/jose-compu/dignity.js/issues/152).
+**Status:** Research plus an experimental API. **v1.3.0** adds a minimal **public-mode** signed chunk path over an injectable signaling bus (unit-tested; see `src/streaming/public-stream-path.js`). There is still **no** WebRTC media track wiring, camera capture demo, private E2E keys, relay trees at scale, or ABR. This document records topology, security, and scale assumptions for [issue #152](https://github.com/jose-compu/dignity.js/issues/152).
 
 ## Goals
 
@@ -12,12 +12,13 @@
 
 ## Honest scope statement
 
-v1.2.0 adds:
+v1.2.0 added the design write-up and `StreamSession` access-mode validation. **v1.3.0** adds:
 
-1. This design write-up.
-2. An experimental `StreamSession` / access-mode module under `src/streaming/` (validation and `canJoin` only).
+1. `createSignedMediaChunk` / `verifyMediaChunk` (Ed25519 over chunk metadata + payload hash).
+2. `createPublicStreamBroadcaster`, `createPublicStreamViewer`, and `createPublicStreamRelay` over `InMemoryStreamSignalingBus` (join handshake + one relay hop).
+3. Optional demo: [`docs/live-stream-demo.html`](./live-stream-demo.html) (in-memory simulation only).
 
-There is **no** encoder pipeline, **no** WebRTC `RTCPeerConnection` media wiring, and **no** chunk relay implementation in the library yet.
+There is still **no** encoder pipeline and **no** WebRTC `RTCPeerConnection` media wiring in the library.
 
 ---
 
@@ -183,10 +184,10 @@ Feasibility argument: 10M **concurrent** viewers implies ~6 relay hops at degree
 
 ## Milestone mapping (#152)
 
-| Milestone | v1.2.0 status |
-|-----------|----------------|
-| 1. Research doc | **Done** (this file) |
-| 2. Prototype browser origin | Not started |
+| Milestone | Status |
+|-----------|--------|
+| 1. Research doc | **Done** (this file, v1.2.0) |
+| 2. Prototype browser origin | **Partial (v1.3.0)** — public-mode signed chunks + join handshake over injectable bus; no real A/V capture |
 | 3. Private modes + combined | Access validation skeleton only |
 | 4. Node origin | Not started |
 | 5. Adaptive layer | Documented only |

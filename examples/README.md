@@ -47,3 +47,4 @@ For interactive browser applications using WebRTC and Dignity Apps runtime, see 
 * **3D Chess Web App:** [`docs/chess/`](../docs/chess/) (run via `npm run build:chess` or `npm run docs:dev`)
 * **Browser Tic-Tac-Toe Web App:** [`docs/tictactoe/`](../docs/tictactoe/) (run via `npm run build:tictactoe` or `npm run docs:dev`)
 * **Dignity Apps Registry & Timeline:** [`docs/apps/`](../docs/apps/)
+* **Live stream prototype (in-memory, experimental):** [`docs/live-stream-demo.html`](../docs/live-stream-demo.html) (v1.3.0 public chunk path only)
