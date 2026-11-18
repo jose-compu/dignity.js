@@ -371,7 +371,7 @@ declare module 'dignity.js' {
   export function normalizeFunctionSource(source: string, options?: JsonObject): string;
   export function collectReflectiveFingerprints(input: unknown, options?: JsonObject): { canonical: unknown; fingerprints: Map<string, string> };
 
-  /** @experimental Live streaming access modes (#152); no media transport yet */
+  /** @experimental Live streaming (#152); v1.3.0 adds signed public-mode chunk path over injectable signaling */
   export type StreamAccessMode =
     | 'private-single'
     | 'private-list'
@@ -411,6 +411,118 @@ declare module 'dignity.js' {
   export function validateStreamAccessConfig(mode: StreamAccessMode, config?: { privateRecipients?: string[] }): string[];
   export function createStreamSession(options: StreamSessionOptions): StreamSession;
   export function canJoinStream(session: StreamSession, identityId: string): boolean;
+
+  export const MEDIA_CHUNK_VERSION: number;
+  export const STREAM_MESSAGE_TYPES: Readonly<{
+    JOIN_OFFER: string;
+    JOIN_REQUEST: string;
+    JOIN_ACCEPT: string;
+    JOIN_REJECT: string;
+    MEDIA_CHUNK: string;
+  }>;
+
+  export interface SignedMediaChunk {
+    version: number;
+    sessionId: string;
+    broadcasterId: string;
+    sequence: number;
+    timestampMs: number;
+    layerId: string;
+    mimeType: string;
+    payloadBase64: string;
+    payloadFingerprint: string;
+    signatureBase64: string;
+    signingPublicKey: string;
+  }
+
+  export function createSignedMediaChunk(options: {
+    sessionId: string;
+    broadcasterId: string;
+    payloadBytes: Uint8Array;
+    signingSecretKey: Uint8Array;
+    signingPublicKey: string;
+    sequence?: number;
+    timestampMs?: number;
+    layerId?: string;
+    mimeType?: string;
+  }): SignedMediaChunk;
+
+  export function verifyMediaChunk(chunk: SignedMediaChunk, expectedSessionId?: string): boolean;
+  export function decodeMediaChunkPayload(chunk: SignedMediaChunk): Uint8Array;
+
+  export class InMemoryStreamSignalingBus {
+    subscribe(peerId: string, handler: (message: JsonObject) => void): void;
+    send(fromPeerId: string, toPeerId: string, message: JsonObject): void;
+    fanout(fromPeerId: string, peerIds: string[], message: JsonObject): void;
+  }
+
+  export function createInMemoryStreamSignalingBus(): InMemoryStreamSignalingBus;
+
+  export class PublicStreamBroadcaster {
+    constructor(options: {
+      session: StreamSession;
+      signingSecretKey: Uint8Array;
+      signingPublicKey: string;
+      bus: InMemoryStreamSignalingBus;
+      directViewerIds?: string[];
+    });
+    readonly session: StreamSession;
+    announce(): void;
+    publishChunk(payloadBytes: Uint8Array, chunkMeta?: { timestampMs?: number; layerId?: string; mimeType?: string }): SignedMediaChunk;
+    close(): void;
+  }
+
+  export class PublicStreamViewer {
+    constructor(options: {
+      viewerId: string;
+      sessionId: string;
+      broadcasterId: string;
+      broadcasterSigningPublicKey: string;
+      bus: InMemoryStreamSignalingBus;
+    });
+    readonly chunks: SignedMediaChunk[];
+    readonly joined: boolean;
+    requestJoin(): void;
+  }
+
+  export class PublicStreamRelay {
+    constructor(options: {
+      relayId: string;
+      upstreamId: string;
+      sessionId: string;
+      broadcasterSigningPublicKey: string;
+      broadcasterId: string;
+      bus: InMemoryStreamSignalingBus;
+      downstreamViewerIds: string[];
+    });
+  }
+
+  export function createPublicStreamBroadcaster(options: {
+    sessionId: string;
+    broadcasterId: string;
+    signingSecretKey: Uint8Array;
+    signingPublicKey: string;
+    bus: InMemoryStreamSignalingBus;
+    initialViewerIds?: string[];
+  }): PublicStreamBroadcaster;
+
+  export function createPublicStreamViewer(options: {
+    viewerId: string;
+    sessionId: string;
+    broadcasterId: string;
+    broadcasterSigningPublicKey: string;
+    bus: InMemoryStreamSignalingBus;
+  }): PublicStreamViewer;
+
+  export function createPublicStreamRelay(options: {
+    relayId: string;
+    upstreamId: string;
+    sessionId: string;
+    broadcasterSigningPublicKey: string;
+    broadcasterId: string;
+    bus: InMemoryStreamSignalingBus;
+    downstreamViewerIds: string[];
+  }): PublicStreamRelay;
 
   const dignity: {
     DignityP2P: typeof DignityP2P;

@@ -1,5 +1,5 @@
 /**
- * Experimental stream session descriptor (no WebRTC media path yet).
+ * Experimental stream session descriptor (signaling membership; WebRTC media wiring optional).
  * @experimental
  */
 

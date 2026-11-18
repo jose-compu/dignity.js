@@ -37366,14 +37366,436 @@ var require_stream_session = __commonJS({
   }
 });
 
+// src/streaming/media-chunk.js
+var require_media_chunk = __commonJS({
+  "src/streaming/media-chunk.js"(exports, module) {
+    var nacl3 = require_nacl_fast();
+    var naclUtil3 = require_nacl_util();
+    var { stableStringify: stableStringify2 } = require_message_security_service();
+    var MEDIA_CHUNK_VERSION = 1;
+    var DEFAULT_LAYER_ID = "L0";
+    function utf8ToBytes(value) {
+      return naclUtil3.decodeUTF8(value);
+    }
+    function payloadFingerprint(payloadBytes) {
+      if (!(payloadBytes instanceof Uint8Array)) {
+        throw new TypeError("payloadBytes must be a Uint8Array");
+      }
+      return naclUtil3.encodeBase64(nacl3.hash(payloadBytes));
+    }
+    function canonicalMediaChunkSigningPayload(fields) {
+      return stableStringify2({
+        version: MEDIA_CHUNK_VERSION,
+        sessionId: fields.sessionId,
+        broadcasterId: fields.broadcasterId,
+        sequence: fields.sequence,
+        timestampMs: fields.timestampMs,
+        layerId: fields.layerId,
+        mimeType: fields.mimeType,
+        payloadFingerprint: fields.payloadFingerprint
+      });
+    }
+    function createSignedMediaChunk({
+      sessionId,
+      broadcasterId,
+      payloadBytes,
+      signingSecretKey,
+      signingPublicKey,
+      sequence = 0,
+      timestampMs = Date.now(),
+      layerId = DEFAULT_LAYER_ID,
+      mimeType = "application/octet-stream"
+    }) {
+      if (typeof sessionId !== "string" || sessionId.trim() === "") {
+        throw new TypeError("sessionId must be a non-empty string");
+      }
+      if (typeof broadcasterId !== "string" || broadcasterId.trim() === "") {
+        throw new TypeError("broadcasterId must be a non-empty string");
+      }
+      if (!(signingSecretKey instanceof Uint8Array)) {
+        throw new TypeError("signingSecretKey must be a Uint8Array");
+      }
+      if (typeof signingPublicKey !== "string" || signingPublicKey.trim() === "") {
+        throw new TypeError("signingPublicKey must be a non-empty string");
+      }
+      const fingerprint = payloadFingerprint(payloadBytes);
+      const signingPayload = canonicalMediaChunkSigningPayload({
+        sessionId: sessionId.trim(),
+        broadcasterId: broadcasterId.trim(),
+        sequence,
+        timestampMs,
+        layerId,
+        mimeType,
+        payloadFingerprint: fingerprint
+      });
+      const signature = nacl3.sign.detached(utf8ToBytes(signingPayload), signingSecretKey);
+      return {
+        version: MEDIA_CHUNK_VERSION,
+        sessionId: sessionId.trim(),
+        broadcasterId: broadcasterId.trim(),
+        sequence,
+        timestampMs,
+        layerId,
+        mimeType,
+        payloadBase64: naclUtil3.encodeBase64(payloadBytes),
+        payloadFingerprint: fingerprint,
+        signatureBase64: naclUtil3.encodeBase64(signature),
+        signingPublicKey: signingPublicKey.trim(),
+        experimental: true
+      };
+    }
+    function verifyMediaChunk(chunk, expectedSessionId) {
+      if (!chunk || typeof chunk !== "object") {
+        throw new TypeError("chunk must be an object");
+      }
+      const payloadBytes = naclUtil3.decodeBase64(chunk.payloadBase64);
+      const recomputed = payloadFingerprint(payloadBytes);
+      if (recomputed !== chunk.payloadFingerprint) {
+        throw new Error("Media chunk payload fingerprint mismatch");
+      }
+      if (expectedSessionId && chunk.sessionId !== expectedSessionId) {
+        throw new Error("Media chunk sessionId mismatch");
+      }
+      const signingPayload = canonicalMediaChunkSigningPayload({
+        sessionId: chunk.sessionId,
+        broadcasterId: chunk.broadcasterId,
+        sequence: chunk.sequence,
+        timestampMs: chunk.timestampMs,
+        layerId: chunk.layerId,
+        mimeType: chunk.mimeType,
+        payloadFingerprint: chunk.payloadFingerprint
+      });
+      const ok = nacl3.sign.detached.verify(
+        utf8ToBytes(signingPayload),
+        naclUtil3.decodeBase64(chunk.signatureBase64),
+        naclUtil3.decodeBase64(chunk.signingPublicKey)
+      );
+      if (!ok) {
+        const error2 = new Error("Invalid media chunk signature");
+        error2.code = "INVALID_MEDIA_CHUNK_SIGNATURE";
+        throw error2;
+      }
+      return true;
+    }
+    function decodeMediaChunkPayload(chunk) {
+      verifyMediaChunk(chunk);
+      return naclUtil3.decodeBase64(chunk.payloadBase64);
+    }
+    module.exports = {
+      MEDIA_CHUNK_VERSION,
+      DEFAULT_LAYER_ID,
+      createSignedMediaChunk,
+      verifyMediaChunk,
+      decodeMediaChunkPayload,
+      payloadFingerprint
+    };
+  }
+});
+
+// src/streaming/public-stream-path.js
+var require_public_stream_path = __commonJS({
+  "src/streaming/public-stream-path.js"(exports, module) {
+    var { STREAM_ACCESS_MODES } = require_access_modes();
+    var { createStreamSession } = require_stream_session();
+    var {
+      createSignedMediaChunk,
+      verifyMediaChunk
+    } = require_media_chunk();
+    var STREAM_MESSAGE_TYPES = Object.freeze({
+      JOIN_OFFER: "stream:join-offer",
+      JOIN_REQUEST: "stream:join-request",
+      JOIN_ACCEPT: "stream:join-accept",
+      JOIN_REJECT: "stream:join-reject",
+      MEDIA_CHUNK: "stream:media-chunk"
+    });
+    var InMemoryStreamSignalingBus = class {
+      constructor() {
+        this._listeners = /* @__PURE__ */ new Map();
+      }
+      /**
+       * @param {string} peerId
+       * @param {(message: object) => void} handler
+       */
+      subscribe(peerId, handler) {
+        if (!this._listeners.has(peerId)) {
+          this._listeners.set(peerId, []);
+        }
+        this._listeners.get(peerId).push(handler);
+      }
+      /**
+       * @param {string} fromPeerId
+       * @param {string} toPeerId
+       * @param {object} message
+       */
+      send(fromPeerId, toPeerId, message) {
+        const envelope = {
+          fromPeerId,
+          toPeerId,
+          timestamp: Date.now(),
+          ...message
+        };
+        const handlers = this._listeners.get(toPeerId) || [];
+        for (const handler of handlers) {
+          handler(envelope);
+        }
+      }
+      /**
+       * @param {string} fromPeerId
+       * @param {string[]} peerIds
+       * @param {object} message
+       */
+      fanout(fromPeerId, peerIds, message) {
+        const unique = [...new Set(peerIds)];
+        for (const peerId of unique) {
+          if (peerId !== fromPeerId) {
+            this.send(fromPeerId, peerId, message);
+          }
+        }
+      }
+    };
+    var PublicStreamBroadcaster = class {
+      /**
+       * @param {Object} options
+       * @param {import('./stream-session').StreamSession} options.session
+       * @param {Uint8Array} options.signingSecretKey
+       * @param {string} options.signingPublicKey
+       * @param {InMemoryStreamSignalingBus} options.bus
+       * @param {string[]} [options.directViewerIds]
+       */
+      constructor({ session, signingSecretKey, signingPublicKey, bus, directViewerIds = [] }) {
+        if (session.mode !== STREAM_ACCESS_MODES.PUBLIC) {
+          throw new Error("PublicStreamBroadcaster requires public access mode");
+        }
+        this.session = session;
+        this.signingSecretKey = signingSecretKey;
+        this.signingPublicKey = signingPublicKey;
+        this.bus = bus;
+        this.directViewerIds = [...directViewerIds];
+        this.sequence = 0;
+        this.pendingJoin = /* @__PURE__ */ new Map();
+        this._onBusMessage = this._onBusMessage.bind(this);
+        this.bus.subscribe(session.broadcasterId, this._onBusMessage);
+      }
+      announce() {
+        this.bus.fanout(this.session.broadcasterId, this.directViewerIds, {
+          messageType: STREAM_MESSAGE_TYPES.JOIN_OFFER,
+          session: this.session.toJSON(),
+          signingPublicKey: this.signingPublicKey
+        });
+      }
+      /**
+       * @param {Uint8Array} payloadBytes
+       * @param {Object} [chunkMeta]
+       */
+      publishChunk(payloadBytes, chunkMeta = {}) {
+        const chunk = createSignedMediaChunk({
+          sessionId: this.session.sessionId,
+          broadcasterId: this.session.broadcasterId,
+          payloadBytes,
+          signingSecretKey: this.signingSecretKey,
+          signingPublicKey: this.signingPublicKey,
+          sequence: this.sequence,
+          timestampMs: chunkMeta.timestampMs,
+          layerId: chunkMeta.layerId,
+          mimeType: chunkMeta.mimeType
+        });
+        this.sequence += 1;
+        const downstream = [...this.directViewerIds];
+        this.bus.fanout(this.session.broadcasterId, downstream, {
+          messageType: STREAM_MESSAGE_TYPES.MEDIA_CHUNK,
+          chunk
+        });
+        return chunk;
+      }
+      _onBusMessage(envelope) {
+        if (envelope.messageType !== STREAM_MESSAGE_TYPES.JOIN_REQUEST) {
+          return;
+        }
+        const viewerId = envelope.viewerId;
+        if (!viewerId || typeof viewerId !== "string") {
+          return;
+        }
+        if (envelope.sessionId !== this.session.sessionId) {
+          return;
+        }
+        if (this.session.canJoin(viewerId)) {
+          this.pendingJoin.set(viewerId, viewerId);
+          this.bus.send(this.session.broadcasterId, viewerId, {
+            messageType: STREAM_MESSAGE_TYPES.JOIN_ACCEPT,
+            sessionId: this.session.sessionId,
+            broadcasterId: this.session.broadcasterId,
+            signingPublicKey: this.signingPublicKey
+          });
+        } else {
+          this.bus.send(this.session.broadcasterId, viewerId, {
+            messageType: STREAM_MESSAGE_TYPES.JOIN_REJECT,
+            sessionId: this.session.sessionId,
+            reason: "access-denied"
+          });
+        }
+      }
+      close() {
+        this.pendingJoin.clear();
+      }
+    };
+    var PublicStreamViewer = class {
+      /**
+       * @param {Object} options
+       * @param {string} options.viewerId
+       * @param {string} options.sessionId
+       * @param {string} options.broadcasterId
+       * @param {string} options.broadcasterSigningPublicKey
+       * @param {InMemoryStreamSignalingBus} options.bus
+       */
+      constructor({
+        viewerId,
+        sessionId,
+        broadcasterId,
+        broadcasterSigningPublicKey,
+        bus
+      }) {
+        this.viewerId = viewerId;
+        this.sessionId = sessionId;
+        this.broadcasterId = broadcasterId;
+        this.broadcasterSigningPublicKey = broadcasterSigningPublicKey;
+        this.bus = bus;
+        this.joined = false;
+        this.chunks = [];
+        this._onBusMessage = this._onBusMessage.bind(this);
+        this.bus.subscribe(viewerId, this._onBusMessage);
+      }
+      requestJoin() {
+        this.bus.send(this.viewerId, this.broadcasterId, {
+          messageType: STREAM_MESSAGE_TYPES.JOIN_REQUEST,
+          sessionId: this.sessionId,
+          viewerId: this.viewerId
+        });
+      }
+      /**
+       * @param {object} envelope
+       */
+      _onBusMessage(envelope) {
+        if (envelope.sessionId && envelope.sessionId !== this.sessionId) {
+          return;
+        }
+        if (envelope.messageType === STREAM_MESSAGE_TYPES.JOIN_ACCEPT) {
+          this.joined = true;
+          if (envelope.signingPublicKey) {
+            this.broadcasterSigningPublicKey = envelope.signingPublicKey;
+          }
+          return;
+        }
+        if (envelope.messageType === STREAM_MESSAGE_TYPES.JOIN_REJECT) {
+          this.joined = false;
+          return;
+        }
+        if (envelope.messageType === STREAM_MESSAGE_TYPES.MEDIA_CHUNK && envelope.chunk) {
+          verifyMediaChunk(envelope.chunk, this.sessionId);
+          if (envelope.chunk.broadcasterId !== this.broadcasterId) {
+            throw new Error("Unexpected broadcaster for media chunk");
+          }
+          if (envelope.chunk.signingPublicKey !== this.broadcasterSigningPublicKey) {
+            throw new Error("Unexpected signing key for media chunk");
+          }
+          this.chunks.push(envelope.chunk);
+        }
+      }
+    };
+    var PublicStreamRelay = class {
+      /**
+       * One-hop relay: subscribes to upstream chunks, verifies, forwards to downstream viewers.
+       * @param {Object} options
+       * @param {string} options.relayId
+       * @param {string} options.upstreamId
+       * @param {string} options.sessionId
+       * @param {string} options.broadcasterSigningPublicKey
+       * @param {string} options.broadcasterId
+       * @param {InMemoryStreamSignalingBus} options.bus
+       * @param {string[]} options.downstreamViewerIds
+       */
+      constructor({
+        relayId,
+        upstreamId,
+        sessionId,
+        broadcasterSigningPublicKey,
+        broadcasterId,
+        bus,
+        downstreamViewerIds
+      }) {
+        this.relayId = relayId;
+        this.upstreamId = upstreamId;
+        this.sessionId = sessionId;
+        this.broadcasterSigningPublicKey = broadcasterSigningPublicKey;
+        this.broadcasterId = broadcasterId;
+        this.bus = bus;
+        this.downstreamViewerIds = [...downstreamViewerIds];
+        this._onBusMessage = this._onBusMessage.bind(this);
+        this.bus.subscribe(relayId, this._onBusMessage);
+      }
+      _onBusMessage(envelope) {
+        if (envelope.messageType !== STREAM_MESSAGE_TYPES.MEDIA_CHUNK || !envelope.chunk) {
+          return;
+        }
+        const chunk = envelope.chunk;
+        if (chunk.sessionId !== this.sessionId) {
+          return;
+        }
+        verifyMediaChunk(chunk, this.sessionId);
+        this.bus.fanout(this.relayId, this.downstreamViewerIds, {
+          messageType: STREAM_MESSAGE_TYPES.MEDIA_CHUNK,
+          chunk
+        });
+      }
+    };
+    function createPublicStreamBroadcaster(options) {
+      const session = createStreamSession({
+        sessionId: options.sessionId,
+        broadcasterId: options.broadcasterId,
+        mode: STREAM_ACCESS_MODES.PUBLIC
+      });
+      return new PublicStreamBroadcaster({
+        session,
+        signingSecretKey: options.signingSecretKey,
+        signingPublicKey: options.signingPublicKey,
+        bus: options.bus,
+        directViewerIds: options.initialViewerIds
+      });
+    }
+    function createPublicStreamViewer(options) {
+      return new PublicStreamViewer(options);
+    }
+    function createPublicStreamRelay(options) {
+      return new PublicStreamRelay(options);
+    }
+    function createInMemoryStreamSignalingBus() {
+      return new InMemoryStreamSignalingBus();
+    }
+    module.exports = {
+      STREAM_MESSAGE_TYPES,
+      InMemoryStreamSignalingBus,
+      PublicStreamBroadcaster,
+      PublicStreamViewer,
+      PublicStreamRelay,
+      createPublicStreamBroadcaster,
+      createPublicStreamViewer,
+      createPublicStreamRelay,
+      createInMemoryStreamSignalingBus
+    };
+  }
+});
+
 // src/streaming/index.js
 var require_streaming = __commonJS({
   "src/streaming/index.js"(exports, module) {
     var accessModes = require_access_modes();
     var streamSession = require_stream_session();
+    var mediaChunk = require_media_chunk();
+    var publicStreamPath = require_public_stream_path();
     module.exports = {
       ...accessModes,
       ...streamSession,
+      ...mediaChunk,
+      ...publicStreamPath,
       STREAMING_API_EXPERIMENTAL: true
     };
   }
@@ -37505,11 +37927,24 @@ var require_src = __commonJS({
     var {
       STREAM_ACCESS_MODES,
       STREAMING_API_EXPERIMENTAL,
+      STREAM_MESSAGE_TYPES,
+      MEDIA_CHUNK_VERSION,
       normalizePrivateRecipients,
       validateStreamAccessConfig,
       StreamSession,
       createStreamSession,
-      canJoinStream
+      canJoinStream,
+      createSignedMediaChunk,
+      verifyMediaChunk,
+      decodeMediaChunkPayload,
+      InMemoryStreamSignalingBus,
+      createInMemoryStreamSignalingBus,
+      createPublicStreamBroadcaster,
+      createPublicStreamViewer,
+      createPublicStreamRelay,
+      PublicStreamBroadcaster,
+      PublicStreamViewer,
+      PublicStreamRelay
     } = require_streaming();
     module.exports = {
       DignityP2P: DignityP2P2,
@@ -37601,11 +38036,24 @@ var require_src = __commonJS({
       collectReflectiveFingerprints,
       STREAM_ACCESS_MODES,
       STREAMING_API_EXPERIMENTAL,
+      STREAM_MESSAGE_TYPES,
+      MEDIA_CHUNK_VERSION,
       normalizePrivateRecipients,
       validateStreamAccessConfig,
       StreamSession,
       createStreamSession,
-      canJoinStream
+      canJoinStream,
+      createSignedMediaChunk,
+      verifyMediaChunk,
+      decodeMediaChunkPayload,
+      InMemoryStreamSignalingBus,
+      createInMemoryStreamSignalingBus,
+      createPublicStreamBroadcaster,
+      createPublicStreamViewer,
+      createPublicStreamRelay,
+      PublicStreamBroadcaster,
+      PublicStreamViewer,
+      PublicStreamRelay
     };
   }
 });
@@ -38868,7 +39316,7 @@ function Lobby({
       emptyText: "No finished games yet.",
       onOpen: handleOpenGame
     }
-  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.2.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
+  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.3.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
       id: usernameInputId,
