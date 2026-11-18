@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +32,14 @@ BULLET_TEXT_GAP = 12
 TAGLINE_SIZE = 34
 TAGLINE_GAP = 36
 TAGLINE_LINE_GAP = 10
+FONT_SCALE_STEP = 0.02
+REF_CANVAS_HEIGHT = 792
+REF_HIGHLIGHT_SIZE = 48
+MIN_HIGHLIGHT_AT_REF = 30
+
+
+class HighlightsTooLongError(RuntimeError):
+    """Raised when highlight copy cannot fit at the minimum readable highlight size."""
 
 
 @dataclass(frozen=True)
@@ -44,6 +53,26 @@ class CanvasLayout:
     content_pad: int
     text_logo_gap: int
     logo_max_h: int
+
+    @property
+    def inner_top(self) -> int:
+        return self.frame[1] + self.frame_outline_w + self.inset
+
+    @property
+    def inner_bottom(self) -> int:
+        return self.frame[3] - self.frame_outline_w - self.inset
+
+    @property
+    def inner_left(self) -> int:
+        return self.frame[0] + self.inset
+
+    @property
+    def inner_right(self) -> int:
+        return self.frame[2] - self.inset
+
+    @property
+    def inner_h(self) -> int:
+        return self.inner_bottom - self.inner_top
 
 
 @dataclass(frozen=True)
@@ -74,6 +103,14 @@ class FontScale:
     title_tight: int
 
 
+@dataclass(frozen=True)
+class TaglineRun:
+    text: str
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont
+    x: int
+    y: int
+
+
 def _canvas_layout(width: int, height: int) -> CanvasLayout:
     margin_x = max(72, width // 16)
     margin_y = max(72, height // 10)
@@ -90,6 +127,10 @@ def _canvas_layout(width: int, height: int) -> CanvasLayout:
         text_logo_gap=max(40, width // 38),
         logo_max_h=min(int(inner_h * 0.52), 280),
     )
+
+
+def _min_highlight_size(canvas_height: int) -> int:
+    return max(1, int(round(MIN_HIGHLIGHT_AT_REF * canvas_height / REF_CANVAS_HEIGHT)))
 
 
 def _load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -153,10 +194,26 @@ def _font_scale_for(inner_h: int, scale: float) -> FontScale:
         version=max(1, int(96 * scale)),
         title=max(1, int(40 * scale)),
         date=max(1, int(32 * scale)),
-        highlight=max(1, int(48 * scale)),
+        highlight=max(1, int(REF_HIGHLIGHT_SIZE * scale)),
         meta=max(1, int(34 * scale)),
         group_gap=max(20, int(32 * scale)),
         title_tight=max(6, int(10 * scale)),
+    )
+
+
+def _font_scale_with_highlight(inner_h: int, scale: float, highlight_size: int) -> FontScale:
+    base = _font_scale_for(inner_h, scale)
+    if base.highlight == highlight_size:
+        return base
+    coeffs = highlight_size / max(1, base.highlight)
+    return FontScale(
+        version=max(1, int(base.version * coeffs)),
+        title=max(1, int(base.title * coeffs)),
+        date=max(1, int(base.date * coeffs)),
+        highlight=highlight_size,
+        meta=max(1, int(base.meta * coeffs)),
+        group_gap=max(14, int(base.group_gap * coeffs)),
+        title_tight=max(4, int(base.title_tight * coeffs)),
     )
 
 
@@ -217,7 +274,7 @@ def _measure_content(
         place_text(date, date_font, MUTED, fonts.group_gap)
 
     highlight_indent = _bullet_indent()
-    highlight_text_w = max_text_w - highlight_indent
+    highlight_text_w = max(1, max_text_w - highlight_indent)
     hl_line_h = _line_height(draw, highlight_font)
 
     for hi, highlight in enumerate(highlights):
@@ -258,6 +315,51 @@ def _measure_content(
     return MeasuredBlock(text_runs, bullets, block_height, content_top)
 
 
+def _block_fits_in_column(
+    draw: ImageDraw.ImageDraw,
+    block: MeasuredBlock,
+    *,
+    start_y: int,
+    inner_top: int,
+    inner_bottom: int,
+    inner_right: int,
+) -> bool:
+    vertical_lo = inner_top
+    vertical_hi = inner_bottom
+    if start_y < vertical_lo or start_y + block.height > vertical_hi:
+        return False
+    for run in block.text_runs:
+        box = draw.textbbox((run.x, start_y + run.y), run.text, font=run.font)
+        if box[1] < vertical_lo or box[3] > vertical_hi:
+            return False
+        if box[2] > inner_right:
+            return False
+    for bullet in block.bullets:
+        by0 = start_y + bullet.y
+        by1 = by0 + bullet.size
+        if by0 < vertical_lo or by1 > vertical_hi:
+            return False
+        if bullet.x + bullet.size > inner_right:
+            return False
+    return True
+
+
+def _block_fits_horizontally(
+    draw: ImageDraw.ImageDraw,
+    block: MeasuredBlock,
+    *,
+    max_text_w: int,
+    text_x: int,
+) -> bool:
+    for run in block.text_runs:
+        w = _text_width(draw, run.text, run.font)
+        if run.x < text_x:
+            return False
+        if run.x + w > text_x + max_text_w:
+            return False
+    return True
+
+
 def _rounded_rect(
     draw: ImageDraw.ImageDraw,
     xy: tuple[int, int, int, int],
@@ -296,7 +398,7 @@ def _layout_logo(
 
 def _pick_font_scale(
     draw: ImageDraw.ImageDraw,
-    inner_h: int,
+    layout: CanvasLayout,
     *,
     text_x: int,
     max_text_w: int,
@@ -306,10 +408,21 @@ def _pick_font_scale(
     highlights: list[str],
     packages: list[str],
     install_line: str,
-) -> tuple[FontScale, MeasuredBlock]:
+) -> tuple[FontScale, MeasuredBlock, int]:
+    inner_h = layout.inner_h
+    inner_top = layout.inner_top
+    inner_bottom = layout.inner_bottom
+    inner_right = layout.inner_right
+    min_highlight = _min_highlight_size(layout.height)
+    max_block_h = inner_h - 2 * MIN_INNER_MARGIN_Y
+
+    scale_min = min_highlight / REF_HIGHLIGHT_SIZE
     scale = 1.0
-    while scale >= 0.82:
-        fonts = _font_scale_for(inner_h, scale)
+    while True:
+        effective = max(scale, scale_min)
+        fonts = _font_scale_for(inner_h, effective)
+        if fonts.highlight < min_highlight:
+            fonts = _font_scale_with_highlight(inner_h, effective, min_highlight)
         block = _measure_content(
             draw,
             text_x=text_x,
@@ -322,23 +435,207 @@ def _pick_font_scale(
             install_line=install_line,
             fonts=fonts,
         )
-        if block.height <= inner_h - 2 * MIN_INNER_MARGIN_Y:
-            return fonts, block
-        scale -= 0.04
-    fonts = _font_scale_for(inner_h, scale)
-    block = _measure_content(
+        at_min = fonts.highlight <= min_highlight
+        if block.height > max_block_h:
+            if at_min:
+                raise HighlightsTooLongError(
+                    "Release highlights are too long to fit inside the banner card at the minimum "
+                    f"readable highlight size ({min_highlight}px for this canvas height)."
+                )
+            scale -= FONT_SCALE_STEP
+            continue
+        if not _block_fits_horizontally(draw, block, max_text_w=max_text_w, text_x=text_x):
+            if at_min:
+                raise HighlightsTooLongError(
+                    "Release text is too wide to fit inside the banner card at the minimum "
+                    f"readable highlight size ({min_highlight}px for this canvas height)."
+                )
+            scale -= FONT_SCALE_STEP
+            continue
+        start_y = inner_top + (inner_h - block.height) // 2
+        if _block_fits_in_column(
+            draw,
+            block,
+            start_y=start_y,
+            inner_top=inner_top,
+            inner_bottom=inner_bottom,
+            inner_right=inner_right,
+        ):
+            return fonts, block, start_y
+        if at_min:
+            raise HighlightsTooLongError(
+                "Release highlights are too long to fit inside the banner card at the minimum "
+                f"readable highlight size ({min_highlight}px for this canvas height)."
+            )
+        if effective <= scale_min + 1e-9:
+            raise HighlightsTooLongError(
+                "Release highlights are too long to fit inside the banner card at the minimum "
+                f"readable highlight size ({min_highlight}px for this canvas height)."
+            )
+        scale -= FONT_SCALE_STEP
+
+
+def _pick_tagline_layout(
+    draw: ImageDraw.ImageDraw,
+    tagline: str,
+    logo_x: int,
+    logo_y: int,
+    logo_w: int,
+    logo_h: int,
+    inner_top: int,
+    inner_bottom: int,
+) -> tuple[list[TaglineRun], int]:
+    if not tagline:
+        return [], logo_y
+
+    size = TAGLINE_SIZE
+    min_size = max(12, int(round(20 * (inner_bottom - inner_top) / REF_CANVAS_HEIGHT)))
+    logo_y_out = logo_y
+    runs: list[TaglineRun] = []
+
+    while size >= min_size:
+        font = _load_font(size)
+        lines = _wrap_on_spaces(draw, tagline, font, logo_w)
+        line_h = _line_height(draw, font)
+        block_h = TAGLINE_GAP + len(lines) * line_h + max(0, len(lines) - 1) * TAGLINE_LINE_GAP
+        group_h = logo_h + block_h
+        proposed_logo_y = max(inner_top, inner_top + ((inner_bottom - inner_top) - group_h) // 2)
+        if proposed_logo_y >= inner_top and proposed_logo_y + group_h <= inner_bottom:
+            ty = proposed_logo_y + logo_h + TAGLINE_GAP
+            runs = []
+            for line in lines:
+                lw = _text_width(draw, line, font)
+                top = draw.textbbox((0, 0), line, font=font)[1]
+                x = logo_x + (logo_w - lw) // 2
+                runs.append(TaglineRun(line, font, x, ty - top))
+                ty += line_h + TAGLINE_LINE_GAP
+            for run in runs:
+                box = draw.textbbox((run.x, run.y), run.text, font=run.font)
+                if box[1] < inner_top or box[3] > inner_bottom:
+                    runs = []
+                    break
+                if box[0] < logo_x or box[2] > logo_x + logo_w:
+                    runs = []
+                    break
+            if runs:
+                return runs, proposed_logo_y
+        size -= 1
+
+    font = _load_font(min_size)
+    lines = _wrap_on_spaces(draw, tagline, font, logo_w)
+    line_h = _line_height(draw, font)
+    block_h = TAGLINE_GAP + len(lines) * line_h + max(0, len(lines) - 1) * TAGLINE_LINE_GAP
+    group_h = logo_h + block_h
+    logo_y_out = max(inner_top, inner_top + ((inner_bottom - inner_top) - group_h) // 2)
+    ty = logo_y_out + logo_h + TAGLINE_GAP
+    runs = []
+    for line in lines:
+        lw = _text_width(draw, line, font)
+        top = draw.textbbox((0, 0), line, font=font)[1]
+        x = logo_x + (logo_w - lw) // 2
+        runs.append(TaglineRun(line, font, x, ty - top))
+        ty += line_h + TAGLINE_LINE_GAP
+    return runs, logo_y_out
+
+
+def assert_banner_within_card(
+    draw: ImageDraw.ImageDraw,
+    layout: CanvasLayout,
+    *,
+    block: MeasuredBlock,
+    start_y: int,
+    tagline_runs: list[TaglineRun],
+) -> None:
+    if not _block_fits_in_column(
         draw,
+        block,
+        start_y=start_y,
+        inner_top=layout.inner_top,
+        inner_bottom=layout.inner_bottom,
+        inner_right=layout.inner_right,
+    ):
+        raise AssertionError("Right-column text extends outside the card inner bounds.")
+    for run in tagline_runs:
+        box = draw.textbbox((run.x, run.y), run.text, font=run.font)
+        if box[1] < layout.inner_top or box[3] > layout.inner_bottom:
+            raise AssertionError("Tagline extends outside the card inner bounds.")
+        if box[0] < layout.inner_left or box[2] > layout.inner_right:
+            raise AssertionError("Tagline extends outside the card horizontal bounds.")
+
+
+V120_CHECK = {
+    "width": DEFAULT_WIDTH,
+    "height": DEFAULT_HEIGHT,
+    "version": "1.2.0",
+    "title": "Live streaming, step 1",
+    "date": "November 2026",
+    "tagline": "The scalable data layer for decentralized browser apps",
+    "highlights": (
+        "Design for P2P live video to 10M viewers",
+        "New API for public and private streams",
+        "Examples index for the demo apps",
+    ),
+    "packages": (),
+    "install": "npm install dignity.js@1.2.0",
+}
+
+
+def run_bounds_check(logo_path: Path = DEFAULT_LOGO) -> None:
+    layout = _canvas_layout(V120_CHECK["width"], V120_CHECK["height"])
+    canvas = Image.new("RGBA", (layout.width, layout.height), BG + (255,))
+    draw = ImageDraw.Draw(canvas)
+
+    inner_top = layout.inner_top
+    inner_bottom = layout.inner_bottom
+    inner_h = layout.inner_h
+
+    provisional_text_x = layout.frame[0] + layout.inset + int(inner_h * 0.44) + layout.text_logo_gap
+    text_right = layout.frame[2] - layout.inset
+    provisional_max_w = text_right - provisional_text_x
+
+    _, block, start_y = _pick_font_scale(
+        draw,
+        layout,
+        text_x=provisional_text_x,
+        max_text_w=provisional_max_w,
+        version=V120_CHECK["version"],
+        title=V120_CHECK["title"],
+        date=V120_CHECK["date"],
+        highlights=list(V120_CHECK["highlights"]),
+        packages=list(V120_CHECK["packages"]),
+        install_line=V120_CHECK["install"],
+    )
+
+    block_cy = inner_top + inner_h // 2
+    logo, logo_x, logo_y, max_text_w = _layout_logo(
+        layout, logo_path, inner_top, inner_bottom, block_cy
+    )
+    text_x = logo_x + logo.width + layout.text_logo_gap
+
+    _, block, start_y = _pick_font_scale(
+        draw,
+        layout,
         text_x=text_x,
         max_text_w=max_text_w,
-        version=version,
-        title=title,
-        date=date,
-        highlights=highlights,
-        packages=packages,
-        install_line=install_line,
-        fonts=fonts,
+        version=V120_CHECK["version"],
+        title=V120_CHECK["title"],
+        date=V120_CHECK["date"],
+        highlights=list(V120_CHECK["highlights"]),
+        packages=list(V120_CHECK["packages"]),
+        install_line=V120_CHECK["install"],
     )
-    return fonts, block
+
+    tagline_runs, _ = _pick_tagline_layout(
+        draw,
+        V120_CHECK["tagline"],
+        logo_x,
+        logo_y,
+        logo.width,
+        logo.height,
+        inner_top,
+        inner_bottom,
+    )
+    assert_banner_within_card(draw, layout, block=block, start_y=start_y, tagline_runs=tagline_runs)
 
 
 def render_banner(
@@ -367,17 +664,17 @@ def render_banner(
         width=layout.frame_outline_w,
     )
 
-    inner_top = layout.frame[1] + layout.frame_outline_w + layout.inset
-    inner_bottom = layout.frame[3] - layout.frame_outline_w - layout.inset
-    inner_h = inner_bottom - inner_top
+    inner_top = layout.inner_top
+    inner_bottom = layout.inner_bottom
+    inner_h = layout.inner_h
 
     provisional_text_x = layout.frame[0] + layout.inset + int(inner_h * 0.44) + layout.text_logo_gap
     text_right = layout.frame[2] - layout.inset
     provisional_max_w = text_right - provisional_text_x
 
-    _, block = _pick_font_scale(
+    _, block, _ = _pick_font_scale(
         draw,
-        inner_h,
+        layout,
         text_x=provisional_text_x,
         max_text_w=provisional_max_w,
         version=version,
@@ -389,16 +686,15 @@ def render_banner(
     )
 
     block_cy = inner_top + inner_h // 2
-    start_y = inner_top + (inner_h - block.height) // 2
 
     logo, logo_x, logo_y, max_text_w = _layout_logo(
         layout, logo_path, inner_top, inner_bottom, block_cy
     )
     text_x = logo_x + logo.width + layout.text_logo_gap
 
-    _, block = _pick_font_scale(
+    _, block, start_y = _pick_font_scale(
         draw,
-        inner_h,
+        layout,
         text_x=text_x,
         max_text_w=max_text_w,
         version=version,
@@ -408,26 +704,17 @@ def render_banner(
         packages=packages,
         install_line=install_line,
     )
-    start_y = inner_top + (inner_h - block.height) // 2
 
-    tag_lines: list[str] = []
-    tag_font = _load_font(TAGLINE_SIZE)
-    tag_line_h = _line_height(draw, tag_font)
-    tag_block_h = 0
-    if tagline:
-        tag_lines = _wrap_on_spaces(draw, tagline, tag_font, logo.width)
-        tag_block_h = TAGLINE_GAP + len(tag_lines) * tag_line_h + (len(tag_lines) - 1) * TAGLINE_LINE_GAP
-        group_h = logo.height + tag_block_h
-        logo_y = max(inner_top, inner_top + (inner_h - group_h) // 2)
+    tagline_runs, logo_y = _pick_tagline_layout(
+        draw, tagline, logo_x, logo_y, logo.width, logo.height, inner_top, inner_bottom
+    )
+
+    assert_banner_within_card(draw, layout, block=block, start_y=start_y, tagline_runs=tagline_runs)
 
     canvas.paste(logo, (logo_x, logo_y), logo)
 
-    ty = logo_y + logo.height + TAGLINE_GAP
-    for line in tag_lines:
-        lw = _text_width(draw, line, tag_font)
-        top = draw.textbbox((0, 0), line, font=tag_font)[1]
-        draw.text((logo_x + (logo.width - lw) // 2, ty - top), line, font=tag_font, fill=MUTED)
-        ty += tag_line_h + TAGLINE_LINE_GAP
+    for run in tagline_runs:
+        draw.text((run.x, run.y), run.text, font=run.font, fill=MUTED)
 
     for bullet in block.bullets:
         draw.rounded_rectangle(
@@ -458,7 +745,7 @@ def _parse_size(value: str) -> tuple[int, int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--logo", type=Path, default=DEFAULT_LOGO)
     parser.add_argument("--width", type=int, default=DEFAULT_WIDTH)
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
@@ -468,7 +755,7 @@ def main() -> None:
         default=None,
         help='Canvas size as "1584x792" (overrides --width/--height)',
     )
-    parser.add_argument("--version", required=True, help='e.g. "1.1.4" or "v1.1.4"')
+    parser.add_argument("--version", default="", help='e.g. "1.1.4" or "v1.1.4"')
     parser.add_argument("--title", default="")
     parser.add_argument("--date", default="")
     parser.add_argument(
@@ -487,12 +774,28 @@ def main() -> None:
     )
     parser.add_argument("--install", default="", help="Install command line")
     parser.add_argument("--tagline", default="", help="Short line under the logo saying what dignity.js is")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Verify the v1.2.0 highlight set fits within the card (no PNG written)",
+    )
     args = parser.parse_args()
+
+    if args.check:
+        run_bounds_check(logo_path=args.logo)
+        print("Banner bounds check passed (v1.2.0 highlights).")
+        return
+
+    if args.output is None:
+        parser.error("--output is required unless --check is set")
 
     width = args.width
     height = args.height
     if args.size:
         width, height = args.size
+
+    if not args.version:
+        parser.error("--version is required unless --check is set")
 
     render_banner(
         output=args.output,
@@ -510,4 +813,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except HighlightsTooLongError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(1)
