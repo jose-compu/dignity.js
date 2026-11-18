@@ -128,6 +128,15 @@ const {
   normalizeFunctionSource,
   collectReflectiveFingerprints
 } = require('./security/reflective-logic');
+const {
+  STREAM_ACCESS_MODES,
+  STREAMING_API_EXPERIMENTAL,
+  normalizePrivateRecipients,
+  validateStreamAccessConfig,
+  StreamSession,
+  createStreamSession,
+  canJoinStream
+} = require('./streaming');
 
 module.exports = {
   DignityP2P,
@@ -216,5 +225,12 @@ module.exports = {
   buildPublisherVerificationPresenceMetadata,
   hashReflectiveLogic,
   normalizeFunctionSource,
-  collectReflectiveFingerprints
+  collectReflectiveFingerprints,
+  STREAM_ACCESS_MODES,
+  STREAMING_API_EXPERIMENTAL,
+  normalizePrivateRecipients,
+  validateStreamAccessConfig,
+  StreamSession,
+  createStreamSession,
+  canJoinStream
 };

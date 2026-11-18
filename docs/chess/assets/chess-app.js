@@ -37194,6 +37194,191 @@ var require_error_panel = __commonJS({
   }
 });
 
+// src/streaming/access-modes.js
+var require_access_modes = __commonJS({
+  "src/streaming/access-modes.js"(exports, module) {
+    var STREAM_ACCESS_MODES = Object.freeze({
+      PRIVATE_SINGLE: "private-single",
+      PRIVATE_LIST: "private-list",
+      PUBLIC: "public",
+      COMBINED: "combined"
+    });
+    var KNOWN_MODES = new Set(Object.values(STREAM_ACCESS_MODES));
+    function normalizePrivateRecipients(recipients) {
+      if (recipients == null) {
+        return [];
+      }
+      if (!Array.isArray(recipients)) {
+        throw new TypeError("privateRecipients must be an array of identity ids");
+      }
+      const out = [];
+      const seen = /* @__PURE__ */ new Set();
+      for (const id of recipients) {
+        if (typeof id !== "string" || id.trim() === "") {
+          throw new TypeError("each private recipient must be a non-empty string identity id");
+        }
+        const trimmed = id.trim();
+        if (!seen.has(trimmed)) {
+          seen.add(trimmed);
+          out.push(trimmed);
+        }
+      }
+      return out;
+    }
+    function validateStreamAccessConfig(mode, config = {}) {
+      if (!KNOWN_MODES.has(mode)) {
+        throw new Error(`Unknown stream access mode: ${mode}`);
+      }
+      const recipients = normalizePrivateRecipients(config.privateRecipients);
+      switch (mode) {
+        case STREAM_ACCESS_MODES.PRIVATE_SINGLE:
+          if (recipients.length !== 1) {
+            throw new Error("private-single access mode requires exactly one private recipient");
+          }
+          break;
+        case STREAM_ACCESS_MODES.PRIVATE_LIST:
+          if (recipients.length < 1) {
+            throw new Error("private-list access mode requires one or more private recipients");
+          }
+          break;
+        case STREAM_ACCESS_MODES.PUBLIC:
+          if (recipients.length !== 0) {
+            throw new Error("public access mode must not include private recipients");
+          }
+          break;
+        case STREAM_ACCESS_MODES.COMBINED:
+          if (recipients.length < 1) {
+            throw new Error("combined access mode requires at least one private recipient alongside the public feed");
+          }
+          break;
+        default:
+          break;
+      }
+      return recipients;
+    }
+    module.exports = {
+      STREAM_ACCESS_MODES,
+      normalizePrivateRecipients,
+      validateStreamAccessConfig
+    };
+  }
+});
+
+// src/streaming/stream-session.js
+var require_stream_session = __commonJS({
+  "src/streaming/stream-session.js"(exports, module) {
+    var {
+      STREAM_ACCESS_MODES,
+      normalizePrivateRecipients,
+      validateStreamAccessConfig
+    } = require_access_modes();
+    var StreamSession = class {
+      /**
+       * @param {StreamSessionOptions} options
+       */
+      constructor(options) {
+        if (!options || typeof options !== "object") {
+          throw new TypeError("StreamSession options must be an object");
+        }
+        const { sessionId, broadcasterId, mode, privateRecipients, metadata } = options;
+        if (typeof sessionId !== "string" || sessionId.trim() === "") {
+          throw new TypeError("sessionId must be a non-empty string");
+        }
+        if (typeof broadcasterId !== "string" || broadcasterId.trim() === "") {
+          throw new TypeError("broadcasterId must be a non-empty string");
+        }
+        this.sessionId = sessionId.trim();
+        this.broadcasterId = broadcasterId.trim();
+        this.mode = mode;
+        this.metadata = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? { ...metadata } : {};
+        const validatedRecipients = validateStreamAccessConfig(mode, { privateRecipients });
+        this.privateRecipients = Object.freeze([...validatedRecipients]);
+        this._privateSet = new Set(this.privateRecipients);
+      }
+      /**
+       * Whether an identity may attach to this session (signaling membership, not decrypt capability).
+       * Private-track decryption is enforced separately via session keys in the full design.
+       * @param {string} identityId
+       * @returns {boolean}
+       */
+      canJoin(identityId) {
+        if (typeof identityId !== "string" || identityId.trim() === "") {
+          return false;
+        }
+        const id = identityId.trim();
+        if (id === this.broadcasterId) {
+          return true;
+        }
+        switch (this.mode) {
+          case STREAM_ACCESS_MODES.PUBLIC:
+          case STREAM_ACCESS_MODES.COMBINED:
+            return true;
+          case STREAM_ACCESS_MODES.PRIVATE_SINGLE:
+          case STREAM_ACCESS_MODES.PRIVATE_LIST:
+            return this._privateSet.has(id);
+          default:
+            return false;
+        }
+      }
+      /**
+       * Whether an identity is on the private allowlist (decrypt-capable in private/combined modes).
+       * @param {string} identityId
+       * @returns {boolean}
+       */
+      canDecryptPrivateTracks(identityId) {
+        if (typeof identityId !== "string" || identityId.trim() === "") {
+          return false;
+        }
+        const id = identityId.trim();
+        if (id === this.broadcasterId) {
+          return true;
+        }
+        if (this.mode === STREAM_ACCESS_MODES.PRIVATE_SINGLE || this.mode === STREAM_ACCESS_MODES.PRIVATE_LIST || this.mode === STREAM_ACCESS_MODES.COMBINED) {
+          return this._privateSet.has(id);
+        }
+        return false;
+      }
+      toJSON() {
+        return {
+          sessionId: this.sessionId,
+          broadcasterId: this.broadcasterId,
+          mode: this.mode,
+          privateRecipients: [...this.privateRecipients],
+          metadata: { ...this.metadata },
+          experimental: true
+        };
+      }
+    };
+    function createStreamSession(options) {
+      return new StreamSession(options);
+    }
+    function canJoinStream(session, identityId) {
+      if (!(session instanceof StreamSession)) {
+        throw new TypeError("session must be a StreamSession instance");
+      }
+      return session.canJoin(identityId);
+    }
+    module.exports = {
+      StreamSession,
+      createStreamSession,
+      canJoinStream
+    };
+  }
+});
+
+// src/streaming/index.js
+var require_streaming = __commonJS({
+  "src/streaming/index.js"(exports, module) {
+    var accessModes = require_access_modes();
+    var streamSession = require_stream_session();
+    module.exports = {
+      ...accessModes,
+      ...streamSession,
+      STREAMING_API_EXPERIMENTAL: true
+    };
+  }
+});
+
 // src/index.js
 var require_src = __commonJS({
   "src/index.js"(exports, module) {
@@ -37317,6 +37502,15 @@ var require_src = __commonJS({
       normalizeFunctionSource,
       collectReflectiveFingerprints
     } = require_reflective_logic();
+    var {
+      STREAM_ACCESS_MODES,
+      STREAMING_API_EXPERIMENTAL,
+      normalizePrivateRecipients,
+      validateStreamAccessConfig,
+      StreamSession,
+      createStreamSession,
+      canJoinStream
+    } = require_streaming();
     module.exports = {
       DignityP2P: DignityP2P2,
       createDefaultSignalingPool,
@@ -37404,7 +37598,14 @@ var require_src = __commonJS({
       buildPublisherVerificationPresenceMetadata,
       hashReflectiveLogic,
       normalizeFunctionSource,
-      collectReflectiveFingerprints
+      collectReflectiveFingerprints,
+      STREAM_ACCESS_MODES,
+      STREAMING_API_EXPERIMENTAL,
+      normalizePrivateRecipients,
+      validateStreamAccessConfig,
+      StreamSession,
+      createStreamSession,
+      canJoinStream
     };
   }
 });
@@ -38667,7 +38868,7 @@ function Lobby({
       emptyText: "No finished games yet.",
       onOpen: handleOpenGame
     }
-  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.1.6 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
+  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.2.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
       id: usernameInputId,
