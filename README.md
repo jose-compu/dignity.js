@@ -65,6 +65,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Auto `connectToPeers` on create/update/delete replication (owner + collaborators)
 - Optional IndexedDB persistence for browser reload survival
 - Optional React hooks via `dignity.js/react`
+- **Live P2P AV (research)** — live video and audio streaming over P2P; browser or Node.js origin, low latency, 720p/1080p, congestion-adaptive ABR; design target 10M concurrent viewers ([#152](https://github.com/jose-compu/dignity.js/issues/152); not shipped yet)
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
 - **v1.1.6** — Troubleshooting for an unreachable signaling socket, 48-word identity restore, and a hard refresh after local demo rebuilds (#133)
