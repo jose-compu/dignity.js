@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="dignity.js v1.1.6 — The scalable data layer of the decentralized browser application ecosystem." />
+    <meta name="description" content="dignity.js v1.2.0 — The scalable data layer of the decentralized browser application ecosystem." />
     <title>dignity.js · Documentation</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.ico" sizes="32x32" />
@@ -16,7 +16,7 @@
       <a class="site-header__brand" href="#overview">
         <img src="./assets/dignity-logo.svg" alt="" width="344" height="80" />
         <!-- <span>dignity.js</span> -->
-        <span class="site-header__version">v1.1.6</span>
+        <span class="site-header__version">v1.2.0</span>
       </a>
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
@@ -803,8 +803,9 @@ replica.verifyChain();  // hash-chain consistency</code></pre>
             </div>
 
             <h3>Roadmap</h3>
-            <p><strong>Immediate (research)</strong> — Live P2P video and audio streaming: browser or Node.js origin, low latency, 720p/1080p, congestion-adaptive ABR; design target 10M concurrent viewers (<a href="https://github.com/jose-compu/dignity.js/issues/152" target="_blank" rel="noopener noreferrer">#152</a>). Not shipped yet.</p>
-            <p><strong>v1.1.6 (current)</strong> — Troubleshooting docs for unreachable signaling, 48-word identity restore, and hard refresh after local demo rebuilds (#133).</p>
+            <p><strong>Live P2P AV (in progress)</strong> — <a href="./live-streaming-design.md">live-streaming-design.md</a> documents 10M fan-out topology, encryption/access modes, and latency budgets; experimental <code>createStreamSession</code> ships in v1.2.0 (<a href="https://github.com/jose-compu/dignity.js/issues/152" target="_blank" rel="noopener noreferrer">#152</a>). Media transport not implemented yet.</p>
+            <p><strong>v1.2.0 (current)</strong> — Live streaming research doc, experimental access-mode API, <code>examples/README.md</code> index (#132).</p>
+            <p><strong>v1.1.6</strong> — Troubleshooting docs for unreachable signaling, 48-word identity restore, and hard refresh after local demo rebuilds (#133).</p>
             <p><strong>v1.1.5</strong> — npm releases publish from GitHub Actions through Trusted Publishing (OIDC) with provenance; v1.1.4 was not published to npm, so v1.1.5 is the first release from CI.</p>
             <p><strong>v1.1.4</strong> — npm trusted publishing from GitHub Actions on <code>v*</code> tags; teaching comments on the TypeScript consumer example (#134).</p>
             <p><strong>v1.1.3</strong> — Default signaling pool leads with <code>wss://dechess-org-peerjs.vercel.app/peerjs?key=peerjs</code>; <code>peerjs.92k.de</code> removed from defaults (#140).</p>
@@ -1237,6 +1238,7 @@ const pool = createDefaultSignalingPool({
               Production guide: <a href="./production-runbook.md">production-runbook.md</a> (#95).
               API stability: <a href="./api-stability.md">api-stability.md</a> (#94).
               Threat model: <a href="./threat-model.md">threat-model.md</a> (#96).
+              Live streaming design: <a href="./live-streaming-design.md">live-streaming-design.md</a> (#152).
             </p>
             <div class="table-wrap">
               <table>
@@ -1432,6 +1434,10 @@ const pool = createDefaultSignalingPool({
                     <td>STRIDE threat model and residual risks (#96)</td>
                   </tr>
                   <tr>
+                    <td><a href="./live-streaming-design.md"><code>docs/live-streaming-design.md</code></a></td>
+                    <td>Live P2P A/V topology, access modes, and scale assumptions (#152)</td>
+                  </tr>
+                  <tr>
                     <td><a href="./production-runbook.md"><code>docs/production-runbook.md</code></a></td>
                     <td>Production deployment checklist (#95)</td>
                   </tr>
@@ -1479,7 +1485,7 @@ npm run example:chess</code></pre>
 
           <footer class="site-footer">
             <p>
-              dignity.js v1.1.6 ·
+              dignity.js v1.2.0 ·
               <a href="https://github.com/jose-compu/dignity.js/blob/main/LICENSE">Apache 2.0</a> ·
               <a href="https://github.com/jose-compu/dignity.js">GitHub</a> ·
               <a href="https://www.npmjs.com/package/dignity.js">npm</a>

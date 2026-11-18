@@ -371,6 +371,47 @@ declare module 'dignity.js' {
   export function normalizeFunctionSource(source: string, options?: JsonObject): string;
   export function collectReflectiveFingerprints(input: unknown, options?: JsonObject): { canonical: unknown; fingerprints: Map<string, string> };
 
+  /** @experimental Live streaming access modes (#152); no media transport yet */
+  export type StreamAccessMode =
+    | 'private-single'
+    | 'private-list'
+    | 'public'
+    | 'combined';
+
+  export const STREAM_ACCESS_MODES: Readonly<{
+    PRIVATE_SINGLE: 'private-single';
+    PRIVATE_LIST: 'private-list';
+    PUBLIC: 'public';
+    COMBINED: 'combined';
+  }>;
+
+  export const STREAMING_API_EXPERIMENTAL: true;
+
+  export interface StreamSessionOptions {
+    sessionId: string;
+    broadcasterId: string;
+    mode: StreamAccessMode;
+    privateRecipients?: string[];
+    metadata?: JsonObject;
+  }
+
+  export class StreamSession {
+    constructor(options: StreamSessionOptions);
+    readonly sessionId: string;
+    readonly broadcasterId: string;
+    readonly mode: StreamAccessMode;
+    readonly privateRecipients: readonly string[];
+    readonly metadata: JsonObject;
+    canJoin(identityId: string): boolean;
+    canDecryptPrivateTracks(identityId: string): boolean;
+    toJSON(): JsonObject;
+  }
+
+  export function normalizePrivateRecipients(recipients: unknown): string[];
+  export function validateStreamAccessConfig(mode: StreamAccessMode, config?: { privateRecipients?: string[] }): string[];
+  export function createStreamSession(options: StreamSessionOptions): StreamSession;
+  export function canJoinStream(session: StreamSession, identityId: string): boolean;
+
   const dignity: {
     DignityP2P: typeof DignityP2P;
     [key: string]: unknown;

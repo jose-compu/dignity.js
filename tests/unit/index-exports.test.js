@@ -23,6 +23,9 @@ describe('public API exports', () => {
     expect(api.DOMAIN_EVENT_SCHEMA_VERSION).toBe(1);
     expect(api.DEFAULT_LIVE_CAP).toBe(5000);
     expect(api.DEFAULT_PEER_GROUP_OPTIONS.maxHops).toBe(64);
+    expect(api.STREAMING_API_EXPERIMENTAL).toBe(true);
+    expect(api.createStreamSession).toBeDefined();
+    expect(api.STREAM_ACCESS_MODES.PUBLIC).toBe('public');
   });
 
   test('package.json exposes TypeScript definitions', () => {
