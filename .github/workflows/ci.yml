@@ -24,6 +24,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Python banner dependencies
+        run: pip install Pillow
+
       - name: Run tests
         run: npm test
 
