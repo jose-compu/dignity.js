@@ -357,6 +357,48 @@ describe('PeerJSNetworkAdapter', () => {
     await adapter.stop();
   });
 
+  test('closes the signaling socket while idle and opens it again to dial', async () => {
+    const adapter = new PeerJSNetworkAdapter({
+      url: 'wss://peerjs.92k.de/peerjs?key=peerjs',
+      PeerImpl: MockPeer,
+      connectTimeoutMs: 1000,
+      idleReleaseMs: 30
+    });
+    await adapter.start('alice');
+    const peer = adapter.peer;
+    let reconnects = 0;
+    peer.disconnect = () => {
+      peer.disconnected = true;
+      if (peer.handlers.disconnected) {
+        peer.handlers.disconnected();
+      }
+    };
+    peer.reconnect = () => {
+      reconnects += 1;
+      peer.disconnected = false;
+      setTimeout(() => {
+        if (peer.handlers.open) {
+          peer.handlers.open(peer.id);
+        }
+      }, 0);
+    };
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(peer.disconnected).toBe(true);
+    expect(reconnects).toBe(0);
+
+    const bob = new PeerJSNetworkAdapter({
+      url: 'wss://peerjs.92k.de/peerjs?key=peerjs',
+      PeerImpl: MockPeer,
+      connectTimeoutMs: 1000,
+      idleReleaseMs: 60000
+    });
+    await bob.start('bob');
+    await adapter.connectToPeer('bob');
+    expect(reconnects).toBe(1);
+    await adapter.stop();
+    await bob.stop();
+  });
+
   test('reconnects the same peer after the signaling socket drops', async () => {
     const adapter = new PeerJSNetworkAdapter({
       url: 'wss://peerjs.92k.de/peerjs?key=peerjs',

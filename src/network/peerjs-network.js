@@ -41,7 +41,8 @@ class PeerJSNetworkAdapter {
     startAttempts = DEFAULT_START_ATTEMPTS,
     startRetryDelaysMs = DEFAULT_START_RETRY_DELAYS_MS,
     reconnectBaseDelayMs = 500,
-    reconnectMaxDelayMs = 15000
+    reconnectMaxDelayMs = 15000,
+    idleReleaseMs = 15000
   } = {}) {
     this.urls = urls || (url ? [url] : [...DEFAULT_CLOUDFLARE_SIGNALING_URLS]);
     this.url = this.urls[0];
@@ -53,6 +54,7 @@ class PeerJSNetworkAdapter {
     this.startRetryDelaysMs = startRetryDelaysMs;
     this.reconnectBaseDelayMs = reconnectBaseDelayMs;
     this.reconnectMaxDelayMs = reconnectMaxDelayMs;
+    this.idleReleaseMs = idleReleaseMs;
     this.nodeId = null;
     this.peer = null;
     this.connections = new Map();
@@ -63,6 +65,9 @@ class PeerJSNetworkAdapter {
     this._reconnectAttempt = 0;
     this._reconnectTimer = null;
     this._reconnectInflight = false;
+    this._parked = false;
+    this._holdUntil = 0;
+    this._parkTimer = null;
   }
 
   async start(nodeId) {
@@ -122,6 +127,7 @@ class PeerJSNetworkAdapter {
         path: server.path,
         secure: server.secure,
         key: server.key,
+        pingInterval: 60000,
         ...(this.peerOptions && typeof this.peerOptions === 'object' ? this.peerOptions : {})
       };
 
@@ -165,6 +171,7 @@ class PeerJSNetworkAdapter {
         }
         peer.on('error', onRuntimeError);
         this.peer = peer;
+        this._touchSignaling();
         resolve();
       });
 
@@ -174,7 +181,7 @@ class PeerJSNetworkAdapter {
 
       peer.on('error', onStartupError);
       peer.on('disconnected', () => {
-        if (!opened || this._stopped || this.peer !== peer) {
+        if (!opened || this._stopped || this.peer !== peer || this._parked) {
           return;
         }
         this._scheduleReconnect();
@@ -186,6 +193,62 @@ class PeerJSNetworkAdapter {
     if (this._reconnectTimer) {
       clearTimeout(this._reconnectTimer);
       this._reconnectTimer = null;
+    }
+  }
+
+  _clearParkTimer() {
+    if (this._parkTimer) {
+      clearTimeout(this._parkTimer);
+      this._parkTimer = null;
+    }
+  }
+
+  _touchSignaling(holdMs = this.idleReleaseMs) {
+    this._parked = false;
+    this._holdUntil = Date.now() + holdMs;
+    this._armParkTimer();
+  }
+
+  _armParkTimer() {
+    this._clearParkTimer();
+    const delay = Math.max(0, this._holdUntil - Date.now());
+    this._parkTimer = setTimeout(() => {
+      this._parkTimer = null;
+      this._parkIfIdle();
+    }, delay);
+    this._parkTimer.unref?.();
+  }
+
+  _parkIfIdle() {
+    if (this._stopped) {
+      return;
+    }
+    if (this.pendingConnections.size > 0) {
+      this._holdUntil = Date.now() + this.idleReleaseMs;
+      this._armParkTimer();
+      return;
+    }
+    if (Date.now() < this._holdUntil) {
+      this._armParkTimer();
+      return;
+    }
+    const peer = this.peer;
+    if (!peer || peer.destroyed || peer.disconnected || typeof peer.disconnect !== 'function') {
+      return;
+    }
+    this._parked = true;
+    try {
+      peer.disconnect();
+    } catch (error) {
+      // The socket is already gone.
+    }
+  }
+
+  async _ensureSignaling() {
+    this._touchSignaling();
+    const peer = this.peer;
+    if (peer && !peer.destroyed && peer.disconnected) {
+      await this._reconnectSignaling(this._session);
     }
   }
 
@@ -304,6 +367,8 @@ class PeerJSNetworkAdapter {
       throw new Error('PeerJS network adapter has not been started');
     }
 
+    await this._ensureSignaling();
+
     const pending = new Promise((resolve, reject) => {
       const connection = this.peer.connect(remotePeerId, {
         reliable: true,
@@ -411,6 +476,7 @@ class PeerJSNetworkAdapter {
     this._stopped = true;
     this._session += 1;
     this._clearReconnectTimer();
+    this._clearParkTimer();
     for (const connection of this.connections.values()) {
       if (typeof connection.close === 'function') {
         connection.close();

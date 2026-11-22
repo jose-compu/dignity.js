@@ -68,6 +68,7 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - **Live P2P AV (v1.3.0 prototype)** — [`docs/live-streaming-design.md`](./docs/live-streaming-design.md) plus signed public-mode chunk helpers (`createSignedMediaChunk`, `createPublicStreamBroadcaster`, relay) over an injectable signaling bus ([#152](https://github.com/jose-compu/dignity.js/issues/152); **no WebRTC camera path yet**)
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **v1.3.1** — PeerJS signaling socket closes while the peer is idle and opens again only to dial
 - **v1.3.0** — Public live stream chunk path (signed chunks, join handshake, one-hop relay), live-stream demo page, runbook streaming note (#152, #95)
 - **v1.2.0** — Live streaming design doc, experimental stream access-mode API, examples index (#132, thanks [@ShahbazCoder1](https://github.com/ShahbazCoder1) #135)
 - **v1.1.6** — Troubleshooting for an unreachable signaling socket, 48-word identity restore, and a hard refresh after local demo rebuilds (#133)
