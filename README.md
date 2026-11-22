@@ -65,10 +65,10 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Auto `connectToPeers` on create/update/delete replication (owner + collaborators)
 - Optional IndexedDB persistence for browser reload survival
 - Optional React hooks via `dignity.js/react`
-- **Live P2P AV streaming (v1.4.0)** — WebRTC signaling + data channel transport for public browser-origin streams (`WebRTCStreamSignalingBus`, `WebRTCDataChannelTransport`), completing milestone 2 of [#152](https://github.com/jose-compu/dignity.js/issues/152). Camera capture examples in playground.
+- **Live P2P AV streaming (v1.4.1)** — WebRTC signaling + data channel transport for public browser-origin streams (`WebRTCStreamSignalingBus`, `WebRTCDataChannelTransport`), completing milestone 2 of [#152](https://github.com/jose-compu/dignity.js/issues/152). Camera capture examples in playground.
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
-- **v1.4.0** — WebRTC signaling + data channel transport for live streaming, playground with stream examples, milestone 2 complete (#152)
+- **v1.4.1** — WebRTC signaling + data channel transport for live streaming, playground with stream examples, milestone 2 complete (#152)
 - **v1.3.2** — Browser console diagnostics stay off unless `localStorage.dignityDebug` is `1`
 - **v1.3.1** — PeerJS signaling socket closes while the peer is idle and opens again only to dial
 - **v1.3.0** — Public live stream chunk path (signed chunks, join handshake, one-hop relay), live-stream demo page, runbook streaming note (#152, #95)

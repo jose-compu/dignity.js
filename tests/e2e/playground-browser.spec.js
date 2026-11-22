@@ -27,6 +27,10 @@ const DIGNITY_APP_DEMOS = [
   {
     hash: 'app-sandbox-host',
     expectLine: 'sandbox: allow-scripts'
+  },
+  {
+    hash: 'app-error-panel',
+    expectLine: 'error panel inserted: true'
   }
 ];
 
