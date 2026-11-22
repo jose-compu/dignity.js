@@ -1112,12 +1112,12 @@ log('public key:', bundle.signingPublicKey.slice(0, 16) + '...');
 log('encryption key:', bundle.encryptionPublicKey.slice(0, 16) + '...');
 
 // Export as 48-word mnemonic
-const mnemonic = exportIdentityMnemonic(keyPair);
+const mnemonic = await exportIdentityMnemonic(keyPair);
 log('word count:', mnemonic.split(' ').length);
 log('first 3 words:', mnemonic.split(' ').slice(0, 3).join(' '));
 
 // Restore from mnemonic
-const restored = importIdentityMnemonic(mnemonic);
+const restored = await importIdentityMnemonic(mnemonic);
 const restoredBundle = keyPairToPublicBundle(restored);
 
 log('restore matches?', restoredBundle.signingPublicKey === bundle.signingPublicKey);`
@@ -1126,56 +1126,46 @@ log('restore matches?', restoredBundle.signingPublicKey === bundle.signingPublic
     id: 'signed-data-verification',
     group: 'v140',
     title: 'Signed data — sign and verify',
-    description: 'Sign arbitrary data with Ed25519 identity; verify signatures without network.',
-    code: `const { deriveKeyPairFromCredentials, keyPairToPublicBundle } = dignity;
+    description: 'Sign arbitrary data with Ed25519 identity; use signDomainEvent for signing and verifyDomainEvent for verification.',
+    code: `const { deriveKeyPairFromCredentials, keyPairToPublicBundle, signDomainEvent, verifyDomainEvent } = dignity;
 
+// Create identity
 const alice = await deriveKeyPairFromCredentials({ username: 'alice', password: 'pass' });
-const aliceBundle = keyPairToPublicBundle(alice);
+const bundle = keyPairToPublicBundle(alice);
 
-// Sign data
-const data = { action: 'transfer', amount: 100, to: 'bob' };
-const dataBytes = new TextEncoder().encode(JSON.stringify(data));
+// Create unsigned event
+const event = {
+  schemaVersion: '1.0.0',
+  eventId: 'evt-1',
+  groupId: 'transfer-group',
+  publisherId: 'alice',
+  kind: 'update',
+  collectionName: 'transfers',
+  id: 'transfer-123',
+  payload: { action: 'transfer', amount: 100, to: 'bob' },
+  timestamp: Date.now(),
+  baseVersion: null,
+  prevHash: null,
+  newOwnerId: null,
+  verificationHash: null,
+  verificationVersion: null,
+  eventHash: null,
+  signature: null
+};
 
-const signature = await crypto.subtle.sign(
-  { name: 'Ed25519' },
-  alice.signing.privateKey,
-  dataBytes
-);
+// Sign event
+const signed = signDomainEvent(event, alice.signing.secretKey);
+log('signature included:', !!signed.signature);
+log('event hash:', signed.eventHash.slice(0, 20) + '...');
 
-log('signature length:', signature.byteLength);
-
-// Verify signature
-const signatureArray = new Uint8Array(signature);
-const publicKeyBytes = Uint8Array.from(atob(aliceBundle.signingPublicKey), c => c.charCodeAt(0));
-
-// Import public key for verification
-const publicKey = await crypto.subtle.importKey(
-  'raw',
-  publicKeyBytes,
-  { name: 'Ed25519' },
-  false,
-  ['verify']
-);
-
-const valid = await crypto.subtle.verify(
-  { name: 'Ed25519' },
-  publicKey,
-  signatureArray,
-  dataBytes
-);
-
+// Verify signature with correct public key
+const valid = verifyDomainEvent(signed, bundle.signingPublicKey);
 log('signature valid:', valid);
 
 // Tamper with data
-const tamperedBytes = new TextEncoder().encode(JSON.stringify({ ...data, amount: 999 }));
-const tampered = await crypto.subtle.verify(
-  { name: 'Ed25519' },
-  publicKey,
-  signatureArray,
-  tamperedBytes
-);
-
-log('tampered signature valid:', tampered);`
+const tampered = { ...signed, payload: { ...signed.payload, amount: 999 } };
+const tamperedValid = verifyDomainEvent(tampered, bundle.signingPublicKey);
+log('tampered signature valid:', tamperedValid);`
   },
   {
     id: 'data-layer-basics',
@@ -1317,58 +1307,65 @@ broadcaster.close();`
     id: 'stream-access-modes',
     group: 'v140',
     title: 'Stream access — validation',
-    description: 'v1.4.0 (#152): validateStreamAccessConfig for public, private-recipient, fixed-list, and combined modes.',
-    code: `const { validateStreamAccessConfig, canJoinStream } = dignity;
+    description: 'v1.4.0 (#152): validateStreamAccessConfig for public, private-single, private-list, and combined modes.',
+    code: `const { STREAM_ACCESS_MODES, validateStreamAccessConfig, createStreamSession, canJoinStream, deriveKeyPairFromCredentials, keyPairToPublicBundle } = dignity;
+
+// Generate identity keys for examples
+const alice = await deriveKeyPairFromCredentials({ username: 'alice', password: 'pass' });
+const bob = await deriveKeyPairFromCredentials({ username: 'bob', password: 'pass' });
+const carol = await deriveKeyPairFromCredentials({ username: 'carol', password: 'pass' });
+
+const aliceId = keyPairToPublicBundle(alice).signingPublicKey;
+const bobId = keyPairToPublicBundle(bob).signingPublicKey;
+const carolId = keyPairToPublicBundle(carol).signingPublicKey;
 
 // Public mode
-const publicConfig = { mode: 'public' };
-const publicValid = validateStreamAccessConfig(publicConfig);
-log('public config valid:', publicValid.ok);
+const publicRecipients = validateStreamAccessConfig(STREAM_ACCESS_MODES.PUBLIC, {});
+log('public recipients:', publicRecipients.length);
 
 // Private single recipient
-const recipientConfig = {
-  mode: 'private-recipient',
-  recipientPublicKey: 'ed25519:AAAA...'
-};
-const recipientValid = validateStreamAccessConfig(recipientConfig);
-log('recipient config valid:', recipientValid.ok);
+const singleRecipients = validateStreamAccessConfig(STREAM_ACCESS_MODES.PRIVATE_SINGLE, {
+  privateRecipients: [aliceId]
+});
+log('single recipient count:', singleRecipients.length);
 
-// Fixed list
-const listConfig = {
-  mode: 'fixed-list',
-  allowedPublicKeys: [
-    'ed25519:BBB...',
-    'ed25519:CCC...'
-  ]
-};
-const listValid = validateStreamAccessConfig(listConfig);
-log('list config valid:', listValid.ok);
+// Private list (multiple recipients)
+const listRecipients = validateStreamAccessConfig(STREAM_ACCESS_MODES.PRIVATE_LIST, {
+  privateRecipients: [aliceId, bobId]
+});
+log('list recipients:', listRecipients.length);
 
 // Combined public + private
-const combinedConfig = {
-  mode: 'both',
-  publicMode: { mode: 'public' },
-  privateMode: {
-    mode: 'fixed-list',
-    allowedPublicKeys: ['ed25519:DDD...']
-  }
-};
-const combinedValid = validateStreamAccessConfig(combinedConfig);
-log('combined config valid:', combinedValid.ok);
+const combinedRecipients = validateStreamAccessConfig(STREAM_ACCESS_MODES.COMBINED, {
+  privateRecipients: [carolId]
+});
+log('combined recipients:', combinedRecipients.length);
 
-// Check if identity can join
-const viewerKey = 'ed25519:BBB...';
-const canJoin = canJoinStream(listConfig, viewerKey);
-log('viewer can join fixed list:', canJoin);
+// Create sessions and check access
+const publicSession = createStreamSession({
+  sessionId: 'pub-stream',
+  broadcasterId: 'broadcaster-1',
+  mode: STREAM_ACCESS_MODES.PUBLIC
+});
 
-const unknownKey = 'ed25519:ZZZ...';
-const cannotJoin = canJoinStream(listConfig, unknownKey);
-log('unknown can join:', cannotJoin);
+const privateSession = createStreamSession({
+  sessionId: 'priv-stream',
+  broadcasterId: 'broadcaster-2',
+  mode: STREAM_ACCESS_MODES.PRIVATE_LIST,
+  privateRecipients: [aliceId, bobId]
+});
 
-// Invalid config
-const invalid = validateStreamAccessConfig({ mode: 'invalid-mode' });
-log('invalid mode caught:', !invalid.ok);
-log('error:', invalid.error);`
+log('alice can join public:', canJoinStream(publicSession, aliceId));
+log('alice can join private:', canJoinStream(privateSession, aliceId));
+log('carol can join private:', canJoinStream(privateSession, carolId));
+
+// Invalid mode throws
+try {
+  validateStreamAccessConfig('invalid-mode', {});
+  log('ERROR: should have thrown');
+} catch (err) {
+  log('invalid mode caught:', err.message.includes('Unknown stream access mode'));
+}`
   },
   {
     id: 'webrtc-signaling-bus',
