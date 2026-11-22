@@ -3,6 +3,8 @@
 Do not name a branch `cursor`, and do not put `cursor` in a branch name.
 Name the branch after the change.
 
+Conventions and roadmap release branch names: [`docs/git-branches.md`](docs/git-branches.md).
+
 # Authorship — no LLM / AI attribution
 
 Do **not** attribute commits, pull requests, tags, releases, issues, comments, or files to Cursor, Claude, Grok, ChatGPT, Copilot, Codex, Gemini, or any other LLM, AI assistant, or AI coding tool.

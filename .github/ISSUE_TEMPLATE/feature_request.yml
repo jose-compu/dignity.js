@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Describe the problem and proposed solution. Check the [roadmap issue](https://github.com/jose-compu/dignity.js/issues/87) for alignment with v1.0 goals.
+        Describe the problem and proposed solution. Check [docs/roadmap.md](https://github.com/jose-compu/dignity.js/blob/main/docs/roadmap.md) and [#152](https://github.com/jose-compu/dignity.js/issues/152) for streaming alignment.
   - type: textarea
     id: problem
     attributes:

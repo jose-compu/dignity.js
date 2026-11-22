@@ -65,10 +65,11 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Auto `connectToPeers` on create/update/delete replication (owner + collaborators)
 - Optional IndexedDB persistence for browser reload survival
 - Optional React hooks via `dignity.js/react`
-- **Live P2P AV streaming (v1.4.1)** — WebRTC signaling + data channel transport for public browser-origin streams (`WebRTCStreamSignalingBus`, `WebRTCDataChannelTransport`), completing milestone 2 of [#152](https://github.com/jose-compu/dignity.js/issues/152). Camera capture examples in playground.
+- **Live P2P AV streaming (experimental, v1.4.1)** — WebRTC signaling + data channel transport (`WebRTCStreamSignalingBus`, `WebRTCDataChannelTransport`). **Next usable ship target:** live **mono radio** pilot (**v1.5**); video deferred until overlay metrics — see [`docs/roadmap.md`](./docs/roadmap.md) and [#152](https://github.com/jose-compu/dignity.js/issues/152).
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
-- **v1.4.1** — WebRTC signaling + data channel transport for live streaming, playground with stream examples, milestone 2 complete (#152)
+- **Roadmap (post–v1.4)** — [`docs/roadmap.md`](./docs/roadmap.md): audio/radio P0, social layer, video evidence-gated (#87, #152)
+- **v1.4.1** — WebRTC signaling + data channel transport for live streaming, playground with stream examples (#152 transport slice)
 - **v1.3.2** — Browser console diagnostics stay off unless `localStorage.dignityDebug` is `1`
 - **v1.3.1** — PeerJS signaling socket closes while the peer is idle and opens again only to dial
 - **v1.3.0** — Public live stream chunk path (signed chunks, join handshake, one-hop relay), live-stream demo page, runbook streaming note (#152, #95)
@@ -836,7 +837,8 @@ Dignity App manifests may pin `dappVersion` + `logicHash` + `publisherId`. Store
 - **API reference:** [`docs/api-reference.md`](./docs/api-reference.md) (generated from `openapi-like.json`)
 - **API stability (v1.x):** [`docs/api-stability.md`](./docs/api-stability.md) (#94)
 - **Threat model (v1.1):** [`docs/threat-model.md`](./docs/threat-model.md) (#96, #130)
-- **Live streaming design (v1.3.0):** [`docs/live-streaming-design.md`](./docs/live-streaming-design.md) (#152); demo [`docs/live-stream-demo.html`](./docs/live-stream-demo.html)
+- **Product roadmap:** [`docs/roadmap.md`](./docs/roadmap.md) (#87); **git branches:** [`docs/git-branches.md`](./docs/git-branches.md)
+- **Live streaming design:** [`docs/live-streaming-design.md`](./docs/live-streaming-design.md) (#152); demo [`docs/live-stream-demo.html`](./docs/live-stream-demo.html)
 - **Browser compatibility:** [`docs/browser-compatibility.md`](./docs/browser-compatibility.md) (#91)
 - **Troubleshooting:** [README § Troubleshooting](#troubleshooting) — signaling, recovery phrase, hard refresh (#133)
 - **Production runbook:** [`docs/production-runbook.md`](./docs/production-runbook.md) (#95)

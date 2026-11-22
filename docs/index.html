@@ -806,8 +806,9 @@ replica.verifyChain();  // hash-chain consistency</code></pre>
             </div>
 
             <h3>Roadmap</h3>
-            <p><strong>Live P2P AV streaming</strong> — <a href="./live-streaming-design.md">live-streaming-design.md</a> documents topology and access modes; v1.4.1 adds WebRTC signaling and data channel transport for public browser-origin streams (<a href="./playground/index.html">playground</a>, <a href="./live-stream-demo.html">demo</a>, <a href="https://github.com/jose-compu/dignity.js/issues/152" target="_blank" rel="noopener noreferrer">#152</a> milestone 2 complete).</p>
-            <p><strong>v1.4.1 (current)</strong> — WebRTC streaming transport, playground examples; milestone 2 complete (#152).</p>
+            <p><strong>Product roadmap</strong> — <a href="./roadmap.md">roadmap.md</a> (post–v1.4): <strong>P0 live mono radio</strong> + social/presence on the same runtime; video <strong>v2.0</strong> only after overlay metrics. Transport today: v1.4.1 WebRTC signaling + data channels (<a href="./live-streaming-design.md">design</a>, <a href="./playground/index.html">playground</a>, <a href="https://github.com/jose-compu/dignity.js/issues/152" target="_blank" rel="noopener noreferrer">#152</a>).</p>
+            <p><strong>Next ship target (v1.5)</strong> — WebCodecs Opus, multi-hop relay tree (fanout 3), churn re-parent, TURN runbook, university-radio pilot kit.</p>
+            <p><strong>v1.4.1 (current)</strong> — WebRTC streaming transport, signed chunks; WebCodecs playout not yet in library.</p>
             <p><strong>v1.2.0</strong> — Live streaming research doc, experimental access-mode API, <code>examples/README.md</code> index (#132).</p>
             <p><strong>v1.1.6</strong> — Troubleshooting docs for unreachable signaling, 48-word identity restore, and hard refresh after local demo rebuilds (#133).</p>
             <p><strong>v1.1.5</strong> — npm releases publish from GitHub Actions through Trusted Publishing (OIDC) with provenance; v1.1.4 was not published to npm, so v1.1.5 is the first release from CI.</p>
@@ -830,9 +831,11 @@ replica.verifyChain();  // hash-chain consistency</code></pre>
             <p><strong>v0.7.0 (shipped)</strong> — credential-derived keys, identity rotation, PeerGroup hardening, stress harness.</p>
             <p><strong>v0.6.0 (shipped)</strong> — core gossip, chess spectators, unit + e2e tests.</p>
             <p><strong>v0.6.x polish</strong> — <code>subscribeObjectFeed</code> wrapper, connection LRU trim, IndexedDB joined-group persistence, React <code>usePeerGroup</code> hook, 50+ node integration test.</p>
-            <p><strong>Future</strong> — publisher rate limits, partial snapshot / delta feeds, cross-group fan-in metrics.</p>
+            <p><strong>Later</strong> — private audio E2E (v1.7), ffmpeg Node origin (v1.8), gated live video ABR 240p–1080p (v2.0); publisher rate limits, partial snapshot feeds.</p>
             <p>
               Tracking:
+              <a href="./roadmap.md">roadmap.md</a>,
+              <a href="./git-branches.md">git-branches.md</a>,
               <a href="https://github.com/jose-compu/dignity.js/issues/152" target="_blank" rel="noopener noreferrer">#152 Live P2P AV</a>,
               <a href="https://github.com/jose-compu/dignity.js/issues/87" target="_blank" rel="noopener noreferrer">#87 Roadmap</a>,
               <a href="https://github.com/jose-compu/dignity.js/issues/54" target="_blank" rel="noopener noreferrer">#54 PeerGroup core</a>,

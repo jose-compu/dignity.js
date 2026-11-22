@@ -1,24 +1,23 @@
-# Live P2P video and audio — design document (v1.2.0)
+# Live P2P video and audio — design document
 
-**Status:** Research plus an experimental API. **v1.3.0** adds a minimal **public-mode** signed chunk path over an injectable signaling bus (unit-tested; see `src/streaming/public-stream-path.js`). There is still **no** WebRTC media track wiring, camera capture demo, private E2E keys, relay trees at scale, or ABR. This document records topology, security, and scale assumptions for [issue #152](https://github.com/jose-compu/dignity.js/issues/152).
+**Status:** Research plus an experimental API (**v1.4.1**). Shipped today: Ed25519-signed chunks, public join handshake, **WebRTC** signaling and data channel transport (`WebRTCStreamSignalingBus`, `WebRTCDataChannelTransport`). Still missing for production: **WebCodecs encode/play**, **multi-hop relay trees**, churn repair, TURN ops guidance in deploys, private E2E keys, and ABR.
+
+**Product order (see [`roadmap.md`](./roadmap.md)):** ship **live mono radio (Opus)** and social presence first; treat **live video (240p through 1080p)** as v2.0 after overlay metrics from pilots. Generic HLS/VOD P2P backup is out of scope for near-term releases (mature alternatives exist).
+
+Tracks [issue #152](https://github.com/jose-compu/dignity.js/issues/152).
 
 ## Goals
 
 - Browser or Node.js **origin** (broadcaster).
-- **Low end-to-end latency** for live A/V.
-- **720p (HD)** and **1080p (Full HD)** with congestion-adaptive quality.
+- **Low end-to-end latency** for live A/V ( **1–3 s** acceptable for public mass viewing; **&lt; 500 ms** for private audio).
+- **Phase 1:** public **mono audio** (64–96 kbps) for radio-style backup under congestion.
+- **Phase 2 (gated):** **240p, 360p, 480p, 720p, and 1080p** with congestion-adaptive quality after relay/churn evidence (full ladder below).
 - **Access modes:** private (single or list), public, and combined public plus private tracks.
-- Design exploration toward **10 million concurrent viewers** without a central SFU for the entire audience.
+- Design exploration toward very large concurrent audiences without a central SFU for the entire audience (research upper bound; not a near-term ship claim).
 
 ## Honest scope statement
 
-v1.2.0 added the design write-up and `StreamSession` access-mode validation. **v1.3.0** adds:
-
-1. `createSignedMediaChunk` / `verifyMediaChunk` (Ed25519 over chunk metadata + payload hash).
-2. `createPublicStreamBroadcaster`, `createPublicStreamViewer`, and `createPublicStreamRelay` over `InMemoryStreamSignalingBus` (join handshake + one relay hop).
-3. Optional demo: [`docs/live-stream-demo.html`](./live-stream-demo.html) (in-memory simulation only).
-
-There is still **no** encoder pipeline and **no** WebRTC `RTCPeerConnection` media wiring in the library.
+v1.2.0 added the design write-up and `StreamSession` access-mode validation. **v1.3.0** added signed chunks and a one-hop relay over an injectable bus. **v1.4.x** adds WebRTC signaling + data channel transport for control and chunk delivery. There is still **no** WebCodecs encoder or browser playout pipeline in the library.
 
 ---
 
@@ -39,13 +38,16 @@ For a balanced \(d\)-ary relay tree (origin counts as root, relays are non-leaf 
 \text{minimum depth } h \text{ satisfies } d^{h} \geq N
 \]
 
+**Pilot default:** align with PeerGroup gossip — **fanout 3**, high `maxHops`, adaptive `degree` per peer upload (audio often allows **degree 4–8** on residential uplink; **240–480p** often allows **degree 4–6**; 720p tighter; 1080p video often **2** on ~10 Mbps home upload).
+
 Example planning numbers (signaling + chunk metadata only; actual degree is **adaptive** per peer upload capacity):
 
 | Target \(N\) | Degree \(d\) | Min hops \(h = \lceil \log_d N \rceil\) |
 |-------------|--------------|----------------------------------------|
-| 10,000      | 8            | 5                                      |
-| 1,000,000   | 12           | 6                                      |
-| 10,000,000  | 16           | 6                                      |
+| 1,000       | 3            | 7                                      |
+| 10,000      | 3            | 9                                      |
+| 100,000     | 4            | 9                                      |
+| 1,000,000+  | 8–16         | 6–7 (research / super-peers)           |
 
 **Per-hop latency:** each relay adds encode/decode (if transcoding) or packetization delay, jitter buffer, and one RTT bucket for control. Budget **20–80 ms** per hop for chunked WebCodecs over data channels (no transcoding), or **40–120 ms** if a relay re-encodes. A 6-hop tree therefore adds roughly **120–480 ms** on top of capture and playout — within reach of interactive live targets if origin–leaf depth stays ≤ 6 and peers run GCC/TWCC-aware forwarding.
 
@@ -54,7 +56,7 @@ Example planning numbers (signaling + chunk metadata only; actual degree is **ad
 - Peers heartbeat upstream relays; on timeout, children **re-parent** using dignity.js presence + PeerGroup announcements (same signaling fabric as object replication).
 - **Siblings** hold a short overlap buffer (2–4 s) to absorb gap on re-parent.
 - Optional **super-peers** — high-bandwidth, long-lived nodes (could be dignity.js “bulk relay” tier extended to media) take more children.
-- Optional **TURN** only for NAT traversal, not for fan-out (TURN is not scalable to 10M; it is a last resort for blocked UDP).
+- **TURN (required in production):** dimension a fallback pool for the non-trivial fraction of browsers behind symmetric NAT or corporate firewalls. TURN carries **signaling and hole-punch assist**, not 10M fan-out media. Undersized TURN silently drops listeners — document pool size and geographic spread in the runbook (v1.5).
 
 ### Relation to existing PeerGroup gossip
 
@@ -87,7 +89,7 @@ Operationally, media chunk topics can reuse **scoped PeerGroups** (`peerGroupSco
 
 ---
 
-## Latency budget (720p / 1080p live)
+## Latency budget (live video, 240p–1080p)
 
 Target: **glass-to-glass 1.0–3.0 s** for public mass viewing; **&lt; 500 ms** aspirational for private single-recipient.
 
@@ -106,25 +108,27 @@ Congestion increases playout buffer before dropping layers (see ABR below).
 
 ## Bitrate ladders (guidance)
 
-Assuming 30 fps live; actual rates adapt via TWCC/GCC feedback.
+Assuming 30 fps live; actual rates adapt via TWCC/GCC feedback. **Roadmap target (v2.0):** one ordered ABR ladder from **240p through 1080p**; viewers and relays step down under congestion before stalling.
 
-### HD 720p
+### Unified live ladder (240p → 1080p)
 
-| Layer | Resolution | Video kbps | Audio kbps |
-|-------|------------|------------|------------|
-| L0    | 640×360    | 400        | 48         |
-| L1    | 1280×720   | 1,800      | 64         |
-| L2    | 1280×720   | 3,000      | 96 (stereo)|
+| Layer | Label   | Resolution (approx.) | Video kbps | Audio kbps | Relay notes (10 Mbps uplink) |
+|-------|---------|----------------------|------------|------------|-------------------------------|
+| L0    | 240p    | 426×240              | 250        | 48 (mono)  | Many children; congested mobile |
+| L1    | 360p    | 640×360              | 450        | 48         | Default floor for weak uplink |
+| L2    | 480p    | 854×480              | 900        | 64         | Practical P2P video pilot tier |
+| L3    | 720p    | 1280×720             | 1,800      | 64         | HD; degree 2–3 typical |
+| L4    | 720p+   | 1280×720             | 3,000      | 96         | HD high; same resolution, higher QP cap |
+| L5    | 1080p   | 1920×1080            | 4,500      | 96         | Full HD; relay-heavy |
+| L6    | 1080p+  | 1920×1080            | 8,000      | 128        | Full HD high; origin/super-peers |
 
-### Full HD 1080p
+**v2.0 delivery order:** implement **L0–L2 (240 / 360 / 480)** in the first video slice (relay-friendly), then **L3–L6 (720 / 1080)** after uplink and churn metrics from 480p pilots.
 
-| Layer | Resolution | Video kbps | Audio kbps |
-|-------|------------|------------|------------|
-| L0    | 854×480    | 800        | 48         |
-| L1    | 1920×1080  | 4,500      | 96         |
-| L2    | 1920×1080  | 8,000      | 128        |
+### Alternate origin profiles (same layers)
 
-**Simulcast / SVC:** origin emits L0–L2; relays prefer forwarding a single layer per subtree based on downstream TWCC. **SVC (AV1 temporal/spatial)** reduces uplink on origin when browsers support it.
+Broadcasters may cap the **maximum emitted layer** (e.g. radio simulcast with video thumb at **240p only**; campus stream at **480p max** on shared Wi‑Fi) without changing layer IDs — viewers still step L0→L*n* within the cap.
+
+**Simulcast / SVC:** origin emits the layers it can afford up to the cap; relays forward a **single** layer per subtree based on downstream TWCC. **SVC (AV1 temporal/spatial)** can collapse L4/L6 into temporal steps on the same spatial ID when browsers support it.
 
 **ABR + GCC/TWCC:** receivers report transport-wide congestion control stats; relays run a simplified GCC controller to pace chunk fan-out; viewers switch layers when estimated throughput drops below layer bitrate × headroom factor (1.2×).
 
@@ -170,28 +174,42 @@ The v1.2.0 `createStreamSession` API validates roster shape only; key wrapping i
 
 ---
 
-## Benchmark / simulation plan (10M justification)
+## Operational risks (not solved by API completeness)
 
-Before claiming production readiness at 10M:
+| Risk | Audio pilot | Video (later) |
+|------|-------------|---------------|
+| Upload contribution | Low (~0.1 Mbps × children) | High (Mbps × children); congestion hits relays hardest |
+| NAT / TURN | Must deploy TURN; measure join failure % | Same, stricter latency |
+| Churn / re-parent | Engineering v1.5; overlap buffer 2–4 s | Same, larger playout buffers |
+| Competitive position | Unique with dignity.js identity + chat | P2P Media Loader et al. for HLS/VOD backup |
+
+---
+
+## Benchmark / simulation plan
+
+Before claiming production readiness at large \(N\):
 
 1. **Analytic model** — random \(d\)-ary trees with churn; measure expected repair time vs depth (this document’s tables).
-2. **Discrete-event simulator** — peers with upload caps drawn from measured distributions; GCC drops/throttles; record stall rate vs \(N\).
-3. **Harness** — extend existing peer-group stress scripts (`stress:peer-group`) with synthetic chunk publishers (no real video) to validate signaling load.
+2. **Discrete-event simulator** — peers with upload caps drawn from measured distributions; GCC drops/throttles; record stall rate vs \(N\) (**v1.6**).
+3. **Harness** — extend `scripts/stress-peer-group.js` with **synthetic Opus-sized chunks** (v1.5–v1.6); optional video-sized payloads only after audio gate.
 
-Feasibility argument: 10M **concurrent** viewers implies ~6 relay hops at degree 16 with mostly **read-only** leaf peers; CPU per relay is dominated by crypto verify + memcpy, not re-encode. The bottleneck is **uplink on origin and first-tier relays**, mitigated by super-peers and adaptive degree — not a monolithic SFU bill.
+Feasibility argument (research): very large **concurrent** audiences imply ~6 relay hops at degree 8–16 with mostly **read-only** leaf peers; CPU per relay is dominated by crypto verify + memcpy, not re-encode. The bottleneck is **uplink on origin and first-tier relays**, mitigated by super-peers and adaptive degree — not a monolithic SFU bill. **No production dignity.js deploy validates this yet.**
 
 ---
 
 ## Milestone mapping (#152)
 
-| Milestone | Status |
-|-----------|--------|
-| 1. Research doc | **Done** (this file, v1.2.0) |
-| 2. Prototype browser origin | **Partial (v1.3.0)** — public-mode signed chunks + join handshake over injectable bus; no real A/V capture |
-| 3. Private modes + combined | Access validation skeleton only |
-| 4. Node origin | Not started |
-| 5. Adaptive layer | Documented only |
-| 6. Scale simulation | Plan documented |
+Aligned with [`roadmap.md`](./roadmap.md).
+
+| Milestone | Status | Target |
+|-----------|--------|--------|
+| 1. Research doc | **Done** | v1.2.0 |
+| 2. Browser transport | **Partial** | v1.4 — WebRTC signaling + DC; finish WebCodecs audio in **v1.5** |
+| 3. Relay tree + churn | Not started | **v1.5** (audio) |
+| 4. Private modes + combined | Skeleton only | **v1.7** |
+| 5. Node origin (ffmpeg) | Not started | **v1.8** |
+| 6. Adaptive video layers (240–1080p) | Documented only | **v2.0** (gated); 240/360/480 first slice |
+| 7. Scale simulation + pilot metrics | Plan only | **v1.6** |
 
 ---
 

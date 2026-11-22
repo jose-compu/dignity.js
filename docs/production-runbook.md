@@ -4,7 +4,7 @@ Practical guide for running dignity.js in production: signaling, NAT traversal, 
 
 See also: [browser-compatibility.md](./browser-compatibility.md), [api-stability.md](./api-stability.md), [threat-model.md](./threat-model.md), [PeerJS ICE/TURN](./browser-compatibility.md#peerjs-ice-turn).
 
-**Live streaming (experimental, v1.3.0):** the public signed-chunk helpers are not production-ready. Do not expose them on the open internet until WebRTC wiring, rate limits, and relay churn handling land ([#152](https://github.com/jose-compu/dignity.js/issues/152)). When enabled later, monitor chunk signature failures and relay fan-out depth the same way you watch `securityerror` and peer churn.
+**Live streaming (experimental, v1.4.x):** transport and signed chunks exist; **radio pilots** target **v1.5** ([`roadmap.md`](./roadmap.md)). Do not run open-internet **video** fan-out until multi-hop relay + churn repair + pilot metrics ship ([#152](https://github.com/jose-compu/dignity.js/issues/152)). **TURN is mandatory** for streaming (not optional like small mesh games): budget relay capacity for ~15–30% of join attempts failing direct paths in mixed mobile/corporate audiences. Monitor chunk signature failures, relay fan-out depth, re-parent rate, and stall events alongside `securityerror` and peer churn.
 
 ## Deployment checklist
 

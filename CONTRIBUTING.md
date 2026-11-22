@@ -23,7 +23,7 @@ Node.js **18+** is required (CI runs 18, 20, and 22).
 
 ## Before you open a PR
 
-1. **Branch** from `main` (e.g. `feat/my-change` or `release/0.10`).
+1. **Branch** from `main` (e.g. `feat/my-change`, `docs/my-change`, or `release/1.5.0-radio-pilot`). See [`docs/git-branches.md`](./docs/git-branches.md) and [`docs/roadmap.md`](./docs/roadmap.md) for streaming release names ([#87](https://github.com/jose-compu/dignity.js/issues/87), [#152](https://github.com/jose-compu/dignity.js/issues/152)).
 2. **Run tests:** `npm test` (or `npm run test:unit` for faster iteration).
 3. **Match style:** follow existing patterns in the file you edit; keep diffs focused.
 4. **Docs:** if you change public API behavior, update `docs/openapi-like.json` and run `npm run docs:api-reference` when applicable.
