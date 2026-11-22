@@ -1093,5 +1093,339 @@ log('bob rejections:', carolRejected.length);
 await alice.stop();
 await bob.stop();
 await carol.stop();`
+  },
+  {
+    id: 'identity-create-restore',
+    group: 'v140',
+    title: 'Identity — create and restore',
+    description: 'v1.1.0+: derive Ed25519/Curve25519 keys from credentials; export and restore 48-word mnemonics.',
+    code: `const { deriveKeyPairFromCredentials, keyPairToPublicBundle, exportIdentityMnemonic, importIdentityMnemonic } = dignity;
+
+// Create identity from credentials
+const keyPair = await deriveKeyPairFromCredentials({
+  username: 'alice',
+  password: 'secure-password-123'
+});
+
+const bundle = keyPairToPublicBundle(keyPair);
+log('public key:', bundle.signingPublicKey.slice(0, 16) + '...');
+log('encryption key:', bundle.encryptionPublicKey.slice(0, 16) + '...');
+
+// Export as 48-word mnemonic
+const mnemonic = exportIdentityMnemonic(keyPair);
+log('word count:', mnemonic.split(' ').length);
+log('first 3 words:', mnemonic.split(' ').slice(0, 3).join(' '));
+
+// Restore from mnemonic
+const restored = importIdentityMnemonic(mnemonic);
+const restoredBundle = keyPairToPublicBundle(restored);
+
+log('restore matches?', restoredBundle.signingPublicKey === bundle.signingPublicKey);`
+  },
+  {
+    id: 'signed-data-verification',
+    group: 'v140',
+    title: 'Signed data — sign and verify',
+    description: 'Sign arbitrary data with Ed25519 identity; verify signatures without network.',
+    code: `const { deriveKeyPairFromCredentials, keyPairToPublicBundle } = dignity;
+
+const alice = await deriveKeyPairFromCredentials({ username: 'alice', password: 'pass' });
+const aliceBundle = keyPairToPublicBundle(alice);
+
+// Sign data
+const data = { action: 'transfer', amount: 100, to: 'bob' };
+const dataBytes = new TextEncoder().encode(JSON.stringify(data));
+
+const signature = await crypto.subtle.sign(
+  { name: 'Ed25519' },
+  alice.signing.privateKey,
+  dataBytes
+);
+
+log('signature length:', signature.byteLength);
+
+// Verify signature
+const signatureArray = new Uint8Array(signature);
+const publicKeyBytes = Uint8Array.from(atob(aliceBundle.signingPublicKey), c => c.charCodeAt(0));
+
+// Import public key for verification
+const publicKey = await crypto.subtle.importKey(
+  'raw',
+  publicKeyBytes,
+  { name: 'Ed25519' },
+  false,
+  ['verify']
+);
+
+const valid = await crypto.subtle.verify(
+  { name: 'Ed25519' },
+  publicKey,
+  signatureArray,
+  dataBytes
+);
+
+log('signature valid:', valid);
+
+// Tamper with data
+const tamperedBytes = new TextEncoder().encode(JSON.stringify({ ...data, amount: 999 }));
+const tampered = await crypto.subtle.verify(
+  { name: 'Ed25519' },
+  publicKey,
+  signatureArray,
+  tamperedBytes
+);
+
+log('tampered signature valid:', tampered);`
+  },
+  {
+    id: 'data-layer-basics',
+    group: 'v140',
+    title: 'Data layer — CRUD operations',
+    description: 'Create, read, update, delete records with P2P replication.',
+    code: `const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = dignity;
+
+const hub = new InMemoryNetworkHub();
+const security = helpers.fastSecurity();
+
+const alice = new DignityP2P({
+  nodeId: 'alice',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+
+const bob = new DignityP2P({
+  nodeId: 'bob',
+  networkAdapter: new InMemoryNetworkAdapter(hub),
+  security
+});
+
+helpers.track(alice, bob);
+await alice.start();
+await bob.start();
+
+// Create
+const created = await alice.create('tasks', {
+  title: 'Learn dignity.js',
+  done: false
+}, { id: 'task1' });
+log('created version:', created.version);
+
+await helpers.sleep(30);
+
+// Read on another peer
+const onBob = bob.read('tasks', 'task1');
+log('bob sees:', onBob?.data.title);
+
+// Update
+const updated = await alice.update('tasks', 'task1', {
+  title: 'Learn dignity.js',
+  done: true
+});
+log('updated version:', updated.version);
+
+await helpers.sleep(30);
+log('bob sees done:', bob.read('tasks', 'task1')?.data.done);
+
+// List
+const list = bob.list('tasks');
+log('bob task count:', list.length);
+
+// Delete
+await alice.remove('tasks', 'task1');
+await helpers.sleep(30);
+log('bob after delete:', bob.read('tasks', 'task1'));
+
+await alice.stop();
+await bob.stop();`
+  },
+  {
+    id: 'live-stream-public',
+    group: 'v140',
+    title: 'Live stream — public broadcaster',
+    description: 'v1.4.0 (#152): signed media chunks over in-memory signaling; broadcaster → viewer → relay.',
+    code: `const {
+  deriveKeyPairFromCredentials,
+  keyPairToPublicBundle,
+  createInMemoryStreamSignalingBus,
+  createPublicStreamBroadcaster,
+  createPublicStreamViewer,
+  createPublicStreamRelay,
+  decodeMediaChunkPayload
+} = dignity;
+
+const keyPair = await deriveKeyPairFromCredentials({ username: 'broadcaster', password: 'demo' });
+const { signingPublicKey } = keyPairToPublicBundle(keyPair);
+const signingSecretKey = keyPair.signing.secretKey;
+
+const bus = createInMemoryStreamSignalingBus();
+
+const broadcaster = createPublicStreamBroadcaster({
+  sessionId: 'demo-stream',
+  broadcasterId: 'broadcaster-1',
+  signingSecretKey,
+  signingPublicKey,
+  bus,
+  initialViewerIds: ['viewer-1', 'relay-1']
+});
+
+const viewer = createPublicStreamViewer({
+  viewerId: 'viewer-1',
+  sessionId: 'demo-stream',
+  broadcasterId: 'broadcaster-1',
+  broadcasterSigningPublicKey: signingPublicKey,
+  bus
+});
+
+createPublicStreamRelay({
+  relayId: 'relay-1',
+  upstreamId: 'broadcaster-1',
+  sessionId: 'demo-stream',
+  broadcasterSigningPublicKey: signingPublicKey,
+  broadcasterId: 'broadcaster-1',
+  bus,
+  downstreamViewerIds: ['viewer-2']
+});
+
+const viewer2 = createPublicStreamViewer({
+  viewerId: 'viewer-2',
+  sessionId: 'demo-stream',
+  broadcasterId: 'broadcaster-1',
+  broadcasterSigningPublicKey: signingPublicKey,
+  bus
+});
+
+broadcaster.announce();
+viewer.requestJoin();
+viewer2.requestJoin();
+
+await helpers.sleep(50);
+
+const chunk = broadcaster.publishChunk(new TextEncoder().encode('video-frame-data'));
+await helpers.sleep(50);
+
+log('viewer joined:', viewer.joined);
+log('viewer2 joined:', viewer2.joined);
+log('viewer chunks:', viewer.chunks.length);
+log('viewer2 chunks (via relay):', viewer2.chunks.length);
+
+const decoded = decodeMediaChunkPayload(viewer.chunks[0]);
+log('payload:', new TextDecoder().decode(decoded));
+
+broadcaster.close();`
+  },
+  {
+    id: 'stream-access-modes',
+    group: 'v140',
+    title: 'Stream access — validation',
+    description: 'v1.4.0 (#152): validateStreamAccessConfig for public, private-recipient, fixed-list, and combined modes.',
+    code: `const { validateStreamAccessConfig, canJoinStream } = dignity;
+
+// Public mode
+const publicConfig = { mode: 'public' };
+const publicValid = validateStreamAccessConfig(publicConfig);
+log('public config valid:', publicValid.ok);
+
+// Private single recipient
+const recipientConfig = {
+  mode: 'private-recipient',
+  recipientPublicKey: 'ed25519:AAAA...'
+};
+const recipientValid = validateStreamAccessConfig(recipientConfig);
+log('recipient config valid:', recipientValid.ok);
+
+// Fixed list
+const listConfig = {
+  mode: 'fixed-list',
+  allowedPublicKeys: [
+    'ed25519:BBB...',
+    'ed25519:CCC...'
+  ]
+};
+const listValid = validateStreamAccessConfig(listConfig);
+log('list config valid:', listValid.ok);
+
+// Combined public + private
+const combinedConfig = {
+  mode: 'both',
+  publicMode: { mode: 'public' },
+  privateMode: {
+    mode: 'fixed-list',
+    allowedPublicKeys: ['ed25519:DDD...']
+  }
+};
+const combinedValid = validateStreamAccessConfig(combinedConfig);
+log('combined config valid:', combinedValid.ok);
+
+// Check if identity can join
+const viewerKey = 'ed25519:BBB...';
+const canJoin = canJoinStream(listConfig, viewerKey);
+log('viewer can join fixed list:', canJoin);
+
+const unknownKey = 'ed25519:ZZZ...';
+const cannotJoin = canJoinStream(listConfig, unknownKey);
+log('unknown can join:', cannotJoin);
+
+// Invalid config
+const invalid = validateStreamAccessConfig({ mode: 'invalid-mode' });
+log('invalid mode caught:', !invalid.ok);
+log('error:', invalid.error);`
+  },
+  {
+    id: 'webrtc-signaling-bus',
+    group: 'v140',
+    title: 'WebRTC signaling — stream bus',
+    description: 'v1.4.0 (#152): WebRTCStreamSignalingBus routes stream messages over in-memory adapter.',
+    code: `const { InMemoryNetworkHub, InMemoryNetworkAdapter, createWebRTCStreamSignalingBus } = dignity;
+
+const hub = new InMemoryNetworkHub();
+const adapter1 = new InMemoryNetworkAdapter(hub);
+const adapter2 = new InMemoryNetworkAdapter(hub);
+
+await adapter1.start('broadcaster');
+await adapter2.start('viewer');
+
+const bus1 = createWebRTCStreamSignalingBus(adapter1, 'broadcaster');
+const bus2 = createWebRTCStreamSignalingBus(adapter2, 'viewer');
+
+const received = [];
+bus2.subscribe('viewer', (msg) => {
+  received.push(msg);
+  log('viewer received:', msg.type);
+});
+
+await bus1.send('broadcaster', 'viewer', {
+  type: 'stream:announce',
+  sessionId: 'test-session',
+  broadcasterId: 'broadcaster'
+});
+
+await helpers.sleep(50);
+
+log('messages received:', received.length);
+log('from:', received[0]?.fromPeerId);
+log('session:', received[0]?.sessionId);
+
+// Fanout to multiple viewers
+await adapter1.start('viewer2');
+const adapter3 = new InMemoryNetworkAdapter(hub);
+await adapter3.start('viewer2');
+const bus3 = createWebRTCStreamSignalingBus(adapter3, 'viewer2');
+
+const received2 = [];
+bus3.subscribe('viewer2', (msg) => received2.push(msg));
+
+await bus1.fanout('broadcaster', ['viewer', 'viewer2'], {
+  type: 'stream:media-chunk',
+  sequence: 1
+});
+
+await helpers.sleep(50);
+
+log('viewer got fanout:', received.length > 1);
+log('viewer2 got fanout:', received2.length > 0);
+
+bus1.destroy();
+bus2.destroy();
+bus3.destroy();`
   }
 ];

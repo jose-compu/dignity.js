@@ -458,6 +458,25 @@ declare module 'dignity.js' {
 
   export function createInMemoryStreamSignalingBus(): InMemoryStreamSignalingBus;
 
+  export class WebRTCStreamSignalingBus {
+    constructor(networkAdapter: PeerJSNetworkAdapter, localPeerId: string);
+    subscribe(peerId: string, handler: (message: JsonObject) => void): void;
+    send(fromPeerId: string, toPeerId: string, message: JsonObject): Promise<void>;
+    fanout(fromPeerId: string, peerIds: string[], message: JsonObject): Promise<void>;
+    destroy(): void;
+  }
+
+  export function createWebRTCStreamSignalingBus(networkAdapter: PeerJSNetworkAdapter, localPeerId: string): WebRTCStreamSignalingBus;
+
+  export class WebRTCDataChannelTransport {
+    constructor(networkAdapter: PeerJSNetworkAdapter);
+    onChunk(handler: (senderId: string, chunk: SignedMediaChunk) => void): () => void;
+    sendChunk(toPeerIds: string[], chunk: SignedMediaChunk): Promise<void>;
+    destroy(): void;
+  }
+
+  export function createWebRTCDataChannelTransport(networkAdapter: PeerJSNetworkAdapter): WebRTCDataChannelTransport;
+
   export class PublicStreamBroadcaster {
     constructor(options: {
       session: StreamSession;
