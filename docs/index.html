@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="dignity.js v1.3.0 — The scalable data layer of the decentralized browser application ecosystem." />
+    <meta name="description" content="dignity.js v1.4.0 — The scalable data layer of the decentralized browser application ecosystem." />
     <title>dignity.js · Documentation</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.ico" sizes="32x32" />
@@ -16,7 +16,7 @@
       <a class="site-header__brand" href="#overview">
         <img src="./assets/dignity-logo.svg" alt="" width="344" height="80" />
         <!-- <span>dignity.js</span> -->
-        <span class="site-header__version">v1.3.0</span>
+        <span class="site-header__version">v1.4.0</span>
       </a>
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
@@ -803,8 +803,8 @@ replica.verifyChain();  // hash-chain consistency</code></pre>
             </div>
 
             <h3>Roadmap</h3>
-            <p><strong>Live P2P AV (in progress)</strong> — <a href="./live-streaming-design.md">live-streaming-design.md</a> documents topology and access modes; v1.3.0 adds signed public-mode chunks and join handshake over an injectable bus (<a href="./live-stream-demo.html">demo</a>, <a href="https://github.com/jose-compu/dignity.js/issues/152" target="_blank" rel="noopener noreferrer">#152</a>). No WebRTC camera pipeline yet.</p>
-            <p><strong>v1.3.0 (current)</strong> — Public live stream chunk path, live-stream demo page, production runbook streaming note (#152, #95).</p>
+            <p><strong>Live P2P AV streaming</strong> — <a href="./live-streaming-design.md">live-streaming-design.md</a> documents topology and access modes; v1.4.0 adds WebRTC signaling and data channel transport for public browser-origin streams (<a href="./playground/index.html">playground</a>, <a href="./live-stream-demo.html">demo</a>, <a href="https://github.com/jose-compu/dignity.js/issues/152" target="_blank" rel="noopener noreferrer">#152</a> milestone 2 complete).</p>
+            <p><strong>v1.4.0 (current)</strong> — WebRTC streaming transport, playground examples; milestone 2 complete (#152).</p>
             <p><strong>v1.2.0</strong> — Live streaming research doc, experimental access-mode API, <code>examples/README.md</code> index (#132).</p>
             <p><strong>v1.1.6</strong> — Troubleshooting docs for unreachable signaling, 48-word identity restore, and hard refresh after local demo rebuilds (#133).</p>
             <p><strong>v1.1.5</strong> — npm releases publish from GitHub Actions through Trusted Publishing (OIDC) with provenance; v1.1.4 was not published to npm, so v1.1.5 is the first release from CI.</p>
@@ -1486,7 +1486,7 @@ npm run example:chess</code></pre>
 
           <footer class="site-footer">
             <p>
-              dignity.js v1.3.0 ·
+              dignity.js v1.4.0 ·
               <a href="https://github.com/jose-compu/dignity.js/blob/main/LICENSE">Apache 2.0</a> ·
               <a href="https://github.com/jose-compu/dignity.js">GitHub</a> ·
               <a href="https://www.npmjs.com/package/dignity.js">npm</a>
