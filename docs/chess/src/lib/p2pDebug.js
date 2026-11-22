@@ -1,10 +1,19 @@
+import { isDignityDebugEnabled } from '../../../../src/index.js';
+
 const PREFIX = '[chess-p2p]';
 
 function ts() {
   return new Date().toISOString().slice(11, 23);
 }
 
+function debugOn() {
+  return isDignityDebugEnabled();
+}
+
 export function p2pLog(label, detail) {
+  if (!debugOn()) {
+    return;
+  }
   if (detail === undefined) {
     console.log(`${PREFIX} ${ts()} ${label}`);
     return;
@@ -13,6 +22,9 @@ export function p2pLog(label, detail) {
 }
 
 export function p2pWarn(label, detail) {
+  if (!debugOn()) {
+    return;
+  }
   if (detail === undefined) {
     console.warn(`${PREFIX} ${ts()} ${label}`);
     return;

@@ -514,6 +514,10 @@ declare module 'dignity.js' {
     bus: InMemoryStreamSignalingBus;
   }): PublicStreamViewer;
 
+  export function isDignityDebugEnabled(): boolean;
+
+  export function setDignityDebugEnabled(enabled: boolean): boolean;
+
   export function createPublicStreamRelay(options: {
     relayId: string;
     upstreamId: string;

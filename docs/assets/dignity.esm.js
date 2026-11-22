@@ -20495,11 +20495,45 @@ var require_in_memory_network = __commonJS({
   }
 });
 
+// src/utils/debug.js
+var require_debug = __commonJS({
+  "src/utils/debug.js"(exports, module) {
+    var STORAGE_KEY = "dignityDebug";
+    function isDignityDebugEnabled() {
+      if (typeof localStorage === "undefined") {
+        return false;
+      }
+      try {
+        const value = localStorage.getItem(STORAGE_KEY);
+        return value === "1" || value === "true";
+      } catch {
+        return false;
+      }
+    }
+    function setDignityDebugEnabled(enabled) {
+      const on = Boolean(enabled);
+      if (typeof localStorage === "undefined") {
+        return on;
+      }
+      try {
+        localStorage.setItem(STORAGE_KEY, on ? "1" : "0");
+      } catch {
+      }
+      return on;
+    }
+    module.exports = {
+      isDignityDebugEnabled,
+      setDignityDebugEnabled
+    };
+  }
+});
+
 // src/network/peerjs-network.js
 var require_peerjs_network = __commonJS({
   "src/network/peerjs-network.js"(exports, module) {
     var { DEFAULT_CLOUDFLARE_SIGNALING_URLS } = require_default_signaling_config();
     var parsePeerJsServerUrl = require_parse_peerjs_url();
+    var { isDignityDebugEnabled } = require_debug();
     var DEFAULT_START_ATTEMPTS = 4;
     var DEFAULT_START_RETRY_DELAYS_MS = Object.freeze([250, 500, 1e3]);
     function wait(ms) {
@@ -20534,7 +20568,8 @@ var require_peerjs_network = __commonJS({
         startAttempts = DEFAULT_START_ATTEMPTS,
         startRetryDelaysMs = DEFAULT_START_RETRY_DELAYS_MS,
         reconnectBaseDelayMs = 500,
-        reconnectMaxDelayMs = 15e3
+        reconnectMaxDelayMs = 15e3,
+        idleReleaseMs = 15e3
       } = {}) {
         this.urls = urls || (url ? [url] : [...DEFAULT_CLOUDFLARE_SIGNALING_URLS]);
         this.url = this.urls[0];
@@ -20546,6 +20581,7 @@ var require_peerjs_network = __commonJS({
         this.startRetryDelaysMs = startRetryDelaysMs;
         this.reconnectBaseDelayMs = reconnectBaseDelayMs;
         this.reconnectMaxDelayMs = reconnectMaxDelayMs;
+        this.idleReleaseMs = idleReleaseMs;
         this.nodeId = null;
         this.peer = null;
         this.connections = /* @__PURE__ */ new Map();
@@ -20556,6 +20592,9 @@ var require_peerjs_network = __commonJS({
         this._reconnectAttempt = 0;
         this._reconnectTimer = null;
         this._reconnectInflight = false;
+        this._parked = false;
+        this._holdUntil = 0;
+        this._parkTimer = null;
       }
       async start(nodeId) {
         if (!nodeId) {
@@ -20608,6 +20647,8 @@ var require_peerjs_network = __commonJS({
             path: server.path,
             secure: server.secure,
             key: server.key,
+            pingInterval: 6e4,
+            debug: isDignityDebugEnabled() ? 2 : 0,
             ...this.peerOptions && typeof this.peerOptions === "object" ? this.peerOptions : {}
           };
           if (Array.isArray(this.iceServers) && this.iceServers.length > 0) {
@@ -20643,6 +20684,7 @@ var require_peerjs_network = __commonJS({
             }
             peer.on("error", onRuntimeError);
             this.peer = peer;
+            this._touchSignaling();
             resolve();
           });
           peer.on("connection", (connection) => {
@@ -20650,7 +20692,7 @@ var require_peerjs_network = __commonJS({
           });
           peer.on("error", onStartupError);
           peer.on("disconnected", () => {
-            if (!opened || this._stopped || this.peer !== peer) {
+            if (!opened || this._stopped || this.peer !== peer || this._parked) {
               return;
             }
             this._scheduleReconnect();
@@ -20661,6 +20703,56 @@ var require_peerjs_network = __commonJS({
         if (this._reconnectTimer) {
           clearTimeout(this._reconnectTimer);
           this._reconnectTimer = null;
+        }
+      }
+      _clearParkTimer() {
+        if (this._parkTimer) {
+          clearTimeout(this._parkTimer);
+          this._parkTimer = null;
+        }
+      }
+      _touchSignaling(holdMs = this.idleReleaseMs) {
+        this._parked = false;
+        this._holdUntil = Date.now() + holdMs;
+        this._armParkTimer();
+      }
+      _armParkTimer() {
+        this._clearParkTimer();
+        const delay = Math.max(0, this._holdUntil - Date.now());
+        this._parkTimer = setTimeout(() => {
+          this._parkTimer = null;
+          this._parkIfIdle();
+        }, delay);
+        this._parkTimer.unref?.();
+      }
+      _parkIfIdle() {
+        if (this._stopped) {
+          return;
+        }
+        if (this.pendingConnections.size > 0) {
+          this._holdUntil = Date.now() + this.idleReleaseMs;
+          this._armParkTimer();
+          return;
+        }
+        if (Date.now() < this._holdUntil) {
+          this._armParkTimer();
+          return;
+        }
+        const peer = this.peer;
+        if (!peer || peer.destroyed || peer.disconnected || typeof peer.disconnect !== "function") {
+          return;
+        }
+        this._parked = true;
+        try {
+          peer.disconnect();
+        } catch (error) {
+        }
+      }
+      async _ensureSignaling() {
+        this._touchSignaling();
+        const peer = this.peer;
+        if (peer && !peer.destroyed && peer.disconnected) {
+          await this._reconnectSignaling(this._session);
         }
       }
       _destroyPeer() {
@@ -20767,6 +20859,7 @@ var require_peerjs_network = __commonJS({
         if (!this.peer) {
           throw new Error("PeerJS network adapter has not been started");
         }
+        await this._ensureSignaling();
         const pending = new Promise((resolve, reject) => {
           const connection = this.peer.connect(remotePeerId, {
             reliable: true,
@@ -20855,6 +20948,7 @@ var require_peerjs_network = __commonJS({
         this._stopped = true;
         this._session += 1;
         this._clearReconnectTimer();
+        this._clearParkTimer();
         for (const connection of this.connections.values()) {
           if (typeof connection.close === "function") {
             connection.close();
@@ -23311,6 +23405,7 @@ var require_index = __commonJS({
       shouldApplyIdentityRotation
     } = require_identity_rotation();
     var parsePeerJsServerUrl = require_parse_peerjs_url();
+    var { isDignityDebugEnabled, setDignityDebugEnabled } = require_debug();
     var {
       PEER_GROUP_SCOPE_PREFIX,
       DEFAULT_PEER_GROUP_OPTIONS,
@@ -23444,6 +23539,8 @@ var require_index = __commonJS({
       verifyColdRecoveryEnrollment,
       shouldApplyIdentityRotation,
       parsePeerJsServerUrl,
+      isDignityDebugEnabled,
+      setDignityDebugEnabled,
       PEER_GROUP_SCOPE_PREFIX,
       DEFAULT_PEER_GROUP_OPTIONS,
       peerGroupScope,

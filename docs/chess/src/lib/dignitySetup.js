@@ -2,7 +2,8 @@ import {
   DignityP2P,
   createPeerJSNetworkAdapter,
   IndexedDBPersistence,
-  DEFAULT_CLOUDFLARE_SIGNALING_URLS
+  DEFAULT_CLOUDFLARE_SIGNALING_URLS,
+  isDignityDebugEnabled
 } from '../../../../src/index.js';
 
 export function createDignityConfig({ nodeId, roomKey, scope, nickname, role, keyPair }) {
@@ -10,7 +11,7 @@ export function createDignityConfig({ nodeId, roomKey, scope, nickname, role, ke
     urls: DEFAULT_CLOUDFLARE_SIGNALING_URLS
   });
 
-  if (typeof console !== 'undefined') {
+  if (typeof console !== 'undefined' && isDignityDebugEnabled()) {
     console.log('[chess-p2p] signaling urls', DEFAULT_CLOUDFLARE_SIGNALING_URLS);
     console.log('[chess-p2p] dignity config', { nodeId, scope, role, roomKeyLen: roomKey?.length });
   }

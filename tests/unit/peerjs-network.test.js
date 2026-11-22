@@ -121,6 +121,7 @@ describe('PeerJSNetworkAdapter', () => {
     await adapter.start('alice');
     expect(MockPeer.lastPeerOptions.config.iceServers).toEqual(iceServers);
     expect(MockPeer.lastPeerOptions.config.iceTransportPolicy).toBe('relay');
+    expect(MockPeer.lastPeerOptions.debug).toBe(0);
     await adapter.stop();
   });
 

@@ -51,6 +51,7 @@ const {
   shouldApplyIdentityRotation
 } = require('./security/identity-rotation');
 const parsePeerJsServerUrl = require('./signaling/parse-peerjs-url');
+const { isDignityDebugEnabled, setDignityDebugEnabled } = require('./utils/debug');
 const {
   PEER_GROUP_SCOPE_PREFIX,
   DEFAULT_PEER_GROUP_OPTIONS,
@@ -185,6 +186,8 @@ module.exports = {
   verifyColdRecoveryEnrollment,
   shouldApplyIdentityRotation,
   parsePeerJsServerUrl,
+  isDignityDebugEnabled,
+  setDignityDebugEnabled,
   PEER_GROUP_SCOPE_PREFIX,
   DEFAULT_PEER_GROUP_OPTIONS,
   peerGroupScope,

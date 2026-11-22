@@ -1,5 +1,6 @@
 const { DEFAULT_CLOUDFLARE_SIGNALING_URLS } = require('../signaling/default-signaling-config');
 const parsePeerJsServerUrl = require('../signaling/parse-peerjs-url');
+const { isDignityDebugEnabled } = require('../utils/debug');
 
 const DEFAULT_START_ATTEMPTS = 4;
 const DEFAULT_START_RETRY_DELAYS_MS = Object.freeze([250, 500, 1000]);
@@ -128,6 +129,7 @@ class PeerJSNetworkAdapter {
         secure: server.secure,
         key: server.key,
         pingInterval: 60000,
+        debug: isDignityDebugEnabled() ? 2 : 0,
         ...(this.peerOptions && typeof this.peerOptions === 'object' ? this.peerOptions : {})
       };
 
