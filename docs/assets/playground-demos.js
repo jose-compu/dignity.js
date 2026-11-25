@@ -1966,5 +1966,22 @@ const keyframes = frames.filter((f) => f.keyframe).length;
 log('access units:', frames.length);
 log('keyframes:', keyframes);
 log('first timestampMs:', frames[0]?.timestampMs ?? 'none');`
+  },
+  {
+    id: 'stream-scale-sim',
+    group: 'v114',
+    title: 'Scale simulation (10M fan-out model)',
+    description: 'v1.14.0 (#152): seeded analytic hops + discrete relay stall sample; one signed chunk verify.',
+    code: `const { runScaleSimulation } = dignity;
+const result = runScaleSimulation({ profile: 'ci' });
+const row10M = result.targets.find((t) => t.viewers === 10000000);
+log('viewers:', row10M.viewers);
+log('hops:', row10M.hops);
+log('chunk verified:', result.chunk.verified);
+log('claim:', result.claim.status);
+if (result.claim.failedChecks) {
+  log('failed checks:', result.claim.failedChecks.join(', '));
+}
+log('stall rate:', result.stall.stallRate);`
   }
 ];

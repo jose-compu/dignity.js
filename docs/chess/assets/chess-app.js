@@ -39671,6 +39671,299 @@ var require_relay_layer_policy = __commonJS({
   }
 });
 
+// src/streaming/scale-simulation.js
+var require_scale_simulation = __commonJS({
+  "src/streaming/scale-simulation.js"(exports, module) {
+    var nacl3 = require_nacl_fast();
+    var naclUtil3 = require_nacl_util();
+    var { RENDITION_PROFILE_HD720, LAYER_IDS } = require_rendition_ladder();
+    var { createSignedMediaChunk, verifyMediaChunk, decodeMediaChunkPayload } = require_media_chunk();
+    var { createReceiverReport } = require_receiver_report();
+    var { layerRequiredBps, DEFAULT_HEADROOM_FACTOR } = require_layer_selector();
+    var { createRelayLayerPolicy } = require_relay_layer_policy();
+    var DEFAULT_SEED = 1520714;
+    var HEADROOM = DEFAULT_HEADROOM_FACTOR;
+    var SCALE_TARGET_N = 1e7;
+    var SCALE_TARGET_D = 16;
+    var PEER_CAP = Object.freeze({
+      ci: 256,
+      offline: 4096
+    });
+    var ANALYTIC_TARGETS = Object.freeze([
+      { viewers: 1e4, degree: 8 },
+      { viewers: 1e6, degree: 12 },
+      { viewers: 1e7, degree: 16 }
+    ]);
+    var UPLOAD_CAP_ASSUMPTIONS_Mbps = Object.freeze({
+      leaf: 0,
+      relay: Object.freeze([5, 10, 20, 50]),
+      superPeer: Object.freeze([100, 1e3]),
+      origin: 1e3
+    });
+    var SIBLING_OVERLAP_BUDGET_MS = 4e3;
+    var PATH_BREAK_PER_HEARTBEAT = 1e-3;
+    var REPAIR_BASE_MS = 1e3;
+    var REPAIR_PER_HOP_MS = 80;
+    var VIRTUAL_TICK_MS = 500;
+    var HEARTBEATS_PER_RELAY = 8;
+    function createPrng(seed) {
+      let state = seed >>> 0;
+      return () => {
+        state += 1831565813;
+        let t = Math.imul(state ^ state >>> 15, 1 | state);
+        t ^= t + Math.imul(t ^ t >>> 7, 61 | t);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+    function analyticHops(viewers, degree) {
+      if (viewers <= 1) {
+        return 0;
+      }
+      return Math.ceil(Math.log(viewers) / Math.log(degree));
+    }
+    function interiorRelays(viewers, degree) {
+      if (degree <= 1) {
+        return 0;
+      }
+      return (viewers - 1) / (degree - 1);
+    }
+    function repairMs(depth) {
+      return REPAIR_BASE_MS + depth * REPAIR_PER_HOP_MS;
+    }
+    function pathBreakProbability(depth) {
+      if (depth <= 0) {
+        return 0;
+      }
+      return 1 - (1 - PATH_BREAK_PER_HEARTBEAT) ** depth;
+    }
+    function layerStackBps(profile) {
+      let sum = 0;
+      for (const layerId of LAYER_IDS) {
+        sum += layerRequiredBps(profile, layerId, HEADROOM);
+      }
+      return sum;
+    }
+    function mbpsToBps(mbps) {
+      return Math.round(mbps * 1e6);
+    }
+    function sampleRelays(next, peerCap) {
+      const relayCapsMbps = UPLOAD_CAP_ASSUMPTIONS_Mbps.relay;
+      const superCapsMbps = UPLOAD_CAP_ASSUMPTIONS_Mbps.superPeer;
+      const relays = [];
+      const relaySample = Math.min(peerCap, Math.max(32, Math.floor(peerCap / 2)));
+      for (let i = 0; i < relaySample; i += 1) {
+        const isSuper = next() < 0.08;
+        const capMbps = isSuper ? superCapsMbps[Math.floor(next() * superCapsMbps.length)] : relayCapsMbps[Math.floor(next() * relayCapsMbps.length)];
+        const childCount = 1 + Math.floor(next() * SCALE_TARGET_D);
+        relays.push({
+          id: `r${i}`,
+          capBps: mbpsToBps(capMbps),
+          childCount,
+          isSuper
+        });
+      }
+      return relays;
+    }
+    function simulateStalls(next, relays) {
+      const profile = RENDITION_PROFILE_HD720;
+      const l0 = layerRequiredBps(profile, "L0", HEADROOM);
+      const l1 = layerRequiredBps(profile, "L1", HEADROOM);
+      const l2 = layerRequiredBps(profile, "L2", HEADROOM);
+      let forwardChecks = 0;
+      let stalls = 0;
+      let virtualNowMs = VIRTUAL_TICK_MS;
+      for (const relay of relays) {
+        const policy = createRelayLayerPolicy({
+          profile,
+          floorBps: l0,
+          ceilingBps: l2,
+          quietGainBps: 8e4,
+          initialEstimateBps: Math.min(relay.capBps, l2)
+        });
+        const childIds = [];
+        for (let c = 0; c < relay.childCount; c += 1) {
+          const childId = `${relay.id}-c${c}`;
+          childIds.push(childId);
+          const childEstimate = Math.max(
+            l0,
+            Math.min(l2, Math.floor(relay.capBps / Math.max(1, relay.childCount)) * (0.7 + next() * 0.5))
+          );
+          policy.registerChild(childId, { initialEstimateBps: childEstimate });
+        }
+        for (let beat = 0; beat < HEARTBEATS_PER_RELAY; beat += 1) {
+          virtualNowMs += VIRTUAL_TICK_MS;
+          const childLayers = [];
+          for (const childId of childIds) {
+            const bytesPerInterval = Math.max(
+              1e3,
+              Math.floor((l0 + next() * (l2 - l0)) / 8 / (1e3 / VIRTUAL_TICK_MS))
+            );
+            const report = createReceiverReport({
+              sessionId: "scale-sim",
+              viewerId: childId,
+              layerId: policy.getChildLayer(childId) ?? "L0",
+              timestampMs: virtualNowMs,
+              intervalMs: VIRTUAL_TICK_MS,
+              packetsReceived: 40 + Math.floor(next() * 20),
+              packetsLost: Math.floor(next() * 3),
+              bytesReceived: bytesPerInterval,
+              interarrivalDelayMs: Math.floor(next() * 12)
+            });
+            const { layerId } = policy.observeChildReport(childId, report);
+            childLayers.push(layerId);
+          }
+          const layerRank = (id) => LAYER_IDS.indexOf(id);
+          const selectedLayer = childLayers.reduce(
+            (best, id) => layerRank(id) > layerRank(best) ? id : best,
+            childLayers[0] ?? "L0"
+          );
+          const requiredBps = layerRequiredBps(profile, selectedLayer, HEADROOM) * relay.childCount;
+          forwardChecks += 1;
+          if (relay.capBps < requiredBps) {
+            stalls += 1;
+          }
+        }
+      }
+      const stallRate = forwardChecks === 0 ? 0 : stalls / forwardChecks;
+      return {
+        relaySampleSize: relays.length,
+        forwardChecks,
+        stalls,
+        stallRate,
+        peersConstructed: relays.length
+      };
+    }
+    function buildRepairSeries() {
+      const depths = [1, 2, 3, 4, 5, 6, 7, 8];
+      return depths.map((depth) => ({
+        depth,
+        repairMs: repairMs(depth),
+        withinSiblingOverlapBudget: repairMs(depth) <= SIBLING_OVERLAP_BUDGET_MS,
+        pathBreakProbability: pathBreakProbability(depth)
+      }));
+    }
+    function buildAnalyticTargets() {
+      return ANALYTIC_TARGETS.map(({ viewers, degree }) => ({
+        viewers,
+        degree,
+        hops: analyticHops(viewers, degree),
+        interiorRelays: interiorRelays(viewers, degree)
+      }));
+    }
+    function evaluateOriginCoverage(degree) {
+      const profile = RENDITION_PROFILE_HD720;
+      const originCapBps = mbpsToBps(UPLOAD_CAP_ASSUMPTIONS_Mbps.origin);
+      const stackBps = layerStackBps(profile);
+      const requiredBps = stackBps * degree;
+      return {
+        capBps: originCapBps,
+        simulcastStackBps: stackBps,
+        degree,
+        requiredBps,
+        covers: originCapBps >= requiredBps
+      };
+    }
+    function runChunkVerifyCheck() {
+      const keyPair = nacl3.sign.keyPair();
+      const signingPublicKey = naclUtil3.encodeBase64(keyPair.publicKey);
+      const payloadBytes = new Uint8Array([222, 173, 190, 239, 1]);
+      const chunk = createSignedMediaChunk({
+        sessionId: "scale-sim-chunk",
+        broadcasterId: "origin",
+        payloadBytes,
+        signingSecretKey: keyPair.secretKey,
+        signingPublicKey,
+        sequence: 0,
+        timestampMs: 0,
+        layerId: "L1",
+        profile: RENDITION_PROFILE_HD720,
+        keyframe: true
+      });
+      const forwarded = decodeMediaChunkPayload(chunk);
+      const verified = verifyMediaChunk(chunk, "scale-sim-chunk");
+      const tamperedPayload = new Uint8Array(forwarded);
+      tamperedPayload[0] ^= 255;
+      const tampered = {
+        ...chunk,
+        payloadBase64: naclUtil3.encodeBase64(tamperedPayload),
+        payloadFingerprint: require_media_chunk().payloadFingerprint(tamperedPayload)
+      };
+      let tamperedVerified = false;
+      try {
+        verifyMediaChunk(tampered, "scale-sim-chunk");
+        tamperedVerified = true;
+      } catch {
+        tamperedVerified = false;
+      }
+      return {
+        verified: verified === true,
+        tamperedVerified,
+        forwardedByteLength: forwarded.byteLength
+      };
+    }
+    function runScaleSimulation({ seed = DEFAULT_SEED, profile: simProfile = "ci" } = {}) {
+      if (!Object.prototype.hasOwnProperty.call(PEER_CAP, simProfile)) {
+        throw new TypeError(`profile must be "ci" or "offline", got ${simProfile}`);
+      }
+      const next = createPrng(seed >>> 0);
+      const peerCap = PEER_CAP[simProfile];
+      const targets = buildAnalyticTargets();
+      const repair = {
+        assumptions: {
+          repairMsFormula: "1000 + h * 80",
+          siblingOverlapBudgetMs: SIBLING_OVERLAP_BUDGET_MS,
+          pathBreakPerHeartbeat: PATH_BREAK_PER_HEARTBEAT,
+          uploadCapMbps: UPLOAD_CAP_ASSUMPTIONS_Mbps
+        },
+        series: buildRepairSeries()
+      };
+      const relays = sampleRelays(next, peerCap);
+      const stall = simulateStalls(next, relays);
+      const origin = evaluateOriginCoverage(SCALE_TARGET_D);
+      const chunk = runChunkVerifyCheck();
+      const scaleRow = targets.find((t) => t.viewers === SCALE_TARGET_N && t.degree === SCALE_TARGET_D);
+      const hopsAt10M = scaleRow ? scaleRow.hops : analyticHops(SCALE_TARGET_N, SCALE_TARGET_D);
+      const repairAt6 = repairMs(6);
+      const failedChecks = [];
+      if (hopsAt10M !== 6) {
+        failedChecks.push("hops");
+      }
+      if (repairAt6 > SIBLING_OVERLAP_BUDGET_MS) {
+        failedChecks.push("repair");
+      }
+      if (!origin.covers) {
+        failedChecks.push("origin");
+      }
+      if (stall.stallRate !== 0) {
+        failedChecks.push("stall");
+      }
+      const claim = failedChecks.length === 0 ? { status: "topology" } : { status: "qualified", failedChecks };
+      return {
+        seed,
+        profile: simProfile,
+        targets,
+        interiorRelays: interiorRelays(SCALE_TARGET_N, SCALE_TARGET_D),
+        repair,
+        stall,
+        origin,
+        chunk,
+        claim
+      };
+    }
+    module.exports = {
+      DEFAULT_SEED,
+      DEFAULT_SCALE_SIM_SEED: DEFAULT_SEED,
+      PEER_CAP,
+      UPLOAD_CAP_ASSUMPTIONS_Mbps,
+      runScaleSimulation,
+      analyticHops,
+      interiorRelays,
+      repairMs,
+      pathBreakProbability
+    };
+  }
+});
+
 // src/streaming/ingest/mpegts-demuxer.js
 var require_mpegts_demuxer = __commonJS({
   "src/streaming/ingest/mpegts-demuxer.js"(exports, module) {
@@ -40012,6 +40305,7 @@ var require_streaming = __commonJS({
     var playoutBuffer = require_playout_buffer();
     var relayLayerPolicy = require_relay_layer_policy();
     var simulcastPublish = require_simulcast_publish();
+    var scaleSimulation = require_scale_simulation();
     var { demuxMpegTs, MpegTsDemuxer, ptsToTimestampMs } = require_mpegts_demuxer();
     module.exports = {
       ...accessModes,
@@ -40029,6 +40323,7 @@ var require_streaming = __commonJS({
       ...playoutBuffer,
       ...relayLayerPolicy,
       ...simulcastPublish,
+      ...scaleSimulation,
       demuxMpegTs,
       MpegTsDemuxer,
       ptsToTimestampMs,
@@ -40178,6 +40473,7 @@ var require_src = __commonJS({
       normalizeSimulcastLayers,
       createLayerSequenceTracker,
       runSimulcastLoadTrace,
+      runScaleSimulation,
       normalizePrivateRecipients,
       validateStreamAccessConfig,
       StreamSession,
@@ -40312,6 +40608,7 @@ var require_src = __commonJS({
       normalizeSimulcastLayers,
       createLayerSequenceTracker,
       runSimulcastLoadTrace,
+      runScaleSimulation,
       normalizePrivateRecipients,
       validateStreamAccessConfig,
       StreamSession,
@@ -41601,7 +41898,7 @@ function Lobby({
       emptyText: "No finished games yet.",
       onOpen: handleOpenGame
     }
-  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.13.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
+  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.14.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
       id: usernameInputId,

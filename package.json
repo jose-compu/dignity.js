@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "description": "The scalable data layer of the decentralized browser application ecosystem.",
   "homepage": "https://dignity.js.org/",
   "repository": {
@@ -82,6 +82,8 @@
     "example:adaptive-layer": "node examples/adaptive-layer-sim.js",
     "example:relay-degrade": "node examples/relay-degrade-sim.js",
     "example:simulcast-load": "node examples/simulcast-load-sim.js",
+    "example:scale-sim": "node examples/scale-simulation.js",
+    "scale:offline": "SCALE_SIM_PROFILE=offline node examples/scale-simulation.js",
     "prepublishOnly": "npm test && npm run build"
   },
   "keywords": [

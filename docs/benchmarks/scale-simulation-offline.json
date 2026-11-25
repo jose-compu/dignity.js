@@ -1,0 +1,121 @@
+{
+  "seed": 1520714,
+  "profile": "offline",
+  "targets": [
+    {
+      "viewers": 10000,
+      "degree": 8,
+      "hops": 5,
+      "interiorRelays": 1428.4285714285713
+    },
+    {
+      "viewers": 1000000,
+      "degree": 12,
+      "hops": 6,
+      "interiorRelays": 90909
+    },
+    {
+      "viewers": 10000000,
+      "degree": 16,
+      "hops": 6,
+      "interiorRelays": 666666.6
+    }
+  ],
+  "interiorRelays": 666666.6,
+  "repair": {
+    "assumptions": {
+      "repairMsFormula": "1000 + h * 80",
+      "siblingOverlapBudgetMs": 4000,
+      "pathBreakPerHeartbeat": 0.001,
+      "uploadCapMbps": {
+        "leaf": 0,
+        "relay": [
+          5,
+          10,
+          20,
+          50
+        ],
+        "superPeer": [
+          100,
+          1000
+        ],
+        "origin": 1000
+      }
+    },
+    "series": [
+      {
+        "depth": 1,
+        "repairMs": 1080,
+        "withinSiblingOverlapBudget": true,
+        "pathBreakProbability": 0.0010000000000000009
+      },
+      {
+        "depth": 2,
+        "repairMs": 1160,
+        "withinSiblingOverlapBudget": true,
+        "pathBreakProbability": 0.001998999999999973
+      },
+      {
+        "depth": 3,
+        "repairMs": 1240,
+        "withinSiblingOverlapBudget": true,
+        "pathBreakProbability": 0.002997000999999999
+      },
+      {
+        "depth": 4,
+        "repairMs": 1320,
+        "withinSiblingOverlapBudget": true,
+        "pathBreakProbability": 0.003994003998999962
+      },
+      {
+        "depth": 5,
+        "repairMs": 1400,
+        "withinSiblingOverlapBudget": true,
+        "pathBreakProbability": 0.004990009995000988
+      },
+      {
+        "depth": 6,
+        "repairMs": 1480,
+        "withinSiblingOverlapBudget": true,
+        "pathBreakProbability": 0.0059850199850060015
+      },
+      {
+        "depth": 7,
+        "repairMs": 1560,
+        "withinSiblingOverlapBudget": true,
+        "pathBreakProbability": 0.006979034965020947
+      },
+      {
+        "depth": 8,
+        "repairMs": 1640,
+        "withinSiblingOverlapBudget": true,
+        "pathBreakProbability": 0.00797205593005601
+      }
+    ]
+  },
+  "stall": {
+    "relaySampleSize": 2048,
+    "forwardChecks": 16384,
+    "stalls": 3825,
+    "stallRate": 0.23345947265625,
+    "peersConstructed": 2048
+  },
+  "origin": {
+    "capBps": 1000000000,
+    "simulcastStackBps": 6489600,
+    "degree": 16,
+    "requiredBps": 103833600,
+    "covers": true
+  },
+  "chunk": {
+    "verified": true,
+    "tamperedVerified": false,
+    "forwardedByteLength": 5
+  },
+  "claim": {
+    "status": "qualified",
+    "failedChecks": [
+      "stall"
+    ]
+  }
+}

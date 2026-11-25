@@ -201,6 +201,22 @@ Before claiming production readiness at 10M:
 
 Feasibility argument: 10M **concurrent** viewers implies ~6 relay hops at degree 16 with mostly **read-only** leaf peers; CPU per relay is dominated by crypto verify + memcpy, not re-encode. The bottleneck is **uplink on origin and first-tier relays**, mitigated by super-peers and adaptive degree — not a monolithic SFU bill.
 
+## Scale simulation results
+
+**v1.14.0 (milestone 7 — partial)** runs `runScaleSimulation` (seed `1520714`, profile `ci` for CI and playground; profile `offline` via `npm run scale:offline`). Benchmark JSON: [`scale-simulation.json`](./benchmarks/scale-simulation.json) and [`scale-simulation-offline.json`](./benchmarks/scale-simulation-offline.json).
+
+| Check | Result (ci / offline) |
+|-------|------------------------|
+| Hops at \(N=10^7\), \(d=16\) | 6 / 6 (analytic) |
+| `repairMs(6)` ≤ 4 s sibling overlap budget | 1480 ms / 1480 ms |
+| 1000 Mbps origin vs degree-16 HD simulcast stack | covers / covers |
+| Sampled relay stall rate | ~0.23 / ~0.23 |
+| Forwarded signed chunk verify | pass / pass |
+
+**Claim:** `qualified` (stall sampling) for both profiles — not `topology`. **10M remains a design target** until sampled relay stall rate is 0 under the fixed upload-cap assumptions. This harness is **not** 10M WebRTC sessions, **not** measured verify CPU at scale, and **not** RFC 8888 TWCC on the wire.
+
+A **PeerGroup signaling stress harness** with synthetic chunk publishers (item 3 in the plan above) is targeted for **v1.15.0** ([#159](https://github.com/jose-compu/dignity.js/issues/159) signaling load remains separate).
+
 ---
 
 ## Milestone mapping (#152)
@@ -213,7 +229,7 @@ Feasibility argument: 10M **concurrent** viewers implies ~6 relay hops at degree
 | 4. Node origin | **Done (v1.9.0)** — public + private/combined on `dignity.js/node`; file ingest or ffmpeg-framed Annex-B/fMP4; native Node WebRTC peer **deferred** |
 | 5. Adaptive layer | **Done (v1.10.0–v1.12.0)** — rendition ladder, relay policy, playout guard, simulcast origin publish; camera/WebCodecs still deferred (#159) |
 | 6. Standard ingest adapters | **Done (v1.13.0)** — MPEG-TS demuxer, HLS/RTMP/SRT/WHIP Node ingest on `dignity.js/node`; WHIP uses injectable WebRTC `peerFactory` |
-| 7. Scale simulation | Planned (milestone 7) |
+| 7. Scale simulation | **Partial (v1.14.0)** — `runScaleSimulation`; signaling stress harness in 1.15.0 |
 
 ---
 

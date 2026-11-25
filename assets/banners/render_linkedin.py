@@ -579,9 +579,25 @@ V113_BOUNDS_CHECK = {
     "install": "npm install dignity.js@1.13.0",
 }
 
+V114_BOUNDS_CHECK = {
+    "width": DEFAULT_WIDTH,
+    "height": DEFAULT_HEIGHT,
+    "version": "1.14.0",
+    "title": "Scale simulation",
+    "date": "November 2026",
+    "tagline": "The scalable data layer for decentralized browser apps",
+    "highlights": (
+        "Seeded fan-out model",
+        "Six hops at degree 16",
+        "Churn and stall rates",
+    ),
+    "packages": (),
+    "install": "npm install dignity.js@1.14.0",
+}
+
 
 def run_bounds_check(logo_path: Path = DEFAULT_LOGO) -> None:
-    layout = _canvas_layout(V113_BOUNDS_CHECK["width"], V113_BOUNDS_CHECK["height"])
+    layout = _canvas_layout(V114_BOUNDS_CHECK["width"], V114_BOUNDS_CHECK["height"])
     canvas = Image.new("RGBA", (layout.width, layout.height), BG + (255,))
     draw = ImageDraw.Draw(canvas)
 
@@ -598,12 +614,12 @@ def run_bounds_check(logo_path: Path = DEFAULT_LOGO) -> None:
         layout,
         text_x=provisional_text_x,
         max_text_w=provisional_max_w,
-        version=V113_BOUNDS_CHECK["version"],
-        title=V113_BOUNDS_CHECK["title"],
-        date=V113_BOUNDS_CHECK["date"],
-        highlights=list(V113_BOUNDS_CHECK["highlights"]),
-        packages=list(V113_BOUNDS_CHECK["packages"]),
-        install_line=V113_BOUNDS_CHECK["install"],
+        version=V114_BOUNDS_CHECK["version"],
+        title=V114_BOUNDS_CHECK["title"],
+        date=V114_BOUNDS_CHECK["date"],
+        highlights=list(V114_BOUNDS_CHECK["highlights"]),
+        packages=list(V114_BOUNDS_CHECK["packages"]),
+        install_line=V114_BOUNDS_CHECK["install"],
     )
 
     block_cy = inner_top + inner_h // 2
@@ -617,17 +633,17 @@ def run_bounds_check(logo_path: Path = DEFAULT_LOGO) -> None:
         layout,
         text_x=text_x,
         max_text_w=max_text_w,
-        version=V113_BOUNDS_CHECK["version"],
-        title=V113_BOUNDS_CHECK["title"],
-        date=V113_BOUNDS_CHECK["date"],
-        highlights=list(V113_BOUNDS_CHECK["highlights"]),
-        packages=list(V113_BOUNDS_CHECK["packages"]),
-        install_line=V113_BOUNDS_CHECK["install"],
+        version=V114_BOUNDS_CHECK["version"],
+        title=V114_BOUNDS_CHECK["title"],
+        date=V114_BOUNDS_CHECK["date"],
+        highlights=list(V114_BOUNDS_CHECK["highlights"]),
+        packages=list(V114_BOUNDS_CHECK["packages"]),
+        install_line=V114_BOUNDS_CHECK["install"],
     )
 
     tagline_runs, _ = _pick_tagline_layout(
         draw,
-        V113_BOUNDS_CHECK["tagline"],
+        V114_BOUNDS_CHECK["tagline"],
         logo_x,
         logo_y,
         logo.width,
@@ -783,7 +799,7 @@ def main() -> None:
 
     if args.check:
         run_bounds_check(logo_path=args.logo)
-        print("Banner bounds check passed (v1.13.0 highlights).")
+        print("Banner bounds check passed (v1.14.0 highlights).")
         return
 
     if args.output is None:
