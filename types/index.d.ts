@@ -522,6 +522,52 @@ declare module 'dignity.js' {
     ): string;
   };
 
+  export interface NormalizedSimulcastLayer {
+    layerId: string;
+    payloadBytes: Uint8Array;
+    keyframe: boolean;
+  }
+
+  export function normalizeSimulcastLayers(
+    frameOrLayers:
+      | NormalizedSimulcastLayer[]
+      | {
+          layers:
+            | Array<{ layerId: string; payloadBytes?: Uint8Array; data?: Uint8Array; keyframe?: boolean }>
+            | Record<string, { payloadBytes?: Uint8Array; data?: Uint8Array; keyframe?: boolean }>;
+        }
+  ): NormalizedSimulcastLayer[];
+
+  export function createLayerSequenceTracker(): {
+    next(layerId?: string): number;
+    peek(layerId?: string): number;
+    snapshot(): Map<string, number>;
+  };
+
+  export function runSimulcastLoadTrace(options: {
+    bus: InMemoryStreamSignalingBus;
+    broadcaster: PublicStreamBroadcaster;
+    relay: PublicStreamRelay;
+    viewerHealthy: PublicStreamViewer;
+    viewerDegraded: PublicStreamViewer;
+    viewerSelectorDegraded: ReturnType<typeof createLayerSelector>;
+    playoutDegraded?: ReturnType<typeof createPlayoutBuffer>;
+    estimatorDegraded: ReturnType<typeof createBandwidthEstimator>;
+    degradedChildId: string;
+    healthyChildId: string;
+    sessionId: string;
+    l0Bps: number;
+    l1Bps: number;
+    l2Bps: number;
+    payloadForLayer?: (layerId: string) => Uint8Array;
+  }): {
+    publishedLayerIds: string[];
+    relayLayerHealthy: string;
+    relayLayerDegraded: string;
+    viewerLayerDegraded: string;
+    logLines: string[];
+  };
+
   export function createRelayLayerPolicy(options: {
     profile?: 'hd720' | 'fhd1080';
     headroomFactor?: number;
@@ -692,8 +738,30 @@ declare module 'dignity.js' {
     announce(): void;
     publishChunk(
       payloadBytes: Uint8Array,
-      chunkMeta?: { timestampMs?: number; layerId?: string; mimeType?: string; keyframe?: boolean }
+      chunkMeta?: {
+        timestampMs?: number;
+        layerId?: string;
+        mimeType?: string;
+        keyframe?: boolean;
+        profile?: 'hd720' | 'fhd1080';
+        rendition?: MediaChunkRendition & { layerId: string };
+        chunkVersion?: number;
+        sequence?: number;
+      }
     ): SignedMediaChunk;
+    publishSimulcastTick(
+      layers:
+        | Array<{ layerId: string; payloadBytes?: Uint8Array; data?: Uint8Array; keyframe?: boolean }>
+        | { layers: Array<{ layerId: string; payloadBytes?: Uint8Array; data?: Uint8Array; keyframe?: boolean }> | Record<string, { payloadBytes?: Uint8Array; data?: Uint8Array; keyframe?: boolean }> },
+      tickMeta?: {
+        timestampMs?: number;
+        mimeType?: string;
+        profile?: 'hd720' | 'fhd1080';
+        rendition?: MediaChunkRendition & { layerId: string };
+        chunkVersion?: number;
+      }
+    ): SignedMediaChunk[];
+    getLayerSequence(layerId?: string): number;
     close(): void;
   }
 

@@ -4,8 +4,15 @@ declare module 'dignity.js/node' {
 
   export const DEFAULT_CHUNK_BYTES: number;
 
+  export interface SimulcastLayerFrame {
+    layerId: string;
+    payloadBytes?: Uint8Array;
+    data?: Uint8Array;
+    keyframe?: boolean;
+  }
+
   export interface MediaFrame {
-    payloadBytes: Uint8Array;
+    payloadBytes?: Uint8Array;
     mimeType?: string;
     timestampMs?: number;
     layerId?: string;
@@ -13,6 +20,9 @@ declare module 'dignity.js/node' {
     profile?: 'hd720' | 'fhd1080';
     rendition?: import('dignity.js').MediaChunkRendition & { layerId: string };
     chunkVersion?: number;
+    layers?:
+      | SimulcastLayerFrame[]
+      | Record<string, { payloadBytes?: Uint8Array; data?: Uint8Array; keyframe?: boolean }>;
   }
 
   export interface NodeMediaIngest {

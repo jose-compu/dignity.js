@@ -23194,6 +23194,241 @@ var require_media_chunk = __commonJS({
   }
 });
 
+// src/streaming/receiver-report.js
+var require_receiver_report = __commonJS({
+  "src/streaming/receiver-report.js"(exports, module) {
+    function createReceiverReport(fields) {
+      if (!fields || typeof fields !== "object") {
+        throw new TypeError("fields must be an object");
+      }
+      const requiredStrings = ["sessionId", "viewerId", "layerId"];
+      for (const key of requiredStrings) {
+        if (typeof fields[key] !== "string" || fields[key].trim() === "") {
+          throw new TypeError(`${key} must be a non-empty string`);
+        }
+      }
+      const requiredNumbers = [
+        "timestampMs",
+        "intervalMs",
+        "bytesReceived",
+        "packetsReceived",
+        "packetsLost",
+        "interarrivalDelayMs"
+      ];
+      for (const key of requiredNumbers) {
+        if (typeof fields[key] !== "number" || !Number.isFinite(fields[key])) {
+          throw new TypeError(`${key} must be a finite number`);
+        }
+      }
+      if (fields.intervalMs <= 0) {
+        throw new RangeError("intervalMs must be positive");
+      }
+      if (fields.bytesReceived < 0 || fields.packetsReceived < 0 || fields.packetsLost < 0) {
+        throw new RangeError("byte and packet counts must be non-negative");
+      }
+      return Object.freeze({
+        sessionId: fields.sessionId.trim(),
+        viewerId: fields.viewerId.trim(),
+        layerId: fields.layerId.trim(),
+        timestampMs: fields.timestampMs,
+        intervalMs: fields.intervalMs,
+        bytesReceived: fields.bytesReceived,
+        packetsReceived: fields.packetsReceived,
+        packetsLost: fields.packetsLost,
+        interarrivalDelayMs: fields.interarrivalDelayMs
+      });
+    }
+    module.exports = {
+      createReceiverReport
+    };
+  }
+});
+
+// src/streaming/simulcast-publish.js
+var require_simulcast_publish = __commonJS({
+  "src/streaming/simulcast-publish.js"(exports, module) {
+    var { DEFAULT_LAYER_ID } = require_media_chunk();
+    var { LAYER_IDS } = require_rendition_ladder();
+    function toPayloadBytes(bytes) {
+      if (bytes instanceof Uint8Array) {
+        return bytes;
+      }
+      if (Buffer.isBuffer(bytes)) {
+        return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      }
+      if (bytes instanceof ArrayBuffer) {
+        return new Uint8Array(bytes);
+      }
+      throw new TypeError("layer payload must be Uint8Array, Buffer, or ArrayBuffer");
+    }
+    function normalizeLayerEntry(layer) {
+      if (!layer || typeof layer !== "object") {
+        throw new TypeError("each simulcast layer must be an object");
+      }
+      const layerId = typeof layer.layerId === "string" ? layer.layerId.trim() : "";
+      if (!layerId) {
+        throw new TypeError("each simulcast layer requires layerId");
+      }
+      const raw = layer.payloadBytes != null ? layer.payloadBytes : layer.data;
+      if (raw == null) {
+        throw new TypeError(`layer ${layerId} requires payloadBytes or data`);
+      }
+      return {
+        layerId,
+        payloadBytes: toPayloadBytes(raw),
+        keyframe: Boolean(layer.keyframe)
+      };
+    }
+    function normalizeSimulcastLayers(frameOrLayers) {
+      if (frameOrLayers == null) {
+        throw new TypeError("simulcast input is required");
+      }
+      let rawLayers;
+      if (Array.isArray(frameOrLayers)) {
+        rawLayers = frameOrLayers;
+      } else if (Array.isArray(frameOrLayers.layers)) {
+        rawLayers = frameOrLayers.layers;
+      } else if (frameOrLayers.layers && typeof frameOrLayers.layers === "object") {
+        rawLayers = Object.entries(frameOrLayers.layers).map(([layerId, value]) => ({
+          layerId,
+          ...value && typeof value === "object" ? value : { data: value }
+        }));
+      } else {
+        throw new TypeError("frame must provide layers as an array or map");
+      }
+      if (rawLayers.length === 0) {
+        throw new Error("simulcast tick requires at least one layer");
+      }
+      return rawLayers.map(normalizeLayerEntry);
+    }
+    function createLayerSequenceTracker() {
+      const nextByLayer = /* @__PURE__ */ new Map();
+      function resolveLayerId(layerId) {
+        return typeof layerId === "string" && layerId.trim() !== "" ? layerId.trim() : DEFAULT_LAYER_ID;
+      }
+      return {
+        next(layerId) {
+          const id = resolveLayerId(layerId);
+          const seq = nextByLayer.get(id) ?? 0;
+          nextByLayer.set(id, seq + 1);
+          return seq;
+        },
+        peek(layerId) {
+          const id = resolveLayerId(layerId);
+          return nextByLayer.get(id) ?? 0;
+        },
+        snapshot() {
+          return new Map(nextByLayer);
+        }
+      };
+    }
+    function runSimulcastLoadTrace({
+      bus,
+      broadcaster,
+      relay,
+      viewerHealthy,
+      viewerDegraded,
+      viewerSelectorDegraded,
+      playoutDegraded,
+      estimatorDegraded,
+      degradedChildId,
+      healthyChildId,
+      sessionId,
+      l0Bps,
+      l1Bps,
+      l2Bps,
+      payloadForLayer = () => new Uint8Array([1])
+    }) {
+      void bus;
+      const publishedLayerIds = [];
+      const logLines = [];
+      const tickMs = 5e3;
+      const degradedScript = [
+        { ts: tickMs, bytes: Math.floor(l2Bps / 8), loss: 0, delay: 0 },
+        { ts: tickMs + 1e3, bytes: Math.floor(l1Bps / 8) - 1e3, loss: 0, delay: 0 },
+        { ts: tickMs + 1200, bytes: Math.floor(l0Bps / 8) - 5e3, loss: 0, delay: 0 },
+        { ts: tickMs + 1500, bytes: Math.floor(l0Bps / 8) - 8e3, loss: 0, delay: 8 },
+        { ts: tickMs + 2500, bytes: Math.floor(l0Bps / 8) - 8e3, loss: 0, delay: 8 },
+        { ts: tickMs + 4e3, bytes: Math.floor(l1Bps / 8), loss: 0, delay: 0 },
+        { ts: tickMs + 5e3, bytes: Math.floor(l1Bps / 8), loss: 0, delay: 0 },
+        { ts: tickMs + 6e3, bytes: Math.floor(l1Bps / 8), loss: 0, delay: 0 },
+        { ts: tickMs + 7e3, bytes: Math.floor(l1Bps / 8), loss: 0, delay: 0 },
+        { ts: tickMs + 8e3, bytes: Math.floor(l1Bps / 8), loss: 0, delay: 0 },
+        { ts: tickMs + 9e3, bytes: Math.floor(l1Bps / 8), loss: 0, delay: 0 }
+      ];
+      const { createReceiverReport } = require_receiver_report();
+      let prevTs = degradedScript[0].ts;
+      let viewerLayerDegraded = viewerSelectorDegraded.getLayerId();
+      for (const step of degradedScript) {
+        const intervalMs = step.ts - prevTs || 1e3;
+        prevTs = step.ts;
+        relay.observeChildReport(
+          healthyChildId,
+          createReceiverReport({
+            sessionId,
+            viewerId: healthyChildId,
+            layerId: relay.getChildLayer(healthyChildId) || "L2",
+            timestampMs: step.ts,
+            intervalMs,
+            bytesReceived: Math.ceil(l2Bps / 8 * 1.05),
+            packetsReceived: 1e3,
+            packetsLost: 0,
+            interarrivalDelayMs: 0
+          })
+        );
+        const degradedReport = createReceiverReport({
+          sessionId,
+          viewerId: degradedChildId,
+          layerId: relay.getChildLayer(degradedChildId) || "L2",
+          timestampMs: step.ts,
+          intervalMs,
+          bytesReceived: step.bytes,
+          packetsReceived: 1e3,
+          packetsLost: step.loss,
+          interarrivalDelayMs: step.delay
+        });
+        relay.observeChildReport(degradedChildId, degradedReport);
+        const estimateBps = estimatorDegraded.observe(degradedReport);
+        if (playoutDegraded) {
+          playoutDegraded.observeReport(degradedReport);
+        }
+        viewerLayerDegraded = viewerSelectorDegraded.selectLayer({ estimateBps, nowMs: step.ts });
+      }
+      const tickLayers = LAYER_IDS.map((layerId) => ({
+        layerId,
+        payloadBytes: payloadForLayer(layerId),
+        keyframe: layerId === "L0"
+      }));
+      const chunks = broadcaster.publishSimulcastTick(tickLayers, {
+        timestampMs: tickMs + 1e4,
+        profile: "hd720"
+      });
+      for (const chunk of chunks) {
+        publishedLayerIds.push(chunk.layerId);
+      }
+      logLines.push(`published layers: ${publishedLayerIds.join(" ")}`);
+      const relayLayerHealthy = relay.getChildLayer(healthyChildId) || "L2";
+      const relayLayerDegraded = relay.getChildLayer(degradedChildId) || "L2";
+      logLines.push(`relay forwards: ${relayLayerDegraded}`);
+      logLines.push(`viewer layer: ${viewerLayerDegraded}`);
+      void viewerHealthy;
+      void viewerDegraded;
+      return {
+        publishedLayerIds,
+        relayLayerHealthy,
+        relayLayerDegraded,
+        viewerLayerDegraded,
+        logLines
+      };
+    }
+    module.exports = {
+      normalizeSimulcastLayers,
+      createLayerSequenceTracker,
+      runSimulcastLoadTrace
+    };
+  }
+});
+
 // src/streaming/public-stream-path.js
 var require_public_stream_path = __commonJS({
   "src/streaming/public-stream-path.js"(exports, module) {
@@ -23201,8 +23436,10 @@ var require_public_stream_path = __commonJS({
     var { createStreamSession } = require_stream_session();
     var {
       createSignedMediaChunk,
-      verifyMediaChunk
+      verifyMediaChunk,
+      DEFAULT_LAYER_ID
     } = require_media_chunk();
+    var { normalizeSimulcastLayers, createLayerSequenceTracker } = require_simulcast_publish();
     var STREAM_MESSAGE_TYPES = Object.freeze({
       JOIN_OFFER: "stream:join-offer",
       JOIN_REQUEST: "stream:join-request",
@@ -23274,6 +23511,7 @@ var require_public_stream_path = __commonJS({
         this.bus = bus;
         this.directViewerIds = [...directViewerIds];
         this.sequence = 0;
+        this._layerSequences = createLayerSequenceTracker();
         this.pendingJoin = /* @__PURE__ */ new Map();
         this._onBusMessage = this._onBusMessage.bind(this);
         this.bus.subscribe(session.broadcasterId, this._onBusMessage);
@@ -23290,15 +23528,17 @@ var require_public_stream_path = __commonJS({
        * @param {Object} [chunkMeta]
        */
       publishChunk(payloadBytes, chunkMeta = {}) {
+        const layerId = typeof chunkMeta.layerId === "string" && chunkMeta.layerId.trim() !== "" ? chunkMeta.layerId.trim() : DEFAULT_LAYER_ID;
+        const sequence = typeof chunkMeta.sequence === "number" && Number.isInteger(chunkMeta.sequence) ? chunkMeta.sequence : this._layerSequences.next(layerId);
         const chunk = createSignedMediaChunk({
           sessionId: this.session.sessionId,
           broadcasterId: this.session.broadcasterId,
           payloadBytes,
           signingSecretKey: this.signingSecretKey,
           signingPublicKey: this.signingPublicKey,
-          sequence: this.sequence,
+          sequence,
           timestampMs: chunkMeta.timestampMs,
-          layerId: chunkMeta.layerId,
+          layerId,
           mimeType: chunkMeta.mimeType,
           keyframe: chunkMeta.keyframe,
           profile: chunkMeta.profile,
@@ -23312,6 +23552,35 @@ var require_public_stream_path = __commonJS({
           chunk
         });
         return chunk;
+      }
+      /**
+       * Publish multiple ladder layers for one tick (shared timestamp, per-layer sequence).
+       * @param {Object[] | Object} layers — array of `{ layerId, payloadBytes|data, keyframe? }` or a map via normalized input
+       * @param {Object} [tickMeta]
+       * @returns {import('./media-chunk').SignedMediaChunk[]}
+       */
+      publishSimulcastTick(layers, tickMeta = {}) {
+        const normalized = normalizeSimulcastLayers(layers);
+        const timestampMs = tickMeta.timestampMs != null ? tickMeta.timestampMs : Date.now();
+        const chunks = [];
+        for (const layer of normalized) {
+          chunks.push(
+            this.publishChunk(layer.payloadBytes, {
+              ...tickMeta,
+              layerId: layer.layerId,
+              keyframe: layer.keyframe,
+              timestampMs
+            })
+          );
+        }
+        return chunks;
+      }
+      /**
+       * @param {string} [layerId]
+       * @returns {number}
+       */
+      getLayerSequence(layerId) {
+        return this._layerSequences.peek(layerId);
       }
       _onBusMessage(envelope) {
         if (envelope.messageType !== STREAM_MESSAGE_TYPES.JOIN_REQUEST) {
@@ -24472,56 +24741,6 @@ var require_media_framing = __commonJS({
   }
 });
 
-// src/streaming/receiver-report.js
-var require_receiver_report = __commonJS({
-  "src/streaming/receiver-report.js"(exports, module) {
-    function createReceiverReport(fields) {
-      if (!fields || typeof fields !== "object") {
-        throw new TypeError("fields must be an object");
-      }
-      const requiredStrings = ["sessionId", "viewerId", "layerId"];
-      for (const key of requiredStrings) {
-        if (typeof fields[key] !== "string" || fields[key].trim() === "") {
-          throw new TypeError(`${key} must be a non-empty string`);
-        }
-      }
-      const requiredNumbers = [
-        "timestampMs",
-        "intervalMs",
-        "bytesReceived",
-        "packetsReceived",
-        "packetsLost",
-        "interarrivalDelayMs"
-      ];
-      for (const key of requiredNumbers) {
-        if (typeof fields[key] !== "number" || !Number.isFinite(fields[key])) {
-          throw new TypeError(`${key} must be a finite number`);
-        }
-      }
-      if (fields.intervalMs <= 0) {
-        throw new RangeError("intervalMs must be positive");
-      }
-      if (fields.bytesReceived < 0 || fields.packetsReceived < 0 || fields.packetsLost < 0) {
-        throw new RangeError("byte and packet counts must be non-negative");
-      }
-      return Object.freeze({
-        sessionId: fields.sessionId.trim(),
-        viewerId: fields.viewerId.trim(),
-        layerId: fields.layerId.trim(),
-        timestampMs: fields.timestampMs,
-        intervalMs: fields.intervalMs,
-        bytesReceived: fields.bytesReceived,
-        packetsReceived: fields.packetsReceived,
-        packetsLost: fields.packetsLost,
-        interarrivalDelayMs: fields.interarrivalDelayMs
-      });
-    }
-    module.exports = {
-      createReceiverReport
-    };
-  }
-});
-
 // src/streaming/bandwidth-estimator.js
 var require_bandwidth_estimator = __commonJS({
   "src/streaming/bandwidth-estimator.js"(exports, module) {
@@ -24933,6 +25152,7 @@ var require_streaming = __commonJS({
     var layerSelector = require_layer_selector();
     var playoutBuffer = require_playout_buffer();
     var relayLayerPolicy = require_relay_layer_policy();
+    var simulcastPublish = require_simulcast_publish();
     module.exports = {
       ...accessModes,
       ...streamSession,
@@ -24948,6 +25168,7 @@ var require_streaming = __commonJS({
       ...layerSelector,
       ...playoutBuffer,
       ...relayLayerPolicy,
+      ...simulcastPublish,
       STREAMING_API_EXPERIMENTAL: true
     };
   }
@@ -25091,6 +25312,9 @@ var require_index = __commonJS({
       createLayerSelector,
       createPlayoutBuffer,
       createRelayLayerPolicy,
+      normalizeSimulcastLayers,
+      createLayerSequenceTracker,
+      runSimulcastLoadTrace,
       normalizePrivateRecipients,
       validateStreamAccessConfig,
       StreamSession,
@@ -25221,6 +25445,9 @@ var require_index = __commonJS({
       createLayerSelector,
       createPlayoutBuffer,
       createRelayLayerPolicy,
+      normalizeSimulcastLayers,
+      createLayerSequenceTracker,
+      runSimulcastLoadTrace,
       normalizePrivateRecipients,
       validateStreamAccessConfig,
       StreamSession,

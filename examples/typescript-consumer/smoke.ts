@@ -10,6 +10,8 @@ import {
   createBandwidthEstimator,
   createPlayoutBuffer,
   createRelayLayerPolicy,
+  normalizeSimulcastLayers,
+  runSimulcastLoadTrace,
   RENDITION_PROFILE_HD720,
   hashReflectiveLogic,
   type CompatibilityPolicy,
@@ -78,4 +80,7 @@ void bwEst.getEstimateBps();
 const playoutBuf = createPlayoutBuffer();
 void playoutBuf.getTargetDelayMs();
 const relayPolicy = createRelayLayerPolicy({ floorBps: 400_000, ceilingBps: 4_000_000 });
+void normalizeSimulcastLayers({ layers: [{ layerId: 'L0', payloadBytes: new Uint8Array([1]) }] });
+const simulcastTrace: typeof runSimulcastLoadTrace = runSimulcastLoadTrace;
+void simulcastTrace;
 void relayPolicy.chunkLayerId;

@@ -8,8 +8,10 @@ const { STREAM_ACCESS_MODES } = require('./access-modes');
 const { createStreamSession } = require('./stream-session');
 const {
   createSignedMediaChunk,
-  verifyMediaChunk
+  verifyMediaChunk,
+  DEFAULT_LAYER_ID
 } = require('./media-chunk');
+const { normalizeSimulcastLayers, createLayerSequenceTracker } = require('./simulcast-publish');
 
 const STREAM_MESSAGE_TYPES = Object.freeze({
   JOIN_OFFER: 'stream:join-offer',
@@ -91,6 +93,7 @@ class PublicStreamBroadcaster {
     this.bus = bus;
     this.directViewerIds = [...directViewerIds];
     this.sequence = 0;
+    this._layerSequences = createLayerSequenceTracker();
     this.pendingJoin = new Map();
 
     this._onBusMessage = this._onBusMessage.bind(this);
@@ -110,15 +113,24 @@ class PublicStreamBroadcaster {
    * @param {Object} [chunkMeta]
    */
   publishChunk(payloadBytes, chunkMeta = {}) {
+    const layerId =
+      typeof chunkMeta.layerId === 'string' && chunkMeta.layerId.trim() !== ''
+        ? chunkMeta.layerId.trim()
+        : DEFAULT_LAYER_ID;
+    const sequence =
+      typeof chunkMeta.sequence === 'number' && Number.isInteger(chunkMeta.sequence)
+        ? chunkMeta.sequence
+        : this._layerSequences.next(layerId);
+
     const chunk = createSignedMediaChunk({
       sessionId: this.session.sessionId,
       broadcasterId: this.session.broadcasterId,
       payloadBytes,
       signingSecretKey: this.signingSecretKey,
       signingPublicKey: this.signingPublicKey,
-      sequence: this.sequence,
+      sequence,
       timestampMs: chunkMeta.timestampMs,
-      layerId: chunkMeta.layerId,
+      layerId,
       mimeType: chunkMeta.mimeType,
       keyframe: chunkMeta.keyframe,
       profile: chunkMeta.profile,
@@ -133,6 +145,37 @@ class PublicStreamBroadcaster {
       chunk
     });
     return chunk;
+  }
+
+  /**
+   * Publish multiple ladder layers for one tick (shared timestamp, per-layer sequence).
+   * @param {Object[] | Object} layers — array of `{ layerId, payloadBytes|data, keyframe? }` or a map via normalized input
+   * @param {Object} [tickMeta]
+   * @returns {import('./media-chunk').SignedMediaChunk[]}
+   */
+  publishSimulcastTick(layers, tickMeta = {}) {
+    const normalized = normalizeSimulcastLayers(layers);
+    const timestampMs = tickMeta.timestampMs != null ? tickMeta.timestampMs : Date.now();
+    const chunks = [];
+    for (const layer of normalized) {
+      chunks.push(
+        this.publishChunk(layer.payloadBytes, {
+          ...tickMeta,
+          layerId: layer.layerId,
+          keyframe: layer.keyframe,
+          timestampMs
+        })
+      );
+    }
+    return chunks;
+  }
+
+  /**
+   * @param {string} [layerId]
+   * @returns {number}
+   */
+  getLayerSequence(layerId) {
+    return this._layerSequences.peek(layerId);
   }
 
   _onBusMessage(envelope) {

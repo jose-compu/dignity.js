@@ -11,6 +11,8 @@ const {
   createPrivateSenderKeyEpoch,
   rotatePrivateSenderKeyEpoch
 } = require('./private-sender-key-epoch');
+const { DEFAULT_LAYER_ID } = require('./media-chunk');
+const { normalizeSimulcastLayers, createLayerSequenceTracker } = require('./simulcast-publish');
 
 const PRIVATE_MODES = new Set([
   STREAM_ACCESS_MODES.PRIVATE_SINGLE,
@@ -86,6 +88,7 @@ class PrivateNodeStreamBroadcaster {
     this.bus = bus;
     this.directViewerIds = [...directViewerIds];
     this.sequence = 0;
+    this._layerSequences = createLayerSequenceTracker();
     this.pendingJoin = new Map();
     this._senderKeyEpoch = createPrivateSenderKeyEpoch({
       recipientPublicBundles: this.recipientPublicBundles,
@@ -110,23 +113,46 @@ class PrivateNodeStreamBroadcaster {
    * @param {Object} [chunkMeta]
    * @returns {import('./media-chunk').SignedMediaChunk[]}
    */
-  publishFrame(payloadBytes, chunkMeta = {}) {
-    const chunks = [];
+  _nextLayerSequence(layerId) {
+    return this._layerSequences.next(layerId);
+  }
+
+  _sealLayer(payloadBytes, chunkMeta = {}) {
+    let layerId;
+    if (typeof chunkMeta.layerId === 'string' && chunkMeta.layerId.trim() !== '') {
+      layerId = chunkMeta.layerId.trim();
+    } else if (this.session.mode === STREAM_ACCESS_MODES.COMBINED) {
+      layerId = 'public';
+    } else {
+      layerId = DEFAULT_LAYER_ID;
+    }
+    const ladderLayer = /^L[0-2]$/.test(layerId);
+    const sequence =
+      typeof chunkMeta.sequence === 'number' && Number.isInteger(chunkMeta.sequence)
+        ? chunkMeta.sequence
+        : this._nextLayerSequence(layerId);
+
     const encryptOpts = {
       broadcasterEncryptionSecretKey: this.broadcasterEncryptionSecretKey,
       broadcasterEncryptionPublicKey: this.broadcasterEncryptionPublicKey
     };
 
+    const chunks = [];
+
     if (this.session.mode === STREAM_ACCESS_MODES.COMBINED) {
+      const publicLayerId = ladderLayer ? layerId : 'public';
+      const publicSequence = ladderLayer
+        ? sequence
+        : this._nextLayerSequence(publicLayerId);
       const publicChunk = createSignedMediaChunk({
         sessionId: this.session.sessionId,
         broadcasterId: this.session.broadcasterId,
         payloadBytes,
         signingSecretKey: this.signingSecretKey,
         signingPublicKey: this.signingPublicKey,
-        sequence: this.sequence,
+        sequence: publicSequence,
         timestampMs: chunkMeta.timestampMs,
-        layerId: chunkMeta.layerId || 'public',
+        layerId: publicLayerId,
         mimeType: chunkMeta.mimeType,
         keyframe: chunkMeta.keyframe,
         profile: chunkMeta.profile,
@@ -137,6 +163,10 @@ class PrivateNodeStreamBroadcaster {
       chunks.push(publicChunk);
     }
 
+    let privateLayerId = layerId;
+    if (this.session.mode === STREAM_ACCESS_MODES.COMBINED) {
+      privateLayerId = ladderLayer ? `private-${layerId}` : 'private';
+    }
     const privateChunk = sealPrivateMediaChunk({
       accessMode: this.session.mode,
       sessionId: this.session.sessionId,
@@ -146,9 +176,9 @@ class PrivateNodeStreamBroadcaster {
       signingPublicKey: this.signingPublicKey,
       recipientPublicBundles: this.recipientPublicBundles,
       privateSenderKeyEpoch: this._senderKeyEpoch,
-      sequence: this.sequence,
+      sequence: this._nextLayerSequence(privateLayerId),
       timestampMs: chunkMeta.timestampMs,
-      layerId: this.session.mode === STREAM_ACCESS_MODES.COMBINED ? 'private' : chunkMeta.layerId,
+      layerId: privateLayerId,
       mimeType: chunkMeta.mimeType,
       keyframe: chunkMeta.keyframe,
       profile: chunkMeta.profile,
@@ -159,6 +189,40 @@ class PrivateNodeStreamBroadcaster {
     this.sequence += 1;
     chunks.push(privateChunk);
 
+    return chunks;
+  }
+
+  /**
+   * @param {Uint8Array} payloadBytes
+   * @param {Object} [chunkMeta]
+   * @returns {import('./media-chunk').SignedMediaChunk[]}
+   */
+  publishFrame(payloadBytes, chunkMeta = {}) {
+    const chunks = this._sealLayer(payloadBytes, chunkMeta);
+    this._fanoutChunks(chunks);
+    return chunks;
+  }
+
+  /**
+   * Seal and fan out one tick of simulcast layers (private / combined).
+   * @param {Object[] | Object} layers
+   * @param {Object} [tickMeta]
+   * @returns {import('./media-chunk').SignedMediaChunk[]}
+   */
+  publishSimulcastFrame(layers, tickMeta = {}) {
+    const normalized = normalizeSimulcastLayers(layers);
+    const timestampMs = tickMeta.timestampMs != null ? tickMeta.timestampMs : Date.now();
+    const chunks = [];
+    for (const layer of normalized) {
+      chunks.push(
+        ...this._sealLayer(layer.payloadBytes, {
+          ...tickMeta,
+          layerId: layer.layerId,
+          keyframe: layer.keyframe,
+          timestampMs
+        })
+      );
+    }
     this._fanoutChunks(chunks);
     return chunks;
   }
@@ -331,26 +395,72 @@ class NodeStreamOrigin {
       if (!this._running) {
         break;
       }
-      const chunkMeta = {
-        mimeType: frame.mimeType,
-        timestampMs: frame.timestampMs,
-        layerId: frame.layerId,
-        keyframe: frame.keyframe,
-        profile: frame.profile,
-        rendition: frame.rendition,
-        chunkVersion: frame.chunkVersion
-      };
+
+      const hasSimulcastLayers =
+        frame.layers != null &&
+        (Array.isArray(frame.layers) ||
+          (typeof frame.layers === 'object' && !ArrayBuffer.isView(frame.layers)));
 
       if (this.broadcaster) {
-        const chunk = this.broadcaster.publishChunk(frame.payloadBytes, chunkMeta);
-        if (this.dataChannelTransport) {
-          await this.dataChannelTransport.sendChunk(this.dataChannelPeerIds, chunk);
+        if (hasSimulcastLayers) {
+          const tickMeta = {
+            mimeType: frame.mimeType,
+            timestampMs: frame.timestampMs,
+            profile: frame.profile,
+            rendition: frame.rendition,
+            chunkVersion: frame.chunkVersion
+          };
+          const chunks = this.broadcaster.publishSimulcastTick(frame, tickMeta);
+          if (this.dataChannelTransport) {
+            for (const chunk of chunks) {
+              await this.dataChannelTransport.sendChunk(this.dataChannelPeerIds, chunk);
+            }
+          }
+        } else {
+          const chunkMeta = {
+            mimeType: frame.mimeType,
+            timestampMs: frame.timestampMs,
+            layerId: frame.layerId,
+            keyframe: frame.keyframe,
+            profile: frame.profile,
+            rendition: frame.rendition,
+            chunkVersion: frame.chunkVersion
+          };
+          const chunk = this.broadcaster.publishChunk(frame.payloadBytes, chunkMeta);
+          if (this.dataChannelTransport) {
+            await this.dataChannelTransport.sendChunk(this.dataChannelPeerIds, chunk);
+          }
         }
       } else {
-        const chunks = this._privateBroadcaster.publishFrame(frame.payloadBytes, chunkMeta);
-        if (this.dataChannelTransport) {
-          for (const chunk of chunks) {
-            await this.dataChannelTransport.sendChunk(this.dataChannelPeerIds, chunk);
+        if (hasSimulcastLayers) {
+          const tickMeta = {
+            mimeType: frame.mimeType,
+            timestampMs: frame.timestampMs,
+            profile: frame.profile,
+            rendition: frame.rendition,
+            chunkVersion: frame.chunkVersion
+          };
+          const chunks = this._privateBroadcaster.publishSimulcastFrame(frame, tickMeta);
+          if (this.dataChannelTransport) {
+            for (const chunk of chunks) {
+              await this.dataChannelTransport.sendChunk(this.dataChannelPeerIds, chunk);
+            }
+          }
+        } else {
+          const chunkMeta = {
+            mimeType: frame.mimeType,
+            timestampMs: frame.timestampMs,
+            layerId: frame.layerId,
+            keyframe: frame.keyframe,
+            profile: frame.profile,
+            rendition: frame.rendition,
+            chunkVersion: frame.chunkVersion
+          };
+          const chunks = this._privateBroadcaster.publishFrame(frame.payloadBytes, chunkMeta);
+          if (this.dataChannelTransport) {
+            for (const chunk of chunks) {
+              await this.dataChannelTransport.sendChunk(this.dataChannelPeerIds, chunk);
+            }
           }
         }
       }
