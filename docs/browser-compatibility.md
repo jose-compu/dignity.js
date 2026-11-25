@@ -1,6 +1,6 @@
 # Browser compatibility (#91)
 
-dignity.js targets **modern evergreen browsers** with WebRTC, IndexedDB, Web Crypto, and (for Dignity Apps) `MessageChannel` + sandboxed iframes. **v1.9.0** bundles verification, CQRS replicas, Dignity Apps, TypeScript definitions, BIP39-style identity mnemonic helpers, PeerJS start-retry, experimental streaming (public signed chunks v2 with `keyframe`, Annex-B/fMP4 framing parsers, sealed `private-single` / `private-list` / `combined` helpers and sender-key epoch rotation), WebRTC stream signaling, and the Vercel default signaling endpoint via `dist/dignity.esm.js`. Node-only stream origin helpers ship on the separate **`dignity.js/node`** subpath (not in the browser bundle).
+dignity.js targets **modern evergreen browsers** with WebRTC, IndexedDB, Web Crypto, and (for Dignity Apps) `MessageChannel` + sandboxed iframes. **v1.10.0** bundles verification, CQRS replicas, Dignity Apps, TypeScript definitions, BIP39-style identity mnemonic helpers, PeerJS start-retry, experimental streaming (public signed chunks v3 with signed `rendition` on HD/FHD ladders, v2 `keyframe`, v1 legacy; bandwidth estimator, layer selector, receiver reports; Annex-B/fMP4 framing parsers; sealed `private-single` / `private-list` / `combined` helpers and sender-key epoch rotation), WebRTC stream signaling, and the Vercel default signaling endpoint via `dist/dignity.esm.js`. Node-only stream origin helpers ship on the separate **`dignity.js/node`** subpath (not in the browser bundle).
 
 ## Required platform APIs
 

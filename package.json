@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "The scalable data layer of the decentralized browser application ecosystem.",
   "homepage": "https://dignity.js.org/",
   "repository": {
@@ -77,6 +77,7 @@
     "example:node-stream": "node examples/node-stream-origin.js",
     "example:node-framed-stream": "node examples/node-framed-stream-origin.js",
     "example:node-private-stream": "node examples/node-private-stream-origin.js",
+    "example:adaptive-layer": "node examples/adaptive-layer-sim.js",
     "prepublishOnly": "npm test && npm run build"
   },
   "keywords": [

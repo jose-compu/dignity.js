@@ -128,7 +128,10 @@ class PrivateNodeStreamBroadcaster {
         timestampMs: chunkMeta.timestampMs,
         layerId: chunkMeta.layerId || 'public',
         mimeType: chunkMeta.mimeType,
-        keyframe: chunkMeta.keyframe
+        keyframe: chunkMeta.keyframe,
+        profile: chunkMeta.profile,
+        rendition: chunkMeta.rendition,
+        chunkVersion: chunkMeta.chunkVersion
       });
       this.sequence += 1;
       chunks.push(publicChunk);
@@ -148,6 +151,9 @@ class PrivateNodeStreamBroadcaster {
       layerId: this.session.mode === STREAM_ACCESS_MODES.COMBINED ? 'private' : chunkMeta.layerId,
       mimeType: chunkMeta.mimeType,
       keyframe: chunkMeta.keyframe,
+      profile: chunkMeta.profile,
+      rendition: chunkMeta.rendition,
+      chunkVersion: chunkMeta.chunkVersion,
       ...encryptOpts
     });
     this.sequence += 1;
@@ -329,7 +335,10 @@ class NodeStreamOrigin {
         mimeType: frame.mimeType,
         timestampMs: frame.timestampMs,
         layerId: frame.layerId,
-        keyframe: frame.keyframe
+        keyframe: frame.keyframe,
+        profile: frame.profile,
+        rendition: frame.rendition,
+        chunkVersion: frame.chunkVersion
       };
 
       if (this.broadcaster) {

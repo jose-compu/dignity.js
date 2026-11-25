@@ -120,7 +120,10 @@ class PublicStreamBroadcaster {
       timestampMs: chunkMeta.timestampMs,
       layerId: chunkMeta.layerId,
       mimeType: chunkMeta.mimeType,
-      keyframe: chunkMeta.keyframe
+      keyframe: chunkMeta.keyframe,
+      profile: chunkMeta.profile,
+      rendition: chunkMeta.rendition,
+      chunkVersion: chunkMeta.chunkVersion
     });
     this.sequence += 1;
 

@@ -12,6 +12,10 @@ const webrtcSignaling = require('./webrtc-stream-signaling');
 const privateMediaChunk = require('./private-media-chunk');
 const privateSenderKeyEpoch = require('./private-sender-key-epoch');
 const mediaFraming = require('./media-framing');
+const renditionLadder = require('./rendition-ladder');
+const receiverReport = require('./receiver-report');
+const bandwidthEstimator = require('./bandwidth-estimator');
+const layerSelector = require('./layer-selector');
 
 module.exports = {
   ...accessModes,
@@ -22,5 +26,9 @@ module.exports = {
   ...publicStreamPath,
   ...webrtcSignaling,
   ...mediaFraming,
+  ...renditionLadder,
+  ...receiverReport,
+  ...bandwidthEstimator,
+  ...layerSelector,
   STREAMING_API_EXPERIMENTAL: true
 };

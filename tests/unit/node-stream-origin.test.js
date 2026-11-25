@@ -7,6 +7,8 @@ const {
   createPublicStreamViewer,
   verifyMediaChunk,
   decodeMediaChunkPayload,
+  RENDITION_PROFILE_HD720,
+  MEDIA_CHUNK_VERSION,
   createWebRTCDataChannelTransport,
   openPrivateMediaChunk
 } = require('../../src/streaming');
@@ -558,5 +560,58 @@ describe('node stream origin', () => {
 
     origin.stop();
     expect(fakeChild.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  test('file ingest publishes rendition metadata on version 3 chunks', async () => {
+    const bus = createInMemoryStreamSignalingBus();
+    const keys = testKeyPair('node-rendition');
+    const session = createStreamSession({
+      sessionId: 'node-rendition',
+      broadcasterId: 'origin',
+      mode: STREAM_ACCESS_MODES.PUBLIC
+    });
+
+    const viewer = createPublicStreamViewer({
+      viewerId: 'viewer-1',
+      sessionId: 'node-rendition',
+      broadcasterId: 'origin',
+      broadcasterSigningPublicKey: keys.signingPublicKey,
+      bus
+    });
+
+    const mediaIngest = {
+      kind: 'file',
+      stop() {},
+      async *frames() {
+        yield {
+          payloadBytes: new Uint8Array([0xaa, 0xbb]),
+          mimeType: 'application/octet-stream',
+          timestampMs: 500,
+          layerId: 'L1',
+          keyframe: true,
+          profile: RENDITION_PROFILE_HD720
+        };
+      }
+    };
+
+    const origin = createNodeStreamOrigin({
+      session,
+      signingSecretKey: keys.signingSecretKey,
+      signingPublicKey: keys.signingPublicKey,
+      bus,
+      mediaIngest,
+      directViewerIds: ['viewer-1']
+    });
+
+    viewer.requestJoin();
+    await origin.start();
+
+    expect(viewer.chunks).toHaveLength(1);
+    expect(viewer.chunks[0].version).toBe(MEDIA_CHUNK_VERSION);
+    expect(viewer.chunks[0].rendition).toMatchObject({
+      profile: RENDITION_PROFILE_HD720,
+      videoBitrateKbps: 1800
+    });
+    expect(verifyMediaChunk(viewer.chunks[0])).toBe(true);
   });
 });

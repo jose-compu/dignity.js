@@ -1638,5 +1638,87 @@ const signed = createSignedMediaChunk({
 });
 log('signed keyframe:', signed.keyframe);
 log('verify:', verifyMediaChunk(signed, 'framed-demo'));`
+  },
+  {
+    id: 'stream-adaptive-layers',
+    group: 'v110',
+    title: 'Adaptive layers (signed ladder + reports)',
+    description: 'v1.10.0 (#152): rendition ladders, bandwidth estimator, hysteresis layer selector.',
+    code: `const {
+  RENDITION_PROFILE_HD720,
+  resolveRendition,
+  createSignedMediaChunk,
+  verifyMediaChunk,
+  createReceiverReport,
+  createBandwidthEstimator,
+  createLayerSelector,
+  deriveKeyPairFromCredentials,
+  keyPairToPublicBundle
+} = dignity;
+
+function layerMbps(layerId) {
+  const row = resolveRendition(RENDITION_PROFILE_HD720, layerId);
+  return (row.videoBitrateKbps + row.audioBitrateKbps) / 1000;
+}
+
+const broadcaster = await deriveKeyPairFromCredentials({ username: 'bc', password: 'demo' });
+const bundle = keyPairToPublicBundle(broadcaster);
+
+for (const layerId of ['L0', 'L1', 'L2']) {
+  const chunk = createSignedMediaChunk({
+    sessionId: 'adaptive-demo',
+    broadcasterId: 'origin',
+    payloadBytes: new TextEncoder().encode('frame-' + layerId),
+    signingSecretKey: broadcaster.signing.secretKey,
+    signingPublicKey: bundle.signingPublicKey,
+    layerId,
+    profile: RENDITION_PROFILE_HD720,
+    keyframe: layerId === 'L0'
+  });
+  verifyMediaChunk(chunk, 'adaptive-demo');
+  log('signed', layerId, 'kbps:', chunk.rendition.videoBitrateKbps);
+}
+
+const headroom = 1.2;
+const l0Bps = layerMbps('L0') * 1e6 * headroom;
+const l1Bps = layerMbps('L1') * 1e6 * headroom;
+const l2Bps = layerMbps('L2') * 1e6 * headroom;
+
+const estimator = createBandwidthEstimator({
+  floorBps: l0Bps,
+  ceilingBps: l2Bps,
+  quietGainBps: 80000,
+  initialEstimateBps: l2Bps
+});
+const selector = createLayerSelector({ profile: RENDITION_PROFILE_HD720 });
+
+const steps = [
+  { ts: 0, bytes: Math.floor(l2Bps / 8), loss: 0, delay: 0 },
+  { ts: 1000, bytes: Math.floor(l1Bps / 8) - 1000, loss: 0, delay: 0 },
+  { ts: 1200, bytes: Math.floor(l0Bps / 8) - 5000, loss: 0, delay: 0 },
+  { ts: 1500, bytes: Math.floor(l0Bps / 8) - 8000, loss: 0, delay: 0 },
+  { ts: 2000, bytes: Math.floor(l1Bps / 8), loss: 0, delay: 0 },
+  { ts: 3500, bytes: Math.floor(l2Bps / 8), loss: 0, delay: 0 }
+];
+
+let prev = steps[0].ts;
+for (const step of steps) {
+  const intervalMs = step.ts - prev || 1000;
+  prev = step.ts;
+  const report = createReceiverReport({
+    sessionId: 'adaptive-demo',
+    viewerId: 'viewer-1',
+    layerId: selector.getLayerId(),
+    timestampMs: step.ts,
+    intervalMs,
+    bytesReceived: step.bytes,
+    packetsReceived: 1000,
+    packetsLost: step.loss,
+    interarrivalDelayMs: step.delay
+  });
+  const estimateBps = estimator.observe(report);
+  const layer = selector.selectLayer({ estimateBps, nowMs: step.ts });
+  log('selected layer:', layer, 'at', step.ts);
+}`
   }
 ];

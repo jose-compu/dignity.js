@@ -421,6 +421,14 @@ declare module 'dignity.js' {
     MEDIA_CHUNK: string;
   }>;
 
+  export interface MediaChunkRendition {
+    profile: string;
+    width: number;
+    height: number;
+    videoBitrateKbps: number;
+    audioBitrateKbps: number;
+  }
+
   export interface SignedMediaChunk {
     version: number;
     sessionId: string;
@@ -434,7 +442,67 @@ declare module 'dignity.js' {
     signatureBase64: string;
     signingPublicKey: string;
     keyframe?: boolean;
+    rendition?: MediaChunkRendition;
   }
+
+  export const MEDIA_CHUNK_VERSION_KEYFRAME: number;
+  export const RENDITION_PROFILE_HD720: 'hd720';
+  export const RENDITION_PROFILE_FHD1080: 'fhd1080';
+
+  export function resolveRendition(
+    profile: 'hd720' | 'fhd1080',
+    layerId: 'L0' | 'L1' | 'L2'
+  ): MediaChunkRendition & { layerId: string };
+
+  export interface ReceiverReport {
+    sessionId: string;
+    viewerId: string;
+    layerId: string;
+    timestampMs: number;
+    intervalMs: number;
+    bytesReceived: number;
+    packetsReceived: number;
+    packetsLost: number;
+    interarrivalDelayMs: number;
+  }
+
+  export function createReceiverReport(fields: {
+    sessionId: string;
+    viewerId: string;
+    layerId: string;
+    timestampMs: number;
+    intervalMs: number;
+    bytesReceived: number;
+    packetsReceived: number;
+    packetsLost: number;
+    interarrivalDelayMs: number;
+  }): ReceiverReport;
+
+  export function createBandwidthEstimator(options: {
+    floorBps: number;
+    ceilingBps: number;
+    quietGainBps?: number;
+    initialEstimateBps?: number;
+  }): {
+    observe(report: ReceiverReport): number;
+    getEstimateBps(): number;
+  };
+
+  export function createLayerSelector(options: {
+    profile: 'hd720' | 'fhd1080';
+    headroomFactor?: number;
+    downgradeHoldMs?: number;
+    upgradeHoldMs?: number;
+    initialLayerId?: 'L0' | 'L1' | 'L2';
+    waitForKeyframeOnUpgrade?: boolean;
+  }): {
+    selectLayer(input: {
+      estimateBps: number;
+      nowMs: number;
+      keyframeByLayer?: Partial<Record<'L0' | 'L1' | 'L2', boolean>>;
+    }): string;
+    getLayerId(): string;
+  };
 
   export function createSignedMediaChunk(options: {
     sessionId: string;
@@ -447,6 +515,9 @@ declare module 'dignity.js' {
     layerId?: string;
     mimeType?: string;
     keyframe?: boolean;
+    profile?: 'hd720' | 'fhd1080';
+    rendition?: MediaChunkRendition & { layerId: string };
+    chunkVersion?: number;
   }): SignedMediaChunk;
 
   export interface ParsedMediaFrame {
@@ -520,6 +591,9 @@ declare module 'dignity.js' {
     layerId?: string;
     mimeType?: string;
     keyframe?: boolean;
+    profile?: 'hd720' | 'fhd1080';
+    rendition?: MediaChunkRendition & { layerId: string };
+    chunkVersion?: number;
   }): PrivateSignedMediaChunk;
 
   export function openPrivateMediaChunk(

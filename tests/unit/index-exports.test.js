@@ -28,7 +28,11 @@ describe('public API exports', () => {
     expect(api.STREAM_ACCESS_MODES.PUBLIC).toBe('public');
     expect(api.parseAnnexBAccessUnits).toBeDefined();
     expect(api.parseFmp4Fragments).toBeDefined();
-    expect(api.MEDIA_CHUNK_VERSION).toBe(2);
+    expect(api.MEDIA_CHUNK_VERSION).toBe(3);
+    expect(api.resolveRendition).toBeDefined();
+    expect(api.createBandwidthEstimator).toBeDefined();
+    expect(api.createLayerSelector).toBeDefined();
+    expect(api.createReceiverReport).toBeDefined();
   });
 
   test('package.json exposes TypeScript definitions', () => {

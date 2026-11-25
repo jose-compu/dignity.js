@@ -43,6 +43,14 @@ const DIGNITY_APP_DEMOS = [
   {
     hash: 'stream-framed-chunks',
     expectLine: 'signed keyframe: true'
+  },
+  {
+    hash: 'stream-adaptive-layers',
+    expectLine: 'selected layer: L0'
+  },
+  {
+    hash: 'stream-adaptive-layers',
+    expectLine: 'selected layer: L1'
   }
 ];
 

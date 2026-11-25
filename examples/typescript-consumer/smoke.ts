@@ -6,6 +6,9 @@ import {
   createInMemoryStreamSignalingBus,
   createStreamSession,
   parseAnnexBAccessUnits,
+  createLayerSelector,
+  createBandwidthEstimator,
+  RENDITION_PROFILE_HD720,
   hashReflectiveLogic,
   type CompatibilityPolicy,
   type DignityRecord
@@ -65,3 +68,8 @@ void privateListOrigin.rotateRecipients;
 
 const annexFrame = parseAnnexBAccessUnits(new Uint8Array([0, 0, 0, 1, 0x65]))[0];
 void annexFrame?.keyframe;
+
+const layerSelector = createLayerSelector({ profile: RENDITION_PROFILE_HD720 });
+void layerSelector.getLayerId();
+const bwEst = createBandwidthEstimator({ floorBps: 400_000, ceilingBps: 4_000_000 });
+void bwEst.getEstimateBps;

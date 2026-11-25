@@ -5,7 +5,10 @@ const {
   verifyMediaChunk,
   decodeMediaChunkPayload,
   MEDIA_CHUNK_VERSION,
+  MEDIA_CHUNK_VERSION_KEYFRAME,
   MEDIA_CHUNK_VERSION_LEGACY,
+  RENDITION_PROFILE_HD720,
+  resolveRendition,
   createInMemoryStreamSignalingBus,
   createPublicStreamBroadcaster,
   createPublicStreamViewer,
@@ -39,8 +42,36 @@ describe('streaming media chunks (experimental)', () => {
 
     expect(verifyMediaChunk(chunk, 'live-1')).toBe(true);
     expect(decodeMediaChunkPayload(chunk)).toEqual(payload);
-    expect(chunk.version).toBe(MEDIA_CHUNK_VERSION);
+    expect(chunk.version).toBe(MEDIA_CHUNK_VERSION_KEYFRAME);
     expect(chunk.keyframe).toBe(false);
+  });
+
+  test('720p L1 rendition is signed on version 3 chunks', () => {
+    const keys = testKeyPair('rendition-stream');
+    const payload = naclUtil.decodeUTF8('layered-frame');
+    const rendition = resolveRendition(RENDITION_PROFILE_HD720, 'L1');
+    const chunk = createSignedMediaChunk({
+      sessionId: 'live-rendition',
+      broadcasterId: 'alice',
+      payloadBytes: payload,
+      signingSecretKey: keys.signingSecretKey,
+      signingPublicKey: keys.signingPublicKey,
+      layerId: 'L1',
+      profile: RENDITION_PROFILE_HD720
+    });
+    expect(chunk.version).toBe(MEDIA_CHUNK_VERSION);
+    expect(chunk.rendition).toMatchObject({
+      profile: RENDITION_PROFILE_HD720,
+      videoBitrateKbps: 1800
+    });
+    expect(verifyMediaChunk(chunk, 'live-rendition')).toBe(true);
+    chunk.rendition.videoBitrateKbps = 1700;
+    try {
+      verifyMediaChunk(chunk);
+      throw new Error('expected verify to fail');
+    } catch (err) {
+      expect(err.code).toBe('INVALID_MEDIA_CHUNK_SIGNATURE');
+    }
   });
 
   test('keyframe is signed and tampering fails verification', () => {
