@@ -213,9 +213,18 @@ Feasibility argument: 10M **concurrent** viewers implies ~6 relay hops at degree
 | Sampled relay stall rate | ~0.23 / ~0.23 |
 | Forwarded signed chunk verify | pass / pass |
 
-**Claim:** `qualified` (stall sampling) for both profiles — not `topology`. **10M remains a design target** until sampled relay stall rate is 0 under the fixed upload-cap assumptions. This harness is **not** 10M WebRTC sessions, **not** measured verify CPU at scale, and **not** RFC 8888 TWCC on the wire.
+**Claim:** `qualified` (stall sampling) for both profiles — not `topology`. **10M remains a design target** until sampled relay stall rate is 0 under the fixed upload-cap assumptions. This harness is **not** 10M WebRTC sessions, **not** measured verify CPU at scale, and **not** RFC 8888 TWCC on the wire. Subscriber counts in the benchmarks below **do not extrapolate** to 10M sockets.
 
-A **PeerGroup signaling stress harness** with synthetic chunk publishers (item 3 in the plan above) is targeted for **v1.15.0** ([#159](https://github.com/jose-compu/dignity.js/issues/159) signaling load remains separate).
+**v1.15.0 (milestone 7 — signaling delivery)** extends `scripts/stress-peer-group.js` with optional `--mediaChunks` (chunk metadata only: `sessionId`, `sequence`, payload hash on `InMemoryNetworkAdapter`). Benchmark: [`stream-signaling-stress.json`](./benchmarks/stream-signaling-stress.json). Command: `npm run stress:stream-chunks`.
+
+| Signaling stress (50 subscribers, 24 chunks) | Result |
+|---------------------------------------------|--------|
+| Per-subscriber delivery ratio | 1.0 (min / max) |
+| Duplicate chunk deliveries | 0 |
+| Out-of-order chunk deliveries | 0 |
+| p50 / p95 delivery latency (measured) | 0 ms / 1 ms |
+
+**Still deferred:** browser `getUserMedia` / WebCodecs ([#159](https://github.com/jose-compu/dignity.js/issues/159)), native Node WebRTC peer, RFC 8888 TWCC wire format, AV1 SVC.
 
 ---
 
@@ -229,7 +238,7 @@ A **PeerGroup signaling stress harness** with synthetic chunk publishers (item 3
 | 4. Node origin | **Done (v1.9.0)** — public + private/combined on `dignity.js/node`; file ingest or ffmpeg-framed Annex-B/fMP4; native Node WebRTC peer **deferred** |
 | 5. Adaptive layer | **Done (v1.10.0–v1.12.0)** — rendition ladder, relay policy, playout guard, simulcast origin publish; camera/WebCodecs still deferred (#159) |
 | 6. Standard ingest adapters | **Done (v1.13.0)** — MPEG-TS demuxer, HLS/RTMP/SRT/WHIP Node ingest on `dignity.js/node`; WHIP uses injectable WebRTC `peerFactory` |
-| 7. Scale simulation | **Partial (v1.14.0)** — `runScaleSimulation`; signaling stress harness in 1.15.0 |
+| 7. Scale simulation | **Done (v1.14.0 + v1.15.0)** — `runScaleSimulation` (qualified stall claim, unchanged); PeerGroup stream chunk signaling stress harness |
 
 ---
 

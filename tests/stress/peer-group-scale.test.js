@@ -47,4 +47,22 @@ const runStressTests = process.env.RUN_STRESS_TESTS === '1';
 
     expect(summary.deliveryRatio).toBeGreaterThanOrEqual(0.7);
   });
+
+  test('tier D: 50 subscribers stream chunk signaling', async () => {
+    const summary = await runStress({
+      subscribers: 50,
+      publishers: 1,
+      fanout: 4,
+      maxHops: 12,
+      mediaChunks: 24,
+      bootstrapChain: true
+    });
+
+    expect(summary.mode).toBe('stream-chunk-signaling');
+    expect(summary.deliveryRatio).toBe(1);
+    expect(summary.outOfOrderChunkEvents).toBe(0);
+    expect(summary.duplicateChunkEvents).toBe(0);
+    expect(summary.perSubscriberDeliveryRatioMin).toBe(1);
+    expect(summary.perSubscriberDeliveryRatioMax).toBe(1);
+  });
 });

@@ -38,3 +38,11 @@ Seeded fan-out model (`runScaleSimulation`) — not a WebRTC load test.
 | --- | --- | --- |
 | [`scale-simulation.json`](./scale-simulation.json) | `ci` (committed from seed `1520714`) | `npm run example:scale-sim` |
 | [`scale-simulation-offline.json`](./scale-simulation-offline.json) | `offline` (local generate) | `npm run scale:offline` with `SCALE_SIM_JSON=1` redirected to this file |
+
+## Stream signaling stress (v1.15.0)
+
+Synthetic chunk metadata over PeerGroup gossip (`InMemoryNetworkAdapter`), not media bytes.
+
+| File | Command |
+| --- | --- |
+| [`stream-signaling-stress.json`](./stream-signaling-stress.json) | `npm run stress:stream-chunks` |

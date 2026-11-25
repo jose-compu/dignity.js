@@ -47,6 +47,7 @@ function populateFeatureSelect() {
     v112: 'v1.12.0 simulcast',
     v113: 'v1.13.0 ingest',
     v114: 'v1.14.0 scale sim',
+    v115: 'v1.15.0 stream stress',
     patterns: 'Browser patterns',
     apps: 'Dignity Apps'
   };

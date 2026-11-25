@@ -1,5 +1,9 @@
 # Changelog
 
+## dignity.js 1.15.0
+
+Stream signaling stress harness (milestone 7, #152): `--mediaChunks` on `scripts/stress-peer-group.js` (session id, sequence, payload hash over `InMemoryNetworkAdapter`); `npm run stress:stream-chunks`; benchmark [`docs/benchmarks/stream-signaling-stress.json`](./docs/benchmarks/stream-signaling-stress.json); stress tier D (~50 subscribers, full delivery ratio); streaming roadmap milestone 7 complete. The v1.14.0 `runScaleSimulation` `qualified` stall claim is unchanged. Still deferred: WebCodecs/getUserMedia (#159), native Node WebRTC, RFC 8888 wire format, AV1 SVC.
+
 ## dignity.js 1.14.0
 
 Seeded scale simulation (milestone 7 partial, #152): `runScaleSimulation` with `ci` and `offline` profiles, benchmark JSON under `docs/benchmarks/`, playground `stream-scale-sim`, `npm run example:scale-sim` and `scale:offline`. PeerGroup signaling stress harness remains planned for 1.15.0.

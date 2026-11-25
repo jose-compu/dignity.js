@@ -5,10 +5,18 @@
  * Usage:
  *   node scripts/stress-peer-group.js --subscribers 1000 --fanout 3 --maxHops 64
  *   node scripts/stress-peer-group.js --publishers 2 --liveCap 50 --domainEvents
+ *   node scripts/stress-peer-group.js --subscribers 50 --mediaChunks 24 --json
  *   RUN_STRESS_TESTS=1 npm run test:stress-peer-group
  */
+const crypto = require('crypto');
 const { DignityP2P, InMemoryNetworkHub, InMemoryNetworkAdapter } = require('../src');
 const { fastTestSecurity, fastSleep } = require('../tests/helpers/fast-security');
+
+const STREAM_CHUNK_INNER_TYPE = 'stream:chunk-signaling-meta';
+
+function chunkPayloadHash(sessionId, sequence) {
+  return crypto.createHash('sha256').update(`${sessionId}:${sequence}`, 'utf8').digest('hex');
+}
 
 function parseArgs(argv) {
   const options = {
@@ -21,6 +29,7 @@ function parseArgs(argv) {
     liveCap: 5000,
     bulkOnly: false,
     domainEvents: false,
+    mediaChunks: 0,
     json: false
   };
 
@@ -48,6 +57,9 @@ function parseArgs(argv) {
       options.bulkOnly = true;
     } else if (arg === '--domainEvents') {
       options.domainEvents = true;
+    } else if (arg === '--mediaChunks') {
+      options.mediaChunks = Number(argv[index + 1]);
+      index += 1;
     } else if (arg === '--json') {
       options.json = true;
     } else if (arg === '--no-chain') {
@@ -66,7 +78,194 @@ function percentile(sorted, p) {
   return sorted[index];
 }
 
+async function runMediaChunkStress(options) {
+  const hub = new InMemoryNetworkHub();
+  const security = fastTestSecurity({ appPassword: 'stress-peer-group-stream' });
+  const sessionId = 'stress:stream:signaling';
+  const chunkCount = options.mediaChunks;
+  const publisherIds = Array.from({ length: options.publishers }, (_, index) => `pub-${index}`);
+  const subscriberIds = Array.from({ length: options.subscribers }, (_, index) => `sub-${index}`);
+  const allNodeIds = [...publisherIds, ...subscriberIds];
+  const nodes = new Map();
+  const warnings = [];
+
+  const receivedChunks = new Map(subscriberIds.map((id) => [id, new Set()]));
+  const chunkLatenciesMs = new Map(subscriberIds.map((id) => [id, []]));
+  const duplicateCounts = new Map(subscriberIds.map((id) => [id, 0]));
+  const outOfOrderCounts = new Map(subscriberIds.map((id) => [id, 0]));
+  const maxSequenceSeen = new Map(subscriberIds.map((id) => [id, -1]));
+  const chunkPublishAt = new Map();
+
+  const startedAt = Date.now();
+  const tiered = false;
+  const effectiveLiveCap = 0;
+
+  for (const id of allNodeIds) {
+    const node = new DignityP2P({
+      nodeId: id,
+      networkAdapter: new InMemoryNetworkAdapter(hub),
+      security
+    });
+    node.on('warning', (event) => warnings.push({ nodeId: id, ...event }));
+    node.on('peergroupmessage', (event) => {
+      if (event.type !== STREAM_CHUNK_INNER_TYPE || !subscriberIds.includes(id)) {
+        return;
+      }
+      const { sessionId: sid, sequence, payloadHash } = event.payload || {};
+      if (sid !== sessionId || typeof sequence !== 'number') {
+        return;
+      }
+      const expectedHash = chunkPayloadHash(sessionId, sequence);
+      if (payloadHash !== expectedHash) {
+        return;
+      }
+      const publishedAt = chunkPublishAt.get(sequence);
+      if (publishedAt == null) {
+        return;
+      }
+      const received = receivedChunks.get(id);
+      if (received.has(sequence)) {
+        duplicateCounts.set(id, duplicateCounts.get(id) + 1);
+        return;
+      }
+      if (sequence < maxSequenceSeen.get(id)) {
+        outOfOrderCounts.set(id, outOfOrderCounts.get(id) + 1);
+      }
+      if (sequence > maxSequenceSeen.get(id)) {
+        maxSequenceSeen.set(id, sequence);
+      }
+      received.add(sequence);
+      chunkLatenciesMs.get(id).push(Date.now() - publishedAt);
+    });
+    await node.start();
+    nodes.set(id, node);
+  }
+
+  const joinStartedAt = Date.now();
+
+  for (let pubIndex = 0; pubIndex < publisherIds.length; pubIndex += 1) {
+    const id = publisherIds[pubIndex];
+    await nodes.get(id).joinPeerGroup('stress:stream', {
+      role: 'publisher',
+      tiered,
+      liveCap: effectiveLiveCap,
+      fanout: options.fanout,
+      maxActivePeers: Math.max(8, options.fanout * 2),
+      maxHops: options.maxHops,
+      domainEvents: false
+    });
+  }
+
+  await Promise.all(subscriberIds.map((id, index) => {
+    const bootstrapPeerIds = options.bootstrapChain
+      ? [publisherIds[0], ...(index > 0 ? [subscriberIds[index - 1]] : [])]
+      : [publisherIds[0]];
+    return nodes.get(id).joinPeerGroup('stress:stream', {
+      role: 'subscriber',
+      tiered,
+      liveCap: effectiveLiveCap,
+      tierMode: options.bulkOnly ? 'bulk' : 'auto',
+      bootstrapPeerIds,
+      fanout: options.fanout,
+      maxActivePeers: Math.max(8, options.fanout * 2),
+      maxHops: options.maxHops,
+      commandCapable: true
+    });
+  }));
+  const joinDurationMs = Date.now() - joinStartedAt;
+
+  await fastSleep(Math.min(100, Math.max(20, Math.floor(options.subscribers / 20))));
+
+  const publishStartedAt = Date.now();
+  const publisher = nodes.get(publisherIds[0]);
+
+  for (let sequence = 0; sequence < chunkCount; sequence += 1) {
+    const publishAt = Date.now();
+    chunkPublishAt.set(sequence, publishAt);
+    await publisher.publishToPeerGroup('stress:stream', STREAM_CHUNK_INNER_TYPE, {
+      sessionId,
+      sequence,
+      payloadHash: chunkPayloadHash(sessionId, sequence)
+    }, {
+      fanout: options.fanout,
+      maxHops: options.maxHops
+    });
+
+    while (true) {
+      const haveSequence = subscriberIds.filter((id) => receivedChunks.get(id).has(sequence)).length;
+      if (haveSequence >= subscriberIds.length) {
+        break;
+      }
+      const waitedMs = Date.now() - publishAt;
+      if (waitedMs > Math.max(45000, options.subscribers * 1200)) {
+        break;
+      }
+      await fastSleep(20);
+    }
+  }
+
+  const publishDurationMs = Date.now() - publishStartedAt;
+  const expectedPerSubscriber = chunkCount * subscriberIds.length;
+
+  const perSubscriberRatios = subscriberIds.map(
+    (id) => receivedChunks.get(id).size / chunkCount
+  );
+  const deliveryRatio = perSubscriberRatios.reduce((sum, r) => sum + r, 0) / subscriberIds.length;
+
+  const allLatencies = [...chunkLatenciesMs.values()]
+    .flat()
+    .sort((a, b) => a - b);
+
+  const duplicateChunkEvents = [...duplicateCounts.values()].reduce((sum, n) => sum + n, 0);
+  const outOfOrderChunkEvents = [...outOfOrderCounts.values()].reduce((sum, n) => sum + n, 0);
+  const deliveredChunkCount = subscriberIds.reduce(
+    (sum, id) => sum + receivedChunks.get(id).size,
+    0
+  );
+  const peakSeenGossip = Math.max(...allNodeIds.map((id) => nodes.get(id).getPeerGroupStats().seenGossipCount));
+  const peakOpenConnections = Math.max(...allNodeIds.map((id) => nodes.get(id).getPeerGroupStats().openConnectionCount));
+  const heapUsedMb = process.memoryUsage().heapUsed / (1024 * 1024);
+
+  for (const node of nodes.values()) {
+    await node.stop();
+  }
+
+  return {
+    mode: 'stream-chunk-signaling',
+    latencyTiming: 'measured',
+    sessionId,
+    mediaChunks: chunkCount,
+    subscribers: options.subscribers,
+    publishers: options.publishers,
+    fanout: options.fanout,
+    maxHops: options.maxHops,
+    liveCap: options.liveCap,
+    bootstrapChain: options.bootstrapChain,
+    deliveryRatio,
+    deliveredChunkCount,
+    expectedChunkDeliveries: expectedPerSubscriber,
+    duplicateChunkEvents,
+    outOfOrderChunkEvents,
+    joinDurationMs,
+    publishDurationMs,
+    totalDurationMs: Date.now() - startedAt,
+    medianDeliveryMs: percentile(allLatencies, 50),
+    p95DeliveryMs: percentile(allLatencies, 95),
+    perSubscriberDeliveryRatioMin: Math.min(...perSubscriberRatios),
+    perSubscriberDeliveryRatioMax: Math.max(...perSubscriberRatios),
+    peakSeenGossip,
+    peakOpenConnections,
+    heapUsedMb: Number(heapUsedMb.toFixed(2)),
+    warningCount: warnings.length,
+    warnings: warnings.slice(0, 10)
+  };
+}
+
 async function runStress(options) {
+  if (options.mediaChunks > 0) {
+    return runMediaChunkStress(options);
+  }
+
   const hub = new InMemoryNetworkHub();
   const security = fastTestSecurity({ appPassword: 'stress-peer-group' });
   const publisherIds = Array.from({ length: options.publishers }, (_, index) => `pub-${index}`);
