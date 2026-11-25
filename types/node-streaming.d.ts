@@ -9,6 +9,7 @@ declare module 'dignity.js/node' {
     mimeType?: string;
     timestampMs?: number;
     layerId?: string;
+    keyframe?: boolean;
   }
 
   export interface NodeMediaIngest {
@@ -35,6 +36,8 @@ declare module 'dignity.js/node' {
   export function createFfmpegMediaIngest(options: {
     filePath: string;
     chunkBytes?: number;
+    format?: 'fmp4' | 'annexb';
+    frameDurationMs?: number;
     ffmpegPath?: string;
     ffmpegArgs?: string[];
     spawn?: typeof import('child_process').spawn;
@@ -43,6 +46,8 @@ declare module 'dignity.js/node' {
   export function resolveNodeMediaIngest(options: {
     filePath: string;
     chunkBytes?: number;
+    format?: 'fmp4' | 'annexb';
+    frameDurationMs?: number;
     ffmpegPath?: string;
     spawn?: typeof import('child_process').spawn;
     spawnSync?: typeof import('child_process').spawnSync;

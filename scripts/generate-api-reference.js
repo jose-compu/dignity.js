@@ -177,6 +177,13 @@ function buildMarkdown() {
     );
   }
 
+  if (spec.experimentalStreaming) {
+    lines.push(heading(2, 'Experimental live streaming (`dignity.js`, #152)'));
+    lines.push(
+      `${Object.entries(spec.experimentalStreaming).map(([k, v]) => `- **\`${k}\`** — ${v}`).join('\n')}\n\n`
+    );
+  }
+
   if (spec.signaling) {
     lines.push(heading(2, 'Signaling'));
     lines.push(`- Cloudflare: ${spec.signaling.defaults.cloudflare}\n`);

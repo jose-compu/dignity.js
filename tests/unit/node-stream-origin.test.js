@@ -12,12 +12,14 @@ const {
 } = require('../../src/streaming');
 const { deriveKeyPairFromCredentials, keyPairToPublicBundle } = require('../../src');
 const { InMemoryNetworkHub, InMemoryNetworkAdapter } = require('../../src/network/in-memory-network');
-const { createFileMediaIngest } = require('../../src/streaming/node-media-ingest');
+const { EventEmitter } = require('events');
+const { createFileMediaIngest, createFfmpegMediaIngest } = require('../../src/streaming/node-media-ingest');
 const { createNodeStreamOrigin } = require('../../src/streaming/node-stream-origin');
 const fs = require('fs');
 const path = require('path');
 
 const fixturePath = path.join(__dirname, '../fixtures/stream-origin-chunks.bin');
+const annexFixturePath = path.join(__dirname, '../fixtures/h264-annexb-access-units.bin');
 
 function testKeyPair(label) {
   const pair = nacl.sign.keyPair.fromSeed(nacl.hash(naclUtil.decodeUTF8(label)).slice(0, 32));
@@ -429,6 +431,100 @@ describe('node stream origin', () => {
         mediaIngest: createFileMediaIngest({ filePath: fixturePath })
       })
     ).toThrow(/recipientPublicBundles|broadcasterEncryption/);
+  });
+
+  test('ffmpeg-framed origin publishes timestampMs and keyframe on public chunks', async () => {
+    const bus = createInMemoryStreamSignalingBus();
+    const keys = testKeyPair('node-framed-pub');
+    const session = createStreamSession({
+      sessionId: 'node-framed',
+      broadcasterId: 'origin',
+      mode: STREAM_ACCESS_MODES.PUBLIC
+    });
+    const viewer = createPublicStreamViewer({
+      viewerId: 'viewer-framed',
+      sessionId: 'node-framed',
+      broadcasterId: 'origin',
+      broadcasterSigningPublicKey: keys.signingPublicKey,
+      bus
+    });
+
+    const annexBytes = fs.readFileSync(annexFixturePath);
+    const stdout = new EventEmitter();
+    const fakeChild = new EventEmitter();
+    fakeChild.stdout = stdout;
+    fakeChild.stderr = new EventEmitter();
+    fakeChild.kill = jest.fn();
+    fakeChild.exitCode = null;
+    fakeChild.killed = false;
+    const spawn = jest.fn(() => {
+      process.nextTick(() => {
+        stdout.emit('data', annexBytes);
+        fakeChild.emit('close', 0);
+      });
+      return fakeChild;
+    });
+
+    const ingest = createFfmpegMediaIngest({ filePath: annexFixturePath, format: 'annexb', spawn });
+    const origin = createNodeStreamOrigin({
+      session,
+      signingSecretKey: keys.signingSecretKey,
+      signingPublicKey: keys.signingPublicKey,
+      bus,
+      mediaIngest: ingest,
+      directViewerIds: ['viewer-framed']
+    });
+
+    viewer.requestJoin();
+    await origin.start();
+
+    expect(viewer.chunks[0].keyframe).toBe(true);
+    expect(viewer.chunks[0].timestampMs).toBe(0);
+    expect(viewer.chunks[1].keyframe).toBe(false);
+    expect(viewer.chunks[1].timestampMs).toBe(33);
+  });
+
+  test('ffmpeg-framed private origin publishes keyframe on sealed chunk', async () => {
+    const bus = createInMemoryStreamSignalingBus();
+    const keys = testKeyPair('node-framed-priv-bc');
+    const bob = testKeyPair('node-framed-priv-bob');
+    const session = createStreamSession({
+      sessionId: 'node-framed-priv',
+      broadcasterId: 'origin',
+      mode: STREAM_ACCESS_MODES.PRIVATE_SINGLE,
+      privateRecipients: [bob.signingPublicKey]
+    });
+    const collector = createChunkCollector('bob-viewer', bus);
+    const annexBytes = fs.readFileSync(annexFixturePath);
+    const stdout = new EventEmitter();
+    const fakeChild = new EventEmitter();
+    fakeChild.stdout = stdout;
+    fakeChild.stderr = new EventEmitter();
+    fakeChild.kill = jest.fn();
+    const spawn = jest.fn(() => {
+      process.nextTick(() => {
+        stdout.emit('data', annexBytes);
+        fakeChild.emit('close', 0);
+      });
+      return fakeChild;
+    });
+
+    const origin = createNodeStreamOrigin({
+      session,
+      signingSecretKey: keys.signingSecretKey,
+      signingPublicKey: keys.signingPublicKey,
+      broadcasterEncryptionSecretKey: keys.encryptionSecretKey,
+      broadcasterEncryptionPublicKey: keys.encryptionPublicKey,
+      recipientPublicBundles: [bundleFromKeys(bob)],
+      bus,
+      mediaIngest: createFfmpegMediaIngest({ filePath: annexFixturePath, format: 'annexb', spawn }),
+      directViewerIds: ['bob-viewer']
+    });
+
+    collector.requestJoin('origin', session.sessionId);
+    await origin.start();
+    expect(collector.chunks[0].keyframe).toBe(true);
+    expect(verifyMediaChunk(collector.chunks[0])).toBe(true);
   });
 
   test('stop kills ffmpeg child when present', () => {

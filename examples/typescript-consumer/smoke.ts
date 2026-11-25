@@ -5,6 +5,7 @@ import {
   STREAM_ACCESS_MODES,
   createInMemoryStreamSignalingBus,
   createStreamSession,
+  parseAnnexBAccessUnits,
   hashReflectiveLogic,
   type CompatibilityPolicy,
   type DignityRecord
@@ -61,3 +62,6 @@ const privateListOrigin = createNodeStreamOrigin({
   mediaIngest: createFileMediaIngest({ filePath: __dirname + '/../../tests/fixtures/stream-origin-chunks.bin' })
 });
 void privateListOrigin.rotateRecipients;
+
+const annexFrame = parseAnnexBAccessUnits(new Uint8Array([0, 0, 0, 1, 0x65]))[0];
+void annexFrame?.keyframe;

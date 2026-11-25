@@ -127,7 +127,8 @@ class PrivateNodeStreamBroadcaster {
         sequence: this.sequence,
         timestampMs: chunkMeta.timestampMs,
         layerId: chunkMeta.layerId || 'public',
-        mimeType: chunkMeta.mimeType
+        mimeType: chunkMeta.mimeType,
+        keyframe: chunkMeta.keyframe
       });
       this.sequence += 1;
       chunks.push(publicChunk);
@@ -146,6 +147,7 @@ class PrivateNodeStreamBroadcaster {
       timestampMs: chunkMeta.timestampMs,
       layerId: this.session.mode === STREAM_ACCESS_MODES.COMBINED ? 'private' : chunkMeta.layerId,
       mimeType: chunkMeta.mimeType,
+      keyframe: chunkMeta.keyframe,
       ...encryptOpts
     });
     this.sequence += 1;
@@ -326,7 +328,8 @@ class NodeStreamOrigin {
       const chunkMeta = {
         mimeType: frame.mimeType,
         timestampMs: frame.timestampMs,
-        layerId: frame.layerId
+        layerId: frame.layerId,
+        keyframe: frame.keyframe
       };
 
       if (this.broadcaster) {

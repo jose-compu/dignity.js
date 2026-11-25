@@ -7,7 +7,8 @@ const nacl = require('tweetnacl');
 const naclUtil = require('tweetnacl-util');
 const { stableStringify } = require('../security/message-security-service');
 
-const MEDIA_CHUNK_VERSION = 1;
+const MEDIA_CHUNK_VERSION = 2;
+const MEDIA_CHUNK_VERSION_LEGACY = 1;
 const DEFAULT_LAYER_ID = 'L0';
 
 function utf8ToBytes(value) {
@@ -22,8 +23,10 @@ function payloadFingerprint(payloadBytes) {
 }
 
 function canonicalMediaChunkSigningPayload(fields) {
-  return stableStringify({
-    version: MEDIA_CHUNK_VERSION,
+  const version =
+    typeof fields.chunkVersion === 'number' ? fields.chunkVersion : MEDIA_CHUNK_VERSION;
+  const payload = {
+    version,
     sessionId: fields.sessionId,
     broadcasterId: fields.broadcasterId,
     sequence: fields.sequence,
@@ -31,7 +34,11 @@ function canonicalMediaChunkSigningPayload(fields) {
     layerId: fields.layerId,
     mimeType: fields.mimeType,
     payloadFingerprint: fields.payloadFingerprint
-  });
+  };
+  if (version >= MEDIA_CHUNK_VERSION) {
+    payload.keyframe = Boolean(fields.keyframe);
+  }
+  return stableStringify(payload);
 }
 
 /**
@@ -47,6 +54,7 @@ function canonicalMediaChunkSigningPayload(fields) {
  * @property {string} payloadFingerprint
  * @property {string} signatureBase64
  * @property {string} signingPublicKey
+ * @property {boolean} [keyframe]
  */
 
 /**
@@ -60,6 +68,7 @@ function canonicalMediaChunkSigningPayload(fields) {
  * @param {number} [options.timestampMs]
  * @param {string} [options.layerId]
  * @param {string} [options.mimeType]
+ * @param {boolean} [options.keyframe]
  * @returns {SignedMediaChunk}
  */
 function createSignedMediaChunk({
@@ -71,7 +80,8 @@ function createSignedMediaChunk({
   sequence = 0,
   timestampMs = Date.now(),
   layerId = DEFAULT_LAYER_ID,
-  mimeType = 'application/octet-stream'
+  mimeType = 'application/octet-stream',
+  keyframe = false
 }) {
   if (typeof sessionId !== 'string' || sessionId.trim() === '') {
     throw new TypeError('sessionId must be a non-empty string');
@@ -94,7 +104,8 @@ function createSignedMediaChunk({
     timestampMs,
     layerId,
     mimeType,
-    payloadFingerprint: fingerprint
+    payloadFingerprint: fingerprint,
+    keyframe
   });
 
   const signature = nacl.sign.detached(utf8ToBytes(signingPayload), signingSecretKey);
@@ -111,6 +122,7 @@ function createSignedMediaChunk({
     payloadFingerprint: fingerprint,
     signatureBase64: naclUtil.encodeBase64(signature),
     signingPublicKey: signingPublicKey.trim(),
+    keyframe: Boolean(keyframe),
     experimental: true
   };
 }
@@ -135,6 +147,8 @@ function verifyMediaChunk(chunk, expectedSessionId) {
     throw new Error('Media chunk sessionId mismatch');
   }
 
+  const chunkVersion =
+    typeof chunk.version === 'number' ? chunk.version : MEDIA_CHUNK_VERSION_LEGACY;
   const signingPayload = canonicalMediaChunkSigningPayload({
     sessionId: chunk.sessionId,
     broadcasterId: chunk.broadcasterId,
@@ -142,7 +156,9 @@ function verifyMediaChunk(chunk, expectedSessionId) {
     timestampMs: chunk.timestampMs,
     layerId: chunk.layerId,
     mimeType: chunk.mimeType,
-    payloadFingerprint: chunk.payloadFingerprint
+    payloadFingerprint: chunk.payloadFingerprint,
+    chunkVersion,
+    keyframe: chunk.keyframe
   });
 
   const ok = nacl.sign.detached.verify(
@@ -171,6 +187,7 @@ function decodeMediaChunkPayload(chunk) {
 
 module.exports = {
   MEDIA_CHUNK_VERSION,
+  MEDIA_CHUNK_VERSION_LEGACY,
   DEFAULT_LAYER_ID,
   createSignedMediaChunk,
   verifyMediaChunk,

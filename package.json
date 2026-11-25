@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "The scalable data layer of the decentralized browser application ecosystem.",
   "homepage": "https://dignity.js.org/",
   "repository": {
@@ -75,6 +75,7 @@
     "example:tictactoe": "node examples/decentralized-tictactoe.js",
     "example:chess": "node examples/decentralized-chess-lite.js",
     "example:node-stream": "node examples/node-stream-origin.js",
+    "example:node-framed-stream": "node examples/node-framed-stream-origin.js",
     "example:node-private-stream": "node examples/node-private-stream-origin.js",
     "prepublishOnly": "npm test && npm run build"
   },

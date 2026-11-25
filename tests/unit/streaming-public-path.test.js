@@ -4,6 +4,8 @@ const {
   createSignedMediaChunk,
   verifyMediaChunk,
   decodeMediaChunkPayload,
+  MEDIA_CHUNK_VERSION,
+  MEDIA_CHUNK_VERSION_LEGACY,
   createInMemoryStreamSignalingBus,
   createPublicStreamBroadcaster,
   createPublicStreamViewer,
@@ -37,6 +39,54 @@ describe('streaming media chunks (experimental)', () => {
 
     expect(verifyMediaChunk(chunk, 'live-1')).toBe(true);
     expect(decodeMediaChunkPayload(chunk)).toEqual(payload);
+    expect(chunk.version).toBe(MEDIA_CHUNK_VERSION);
+    expect(chunk.keyframe).toBe(false);
+  });
+
+  test('keyframe is signed and tampering fails verification', () => {
+    const keys = testKeyPair('keyframe-stream');
+    const chunk = createSignedMediaChunk({
+      sessionId: 'live-kf',
+      broadcasterId: 'alice',
+      payloadBytes: naclUtil.decodeUTF8('frame'),
+      signingSecretKey: keys.signingSecretKey,
+      signingPublicKey: keys.signingPublicKey,
+      keyframe: true
+    });
+    expect(chunk.keyframe).toBe(true);
+    expect(verifyMediaChunk(chunk)).toBe(true);
+    chunk.keyframe = false;
+    expect(() => verifyMediaChunk(chunk)).toThrow(/signature/i);
+  });
+
+  test('version 1 chunks from 1.8.0 still verify', () => {
+    const keys = testKeyPair('legacy-v1');
+    const payload = naclUtil.decodeUTF8('legacy');
+    const chunk = createSignedMediaChunk({
+      sessionId: 'legacy',
+      broadcasterId: 'bc',
+      payloadBytes: payload,
+      signingSecretKey: keys.signingSecretKey,
+      signingPublicKey: keys.signingPublicKey
+    });
+    chunk.version = MEDIA_CHUNK_VERSION_LEGACY;
+    delete chunk.keyframe;
+    const { stableStringify } = require('../../src/security/message-security-service');
+    const { payloadFingerprint } = require('../../src/streaming/media-chunk');
+    const naclUtil2 = require('tweetnacl-util');
+    const signingPayload = stableStringify({
+      version: MEDIA_CHUNK_VERSION_LEGACY,
+      sessionId: chunk.sessionId,
+      broadcasterId: chunk.broadcasterId,
+      sequence: chunk.sequence,
+      timestampMs: chunk.timestampMs,
+      layerId: chunk.layerId,
+      mimeType: chunk.mimeType,
+      payloadFingerprint: chunk.payloadFingerprint
+    });
+    const signature = nacl.sign.detached(naclUtil2.decodeUTF8(signingPayload), keys.signingSecretKey);
+    chunk.signatureBase64 = naclUtil2.encodeBase64(signature);
+    expect(verifyMediaChunk(chunk)).toBe(true);
   });
 
   test('rejects tampered payload', () => {

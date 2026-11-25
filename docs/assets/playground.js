@@ -41,11 +41,12 @@ function populateFeatureSelect() {
     v150: 'v1.5.0 streaming',
     v160: 'v1.6.0 streaming',
     v180: 'v1.8.0 streaming',
+    v190: 'v1.9.0 streaming',
     patterns: 'Browser patterns',
     apps: 'Dignity Apps'
   };
 
-  const order = ['core', 'v013', 'v140', 'v150', 'v160', 'v180', 'patterns', 'apps'];
+  const order = ['core', 'v013', 'v140', 'v150', 'v160', 'v180', 'v190', 'patterns', 'apps'];
   const seen = new Set(order);
   for (const key of groups.keys()) {
     if (!seen.has(key)) {
