@@ -450,6 +450,44 @@ declare module 'dignity.js' {
   export function verifyMediaChunk(chunk: SignedMediaChunk, expectedSessionId?: string): boolean;
   export function decodeMediaChunkPayload(chunk: SignedMediaChunk): Uint8Array;
 
+  export interface PrivateSenderKeyWrap {
+    recipientSigningPublicKey: string;
+    wrapNonceBase64: string;
+    wrappedSenderKeyBase64: string;
+    senderEncryptionPublicKey: string;
+  }
+
+  export interface PrivateSignedMediaChunk extends SignedMediaChunk {
+    accessMode?: 'private-single' | 'private-list';
+    secretboxNonceBase64?: string;
+    senderKeyWraps?: PrivateSenderKeyWrap[];
+  }
+
+  export function sealPrivateMediaChunk(options: {
+    accessMode: 'private-single' | 'private-list';
+    sessionId: string;
+    broadcasterId: string;
+    plaintextBytes: Uint8Array;
+    signingSecretKey: Uint8Array;
+    signingPublicKey: string;
+    broadcasterEncryptionSecretKey: Uint8Array;
+    broadcasterEncryptionPublicKey: string;
+    recipientPublicBundles: Array<{ signingPublicKey: string; encryptionPublicKey: string }>;
+    sequence?: number;
+    timestampMs?: number;
+    layerId?: string;
+    mimeType?: string;
+  }): PrivateSignedMediaChunk;
+
+  export function openPrivateMediaChunk(
+    chunk: PrivateSignedMediaChunk,
+    options: {
+      recipientEncryptionSecretKey: Uint8Array;
+      recipientSigningPublicKey: string;
+      verify?: boolean;
+    }
+  ): Uint8Array;
+
   export class InMemoryStreamSignalingBus {
     subscribe(peerId: string, handler: (message: JsonObject) => void): void;
     send(fromPeerId: string, toPeerId: string, message: JsonObject): void;

@@ -30,9 +30,24 @@ const DIGNITY_APP_DEMOS = [
   },
   {
     hash: 'app-error-panel',
-    expectLine: 'error panel inserted: true'
+    expectLine: 'panel mounted: true'
+  },
+  {
+    hash: 'stream-private-chunks',
+    expectLine: 'recipient plaintext: sealed-frame'
   }
 ];
+
+test.describe('Playground private stream demo', () => {
+  test.skip(() => !shouldRun(), 'Set RUN_BROWSER_E2E=1 to run headless browser tests');
+
+  test('private chunks demo rejects spectator', async ({ page }) => {
+    await page.goto('/playground/index.html#stream-private-chunks');
+    await page.getByRole('button', { name: /Run/ }).click();
+    await expect(page.locator('#run-status')).toHaveText('Done', { timeout: 20000 });
+    await expect(page.locator('#output')).toContainText('spectator decrypt failed: true');
+  });
+});
 
 test.describe('Playground browser', () => {
   test.skip(() => !shouldRun(), 'Set RUN_BROWSER_E2E=1 to run headless browser tests');

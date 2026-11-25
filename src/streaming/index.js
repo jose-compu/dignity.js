@@ -9,11 +9,13 @@ const streamSession = require('./stream-session');
 const mediaChunk = require('./media-chunk');
 const publicStreamPath = require('./public-stream-path');
 const webrtcSignaling = require('./webrtc-stream-signaling');
+const privateMediaChunk = require('./private-media-chunk');
 
 module.exports = {
   ...accessModes,
   ...streamSession,
   ...mediaChunk,
+  ...privateMediaChunk,
   ...publicStreamPath,
   ...webrtcSignaling,
   STREAMING_API_EXPERIMENTAL: true

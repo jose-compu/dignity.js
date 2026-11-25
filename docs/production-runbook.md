@@ -4,7 +4,7 @@ Practical guide for running dignity.js in production: signaling, NAT traversal, 
 
 See also: [browser-compatibility.md](./browser-compatibility.md), [api-stability.md](./api-stability.md), [threat-model.md](./threat-model.md), [PeerJS ICE/TURN](./browser-compatibility.md#peerjs-ice-turn).
 
-**Live streaming (experimental, v1.3.0):** the public signed-chunk helpers are not production-ready. Do not expose them on the open internet until WebRTC wiring, rate limits, and relay churn handling land ([#152](https://github.com/jose-compu/dignity.js/issues/152)). When enabled later, monitor chunk signature failures and relay fan-out depth the same way you watch `securityerror` and peer churn.
+**Live streaming (experimental):** v1.4.0 shipped the signaling bus and data-channel transport; v1.5.0 adds sealed `private-single` and `private-list` media chunks. The full browser media path remains experimental — treat relays and chunk verification like any other untrusted peer input ([#152](https://github.com/jose-compu/dignity.js/issues/152)). Monitor chunk signature failures and relay fan-out depth the same way you watch `securityerror` and peer churn.
 
 ## Deployment checklist
 
