@@ -303,7 +303,8 @@ class NodeStreamOrigin {
    * @param {Uint8Array} options.signingSecretKey
    * @param {string} options.signingPublicKey
    * @param {import('./public-stream-path').InMemoryStreamSignalingBus} options.bus
-   * @param {import('./node-media-ingest').ReturnType<typeof import('./node-media-ingest').createFileMediaIngest>} options.mediaIngest
+   * @param {import('./node-media-ingest').ReturnType<typeof import('./node-media-ingest').createFileMediaIngest>} [options.mediaIngest]
+   * @param {{ stop?: () => void, frames: () => AsyncIterable<unknown> }} [options.ingest]
    * @param {import('./webrtc-stream-signaling').WebRTCDataChannelTransport} [options.dataChannelTransport]
    * @param {string[]} [options.dataChannelPeerIds]
    * @param {string[]} [options.directViewerIds]
@@ -317,6 +318,7 @@ class NodeStreamOrigin {
     signingPublicKey,
     bus,
     mediaIngest,
+    ingest,
     dataChannelTransport,
     dataChannelPeerIds = [],
     directViewerIds = [],
@@ -324,11 +326,12 @@ class NodeStreamOrigin {
     broadcasterEncryptionPublicKey,
     recipientPublicBundles
   }) {
-    if (!mediaIngest || typeof mediaIngest.frames !== 'function') {
-      throw new TypeError('mediaIngest must expose frames()');
+    const source = ingest || mediaIngest;
+    if (!source || typeof source.frames !== 'function') {
+      throw new TypeError('mediaIngest or ingest must expose frames()');
     }
 
-    this.mediaIngest = mediaIngest;
+    this.mediaIngest = source;
     this.dataChannelTransport = dataChannelTransport;
     this.dataChannelPeerIds = [...dataChannelPeerIds];
     this._running = false;

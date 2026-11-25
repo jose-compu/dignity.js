@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "description": "The scalable data layer of the decentralized browser application ecosystem — P2P object replication with CQRS read replicas, Dignity Apps, and verification policies",
   "lifecycle": {
     "start": "attach network message handler and begin receiving",
@@ -446,12 +446,18 @@
       "createFfmpegMediaIngest": "ffmpeg stdout as Annex-B (format annexb) or fragmented MP4 (format fmp4 default); incremental frame parser",
       "resolveNodeMediaIngest": "ffmpeg when probe succeeds; otherwise fixed file slices",
       "createNodeStreamOrigin": "public or sealed private/combined origin; passes frame timestampMs and keyframe to signed chunks",
-      "rotateRecipients": "NodeStreamOrigin.rotateRecipients — rotate private sender-key epoch after removing a recipient"
+      "rotateRecipients": "NodeStreamOrigin.rotateRecipients — rotate private sender-key epoch after removing a recipient",
+      "createMpegTsIngest": "MPEG-TS from file, readable stream, or UDP; demux to framed H.264",
+      "createHlsIngest": "poll live HLS playlists; MPEG-TS or fMP4 segments",
+      "createRtmpIngest": "ffmpeg copy to MPEG-TS pipe (INGEST_FFMPEG_NOT_FOUND when missing)",
+      "createSrtIngest": "ffmpeg SRT listener/caller to MPEG-TS pipe",
+      "createWhipIngest": "RFC 9725 WHIP handler with injectable peerFactory"
     }
   },
   "experimentalStreaming": {
     "parseAnnexBAccessUnits": "split H.264 Annex-B bytes into access units with timestampMs and keyframe",
     "parseFmp4Fragments": "split fMP4 init + moof/mdat fragments with timestampMs and keyframe",
+    "demuxMpegTs": "pure-JS MPEG-TS demuxer to H.264 access units with PTS timestampMs",
     "resolveRendition": "HD 720p and Full HD 1080p ladders; layerId L0–L2",
     "createReceiverReport": "viewer TWCC-style interval report (bytes, loss, interarrival delay)",
     "createBandwidthEstimator": "sender estimate from reports; loss/delay decrease, quiet gain increase",

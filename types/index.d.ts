@@ -628,6 +628,8 @@ declare module 'dignity.js' {
 
   export function parseFmp4Fragments(bytes: Uint8Array): ParsedMediaFrame[];
 
+  export function demuxMpegTs(bytes: Uint8Array): ParsedMediaFrame[];
+
   export function verifyMediaChunk(chunk: SignedMediaChunk, expectedSessionId?: string): boolean;
   export function decodeMediaChunkPayload(chunk: SignedMediaChunk): Uint8Array;
 

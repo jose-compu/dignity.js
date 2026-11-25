@@ -28,6 +28,7 @@ describe('public API exports', () => {
     expect(api.STREAM_ACCESS_MODES.PUBLIC).toBe('public');
     expect(api.parseAnnexBAccessUnits).toBeDefined();
     expect(api.parseFmp4Fragments).toBeDefined();
+    expect(api.demuxMpegTs).toBeDefined();
     expect(api.MEDIA_CHUNK_VERSION).toBe(3);
     expect(api.resolveRendition).toBeDefined();
     expect(api.createBandwidthEstimator).toBeDefined();
@@ -47,16 +48,40 @@ describe('public API exports', () => {
     expect(pkg.exports['./react'].types).toBe('./types/react.d.ts');
   });
 
+  test('node subpath exports ingest adapters', () => {
+    const nodeApi = require('../../src/node');
+    expect(nodeApi.createMpegTsIngest).toBeDefined();
+    expect(nodeApi.createHlsIngest).toBeDefined();
+    expect(nodeApi.createRtmpIngest).toBeDefined();
+    expect(nodeApi.createSrtIngest).toBeDefined();
+    expect(nodeApi.createWhipIngest).toBeDefined();
+    expect(nodeApi.INGEST_FFMPEG_NOT_FOUND).toBe('INGEST_FFMPEG_NOT_FOUND');
+  });
+
   test('main and streaming indexes do not pull Node-only streaming modules', () => {
     const mainSrc = require('fs').readFileSync(require('path').join(__dirname, '../../src/index.js'), 'utf8');
     const streamingSrc = require('fs').readFileSync(
       require('path').join(__dirname, '../../src/streaming/index.js'),
       'utf8'
     );
-    for (const fragment of ['src/node', 'node-stream-origin', 'node-media-ingest', "require('fs')", "require('child_process')"]) {
+    for (const fragment of ['src/node', 'node-stream-origin', 'node-media-ingest', 'streaming/ingest/index', "require('fs')", "require('child_process')", "require('dgram')", "require('http')"]) {
       expect(mainSrc.includes(fragment)).toBe(false);
       expect(streamingSrc.includes(fragment)).toBe(false);
     }
+  });
+
+  test('browser bundle excludes Node-only modules', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const bundlePath = path.join(__dirname, '../../dist/dignity.esm.js');
+    if (!fs.existsSync(bundlePath)) {
+      return;
+    }
+    const src = fs.readFileSync(bundlePath, 'utf8');
+    expect(src.includes('child_process')).toBe(false);
+    expect(src.includes('dgram')).toBe(false);
+    expect(src.includes('node-media-ingest')).toBe(false);
+    expect(src.includes('ingest/index')).toBe(false);
   });
 
   test('exports sane default configs', () => {

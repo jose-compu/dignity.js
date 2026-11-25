@@ -21,7 +21,7 @@ Everything exported from the package entry points is stable unless marked otherw
 |-------|---------|
 | `dignity.js` | `DignityP2P` lifecycle, CRUD, proposals, verification, peers, identity (including mnemonic backup helpers from v1.1), PeerGroups, CQRS helpers, Dignity Apps, signaling, network adapters, security helpers |
 | `dignity.js/react` | `useDignity`, `useCollection`, `useObject`, `usePeers`, `useDiscovery`, `useConnectionStats`, `useRoom`, `useMessages` |
-| `dignity.js/node` | `createNodeStreamOrigin`, `createFileMediaIngest`, `createFfmpegMediaIngest`, `resolveNodeMediaIngest`, `NodeStreamOrigin.rotateRecipients` (**experimental**, v1.12.0) |
+| `dignity.js/node` | `createNodeStreamOrigin`, ingest adapters (`createMpegTsIngest`, `createHlsIngest`, `createRtmpIngest`, `createSrtIngest`, `createWhipIngest`), `createFileMediaIngest`, `createFfmpegMediaIngest`, `resolveNodeMediaIngest`, `NodeStreamOrigin.rotateRecipients` (**experimental**, v1.13.0) |
 
 Authoritative inventories:
 
@@ -62,7 +62,7 @@ All events documented in `openapi-like.json` → `events`, `warningSubtypes`, `q
 3. **Support window** — deprecated APIs remain functional for at least **one full minor release** (e.g. deprecated in 1.1, removed no earlier than 2.0).
 4. **Remove** — only in a major release (2.0+), with migration notes.
 
-No public APIs are currently deprecated as of v1.12.0.
+No public APIs are currently deprecated as of v1.13.0.
 
 Experimental streaming helpers (`STREAMING_API_EXPERIMENTAL`, `createStreamSession`, signed and sealed private media chunks, `createPublicStreamBroadcaster`, WebRTC signaling/transport, related public-path helpers, and **`dignity.js/node` origin ingest**) may change without a major release until the full browser media pipeline ships ([#152](https://github.com/jose-compu/dignity.js/issues/152)).
 

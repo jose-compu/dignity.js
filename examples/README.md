@@ -109,6 +109,21 @@ Annex-B or fMP4 stdout from ffmpeg is parsed into access units with `timestampMs
   node examples/node-private-stream-origin.js
   ```
 
+### Standard ingest adapters (experimental, v1.13.0)
+
+MPEG-TS, HLS, RTMP, SRT, and WHIP map onto the Node signed-chunk path (`dignity.js/node`). ffmpeg is optional for RTMP/SRT only; WHIP needs an injected `peerFactory` (WebRTC library not bundled).
+
+| Adapter | Example |
+|---------|---------|
+| MPEG-TS file | [`node-ingest-mpegts.js`](./node-ingest-mpegts.js) — `npm run example:ingest-mpegts` |
+| WHIP HTTP handler | [`node-ingest-whip.js`](./node-ingest-whip.js) — `npm run example:ingest-whip` |
+
+**OBS — WHIP (browser output):** Run `node-ingest-whip.js`, point OBS *WHIP* service URL to `http://<host>:8787/whip`, codec H.264.
+
+**OBS — RTMP or SRT:** Run your origin with `createRtmpIngest` / `createSrtIngest` (ffmpeg on PATH copies to MPEG-TS). In OBS set stream server to your RTMP/SRT URL that ffmpeg listens on or pulls from.
+
+**UDP MPEG-TS:** `createMpegTsIngest({ input: { type: 'udp', port: 5000 } })`.
+
 ### TypeScript Consumer Project
 * **Directory:** [`typescript-consumer/`](./typescript-consumer/)
 * **Description:** Sample TypeScript project demonstrating type definitions, type safety, and verification rules compile-time checking.

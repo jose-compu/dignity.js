@@ -39671,6 +39671,329 @@ var require_relay_layer_policy = __commonJS({
   }
 });
 
+// src/streaming/ingest/mpegts-demuxer.js
+var require_mpegts_demuxer = __commonJS({
+  "src/streaming/ingest/mpegts-demuxer.js"(exports, module) {
+    var { parseAnnexBAccessUnits, H264_MIME } = require_media_framing();
+    var TS_PACKET_SIZE = 188;
+    var SYNC_BYTE = 71;
+    var PAT_PID = 0;
+    var STREAM_TYPE_H264 = 27;
+    var STREAM_TYPE_AAC = 15;
+    var PTS_WRAP = 1n << 33n;
+    function concatBytes(...parts) {
+      const chunks = parts.filter((p) => p && p.length > 0);
+      if (chunks.length === 0) {
+        return new Uint8Array(0);
+      }
+      if (chunks.length === 1) {
+        return chunks[0];
+      }
+      let total = 0;
+      for (const c of chunks) {
+        total += c.length;
+      }
+      const out = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) {
+        out.set(c, offset);
+        offset += c.length;
+      }
+      return out;
+    }
+    function ptsToTimestampMs(pts) {
+      if (pts == null) {
+        return void 0;
+      }
+      const v = typeof pts === "bigint" ? pts : BigInt(pts >>> 0);
+      return Math.round(Number(v * 1000n / 90000n));
+    }
+    function readU16BE(bytes, offset) {
+      return bytes[offset] << 8 | bytes[offset + 1];
+    }
+    function parsePatSection(payload) {
+      if (payload.length < 8 || payload[0] !== 0) {
+        return null;
+      }
+      const sectionLength = (payload[1] & 15) << 8 | payload[2];
+      if (sectionLength + 3 > payload.length) {
+        return null;
+      }
+      const version = payload[5] >> 1 & 31;
+      const programs = /* @__PURE__ */ new Map();
+      let offset = 8;
+      const end = 3 + sectionLength - 4;
+      while (offset + 4 <= end) {
+        const programNumber = readU16BE(payload, offset);
+        const pid = (payload[offset + 2] & 31) << 8 | payload[offset + 3];
+        if (programNumber !== 0) {
+          programs.set(programNumber, pid);
+        }
+        offset += 4;
+      }
+      return { programs, version };
+    }
+    function parsePmtSection(payload) {
+      if (payload.length < 12 || payload[0] !== 2) {
+        return null;
+      }
+      const sectionLength = (payload[1] & 15) << 8 | payload[2];
+      if (sectionLength + 3 > payload.length) {
+        return null;
+      }
+      const pcrPid = (payload[8] & 31) << 8 | payload[9];
+      const programInfoLength = (payload[10] & 15) << 8 | payload[11];
+      let offset = 12 + programInfoLength;
+      const end = 3 + sectionLength - 4;
+      const streams = [];
+      while (offset + 5 <= end) {
+        const streamType = payload[offset];
+        const elementaryPid = (payload[offset + 1] & 31) << 8 | payload[offset + 2];
+        const esInfoLength = (payload[offset + 3] & 15) << 8 | payload[offset + 4];
+        streams.push({ streamType, elementaryPid });
+        offset += 5 + esInfoLength;
+      }
+      return { pcrPid, streams };
+    }
+    function parsePesHeader(bytes, offset) {
+      if (offset + 9 > bytes.length) {
+        return null;
+      }
+      if (bytes[offset] !== 0 || bytes[offset + 1] !== 0 || bytes[offset + 2] !== 1) {
+        return null;
+      }
+      const pesPacketLength = readU16BE(bytes, offset + 4);
+      const flags = bytes[offset + 7];
+      const pesHeaderDataLength = bytes[offset + 8];
+      const headerStart = offset + 9;
+      const headerEnd = headerStart + pesHeaderDataLength;
+      if (headerEnd > bytes.length) {
+        return null;
+      }
+      let pts = null;
+      let dts = null;
+      const ptsDtsFlags = flags >> 6 & 3;
+      let p = headerStart;
+      if (ptsDtsFlags === 2 || ptsDtsFlags === 3) {
+        if (p + 5 > headerEnd) {
+          return null;
+        }
+        pts = readPts(bytes, p);
+        p += 5;
+      }
+      if (ptsDtsFlags === 3) {
+        if (p + 5 > headerEnd) {
+          return null;
+        }
+        dts = readPts(bytes, p);
+        p += 5;
+      }
+      const totalHeader = 9 + pesHeaderDataLength;
+      const payloadStart = offset + totalHeader;
+      const packetEnd = pesPacketLength > 0 ? Math.min(offset + 6 + pesPacketLength, bytes.length) : bytes.length;
+      return { pts, dts, headerLen: totalHeader, payloadStart, packetEnd };
+    }
+    function readPts(bytes, offset) {
+      const pts = (bytes[offset] & 14) << 29 | bytes[offset + 1] << 22 | (bytes[offset + 2] & 254) << 14 | bytes[offset + 3] << 7 | bytes[offset + 4] >> 1 & 127;
+      return BigInt(pts);
+    }
+    var MpegTsDemuxer = class {
+      constructor() {
+        this._carry = new Uint8Array(0);
+        this._pmtPid = null;
+        this._videoPid = null;
+        this._audioPid = null;
+        this._lastCc = {};
+        this._pes = {};
+        this._skipAudio = true;
+      }
+      /**
+       * @param {Uint8Array} chunk
+       * @returns {Array<{ payloadBytes: Uint8Array, mimeType: string, timestampMs: number, keyframe: boolean }>}
+       */
+      push(chunk) {
+        if (!(chunk instanceof Uint8Array)) {
+          throw new TypeError("chunk must be a Uint8Array");
+        }
+        this._carry = concatBytes(this._carry, chunk);
+        const frames = [];
+        while (this._carry.length >= TS_PACKET_SIZE) {
+          if (this._carry[0] !== SYNC_BYTE) {
+            const next = this._carry.indexOf(SYNC_BYTE, 1);
+            if (next < 0) {
+              this._carry = this._carry.subarray(this._carry.length - 1);
+              break;
+            }
+            this._carry = this._carry.subarray(next);
+            continue;
+          }
+          const packet = this._carry.subarray(0, TS_PACKET_SIZE);
+          this._carry = this._carry.subarray(TS_PACKET_SIZE);
+          const emitted = this._processPacket(packet);
+          frames.push(...emitted);
+        }
+        return frames;
+      }
+      flush() {
+        const frames = [];
+        for (const pid of Object.keys(this._pes)) {
+          const id = Number(pid);
+          frames.push(...this._flushPes(id));
+        }
+        this._carry = new Uint8Array(0);
+        return frames;
+      }
+      /**
+       * @param {Uint8Array} packet
+       */
+      _processPacket(packet) {
+        const adaptationFieldControl = packet[3] >> 4 & 3;
+        const pid = (packet[1] & 31) << 8 | packet[2];
+        const payloadUnitStart = (packet[1] & 64) !== 0;
+        const cc = packet[3] & 15;
+        const last = this._lastCc[pid];
+        if (last !== void 0 && last !== cc && (last + 1) % 16 !== cc) {
+          delete this._pes[pid];
+        }
+        this._lastCc[pid] = cc;
+        let offset = 4;
+        if (adaptationFieldControl === 2 || adaptationFieldControl === 3) {
+          const afLen = packet[4];
+          offset = 5 + afLen;
+        }
+        if (adaptationFieldControl === 2 || offset >= TS_PACKET_SIZE) {
+          return [];
+        }
+        const payload = packet.subarray(offset);
+        if (pid === PAT_PID) {
+          if (payloadUnitStart && payload.length > 0) {
+            const pointer = payload[0];
+            const sectionStart = 1 + pointer;
+            if (sectionStart < payload.length) {
+              const pat = parsePatSection(payload.subarray(sectionStart));
+              if (pat && pat.programs.size > 0) {
+                for (const pmtPid of pat.programs.values()) {
+                  this._pmtPid = pmtPid;
+                }
+              }
+            }
+          }
+          return [];
+        }
+        if (this._pmtPid !== null && pid === this._pmtPid) {
+          if (payloadUnitStart && payload.length > 0) {
+            const pointer = payload[0];
+            const sectionStart = 1 + pointer;
+            if (sectionStart < payload.length) {
+              const pmt = parsePmtSection(payload.subarray(sectionStart));
+              if (pmt) {
+                for (const stream of pmt.streams) {
+                  if (stream.streamType === STREAM_TYPE_H264) {
+                    this._videoPid = stream.elementaryPid;
+                  } else if (stream.streamType === STREAM_TYPE_AAC) {
+                    this._audioPid = stream.elementaryPid;
+                  }
+                }
+              }
+            }
+          }
+          return [];
+        }
+        if (this._videoPid !== null && pid === this._videoPid) {
+          return this._ingestPes(pid, payloadUnitStart, payload);
+        }
+        if (!this._skipAudio && this._audioPid !== null && pid === this._audioPid) {
+          return this._ingestAudioPes(pid, payloadUnitStart, payload);
+        }
+        return [];
+      }
+      /**
+       * @param {number} pid
+       * @param {boolean} unitStart
+       * @param {Uint8Array} payload
+       */
+      _ingestPes(pid, unitStart, payload) {
+        const frames = [];
+        if (unitStart) {
+          frames.push(...this._flushPes(pid));
+          if (payload.length === 0) {
+            return frames;
+          }
+          const pes = parsePesHeader(payload, 0);
+          if (!pes) {
+            return frames;
+          }
+          this._pes[pid] = {
+            bytes: [payload.subarray(pes.payloadStart)],
+            pts: pes.pts
+          };
+        } else if (this._pes[pid]) {
+          this._pes[pid].bytes.push(payload);
+        }
+        return frames;
+      }
+      _ingestAudioPes(pid, unitStart, payload) {
+        if (unitStart) {
+          this._pes[pid] = { bytes: [payload], pts: null };
+        } else if (this._pes[pid]) {
+          this._pes[pid].bytes.push(payload);
+        }
+        return [];
+      }
+      /**
+       * @param {number} pid
+       */
+      _flushPes(pid) {
+        const state = this._pes[pid];
+        delete this._pes[pid];
+        if (!state || state.bytes.length === 0) {
+          return [];
+        }
+        const combined = concatBytes(...state.bytes);
+        let esBytes = combined;
+        const pes = parsePesHeader(combined, 0);
+        let pts = state.pts;
+        if (pes) {
+          esBytes = combined.subarray(pes.payloadStart);
+          if (pes.pts != null) {
+            pts = pes.pts;
+          }
+        }
+        const parsed = parseAnnexBAccessUnits(esBytes);
+        if (parsed.length === 0 && esBytes.length > 0) {
+          const keyframe = esBytes.length >= 5 && (esBytes[4] & 31) === 5;
+          const ts3 = ptsToTimestampMs(pts);
+          return [
+            {
+              payloadBytes: esBytes,
+              mimeType: H264_MIME,
+              timestampMs: ts3 != null ? ts3 : 0,
+              keyframe
+            }
+          ];
+        }
+        const ts2 = ptsToTimestampMs(pts);
+        return parsed.map((frame, index) => ({
+          ...frame,
+          timestampMs: ts2 != null ? ts2 + (index > 0 ? index : 0) : frame.timestampMs
+        }));
+      }
+    };
+    function demuxMpegTs(bytes) {
+      const demuxer = new MpegTsDemuxer();
+      const frames = demuxer.push(bytes);
+      return frames.concat(demuxer.flush());
+    }
+    module.exports = {
+      TS_PACKET_SIZE,
+      SYNC_BYTE,
+      MpegTsDemuxer,
+      demuxMpegTs,
+      ptsToTimestampMs
+    };
+  }
+});
+
 // src/streaming/index.js
 var require_streaming = __commonJS({
   "src/streaming/index.js"(exports, module) {
@@ -39689,6 +40012,7 @@ var require_streaming = __commonJS({
     var playoutBuffer = require_playout_buffer();
     var relayLayerPolicy = require_relay_layer_policy();
     var simulcastPublish = require_simulcast_publish();
+    var { demuxMpegTs, MpegTsDemuxer, ptsToTimestampMs } = require_mpegts_demuxer();
     module.exports = {
       ...accessModes,
       ...streamSession,
@@ -39705,6 +40029,9 @@ var require_streaming = __commonJS({
       ...playoutBuffer,
       ...relayLayerPolicy,
       ...simulcastPublish,
+      demuxMpegTs,
+      MpegTsDemuxer,
+      ptsToTimestampMs,
       STREAMING_API_EXPERIMENTAL: true
     };
   }
@@ -39876,7 +40203,8 @@ var require_src = __commonJS({
       PublicStreamViewer,
       PublicStreamRelay,
       parseAnnexBAccessUnits,
-      parseFmp4Fragments
+      parseFmp4Fragments,
+      demuxMpegTs
     } = require_streaming();
     module.exports = {
       DignityP2P: DignityP2P2,
@@ -40009,7 +40337,8 @@ var require_src = __commonJS({
       PublicStreamViewer,
       PublicStreamRelay,
       parseAnnexBAccessUnits,
-      parseFmp4Fragments
+      parseFmp4Fragments,
+      demuxMpegTs
     };
   }
 });
@@ -41272,7 +41601,7 @@ function Lobby({
       emptyText: "No finished games yet.",
       onOpen: handleOpenGame
     }
-  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.12.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
+  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.13.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
       id: usernameInputId,

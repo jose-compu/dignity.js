@@ -45,11 +45,12 @@ function populateFeatureSelect() {
     v110: 'v1.10.0 adaptive',
     v111: 'v1.11.0 relay degrade',
     v112: 'v1.12.0 simulcast',
+    v113: 'v1.13.0 ingest',
     patterns: 'Browser patterns',
     apps: 'Dignity Apps'
   };
 
-  const order = ['core', 'v013', 'v140', 'v150', 'v160', 'v180', 'v190', 'v110', 'v111', 'v112', 'patterns', 'apps'];
+  const order = ['core', 'v013', 'v140', 'v150', 'v160', 'v180', 'v190', 'v110', 'v111', 'v112', 'v113', 'patterns', 'apps'];
   const seen = new Set(order);
   for (const key of groups.keys()) {
     if (!seen.has(key)) {
