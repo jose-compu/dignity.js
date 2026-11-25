@@ -7,8 +7,10 @@ const {
   createPublicStreamViewer,
   verifyMediaChunk,
   decodeMediaChunkPayload,
-  createWebRTCDataChannelTransport
+  createWebRTCDataChannelTransport,
+  openPrivateMediaChunk
 } = require('../../src/streaming');
+const { deriveKeyPairFromCredentials, keyPairToPublicBundle } = require('../../src');
 const { InMemoryNetworkHub, InMemoryNetworkAdapter } = require('../../src/network/in-memory-network');
 const { createFileMediaIngest } = require('../../src/streaming/node-media-ingest');
 const { createNodeStreamOrigin } = require('../../src/streaming/node-stream-origin');
@@ -19,9 +21,38 @@ const fixturePath = path.join(__dirname, '../fixtures/stream-origin-chunks.bin')
 
 function testKeyPair(label) {
   const pair = nacl.sign.keyPair.fromSeed(nacl.hash(naclUtil.decodeUTF8(label)).slice(0, 32));
+  const enc = nacl.box.keyPair.fromSecretKey(nacl.hash(naclUtil.decodeUTF8(`${label}-enc`)).slice(0, 32));
   return {
     signingSecretKey: pair.secretKey,
-    signingPublicKey: naclUtil.encodeBase64(pair.publicKey)
+    signingPublicKey: naclUtil.encodeBase64(pair.publicKey),
+    encryptionSecretKey: enc.secretKey,
+    encryptionPublicKey: naclUtil.encodeBase64(enc.publicKey)
+  };
+}
+
+function bundleFromKeys(keys) {
+  return {
+    signingPublicKey: keys.signingPublicKey,
+    encryptionPublicKey: keys.encryptionPublicKey
+  };
+}
+
+function createChunkCollector(viewerId, bus) {
+  const chunks = [];
+  bus.subscribe(viewerId, (envelope) => {
+    if (envelope.messageType === 'stream:media-chunk' && envelope.chunk) {
+      chunks.push(envelope.chunk);
+    }
+  });
+  return {
+    chunks,
+    requestJoin(broadcasterId, sessionId) {
+      bus.send(viewerId, broadcasterId, {
+        messageType: 'stream:join-request',
+        sessionId,
+        viewerId
+      });
+    }
   };
 }
 
@@ -63,7 +94,7 @@ describe('node stream origin', () => {
     expect(payload.equals(fs.readFileSync(fixturePath))).toBe(true);
   });
 
-  test('origin forwards the same chunk over WebRTCDataChannelTransport', async () => {
+  test('origin forwards sealed chunk over WebRTCDataChannelTransport', async () => {
     const hub = new InMemoryNetworkHub();
     const originAdapter = new InMemoryNetworkAdapter(hub);
     const viewerAdapter = new InMemoryNetworkAdapter(hub);
@@ -71,11 +102,16 @@ describe('node stream origin', () => {
     await viewerAdapter.start('viewer-1');
 
     const bus = createInMemoryStreamSignalingBus();
-    const keys = testKeyPair('node-origin-dc');
+    const broadcaster = await deriveKeyPairFromCredentials({ username: 'dc-bc', password: 'p1' });
+    const alice = await deriveKeyPairFromCredentials({ username: 'dc-alice', password: 'p2' });
+    const bcBundle = keyPairToPublicBundle(broadcaster);
+    const aliceBundle = keyPairToPublicBundle(alice);
+
     const session = createStreamSession({
       sessionId: 'node-dc',
       broadcasterId: 'origin',
-      mode: STREAM_ACCESS_MODES.PUBLIC
+      mode: STREAM_ACCESS_MODES.PRIVATE_SINGLE,
+      privateRecipients: [aliceBundle.signingPublicKey]
     });
 
     const transportOrigin = createWebRTCDataChannelTransport(originAdapter);
@@ -87,13 +123,16 @@ describe('node stream origin', () => {
 
     const origin = createNodeStreamOrigin({
       session,
-      signingSecretKey: keys.signingSecretKey,
-      signingPublicKey: keys.signingPublicKey,
+      signingSecretKey: broadcaster.signing.secretKey,
+      signingPublicKey: bcBundle.signingPublicKey,
+      broadcasterEncryptionSecretKey: broadcaster.encryption.secretKey,
+      broadcasterEncryptionPublicKey: bcBundle.encryptionPublicKey,
+      recipientPublicBundles: [aliceBundle],
       bus,
       mediaIngest: createFileMediaIngest({ filePath: fixturePath, chunkBytes: fixturePath.length }),
       dataChannelTransport: transportOrigin,
       dataChannelPeerIds: ['viewer-1'],
-      directViewerIds: []
+      directViewerIds: [aliceBundle.signingPublicKey]
     });
 
     const publishPromise = origin.start();
@@ -104,18 +143,281 @@ describe('node stream origin', () => {
     expect(received).toHaveLength(1);
     expect(received[0].senderId).toBe('origin');
     expect(verifyMediaChunk(received[0].chunk, 'node-dc')).toBe(true);
+    const opened = openPrivateMediaChunk(received[0].chunk, {
+      recipientEncryptionSecretKey: alice.encryption.secretKey,
+      recipientSigningPublicKey: aliceBundle.signingPublicKey
+    });
+    expect(Buffer.from(opened).equals(fs.readFileSync(fixturePath))).toBe(true);
     transportOrigin.destroy();
     transportViewer.destroy();
   });
 
-  test('non-public session throws', () => {
+  test('private-single: listed recipient opens bytes; spectator not authorized; payload not plaintext', async () => {
+    const bus = createInMemoryStreamSignalingBus();
+    const broadcaster = await deriveKeyPairFromCredentials({ username: 'ps-bc', password: 'p1' });
+    const alice = await deriveKeyPairFromCredentials({ username: 'ps-alice', password: 'p2' });
+    const spectator = await deriveKeyPairFromCredentials({ username: 'ps-spec', password: 'p3' });
+    const bcBundle = keyPairToPublicBundle(broadcaster);
+    const aliceBundle = keyPairToPublicBundle(alice);
+
+    const session = createStreamSession({
+      sessionId: 'node-ps',
+      broadcasterId: 'origin',
+      mode: STREAM_ACCESS_MODES.PRIVATE_SINGLE,
+      privateRecipients: [aliceBundle.signingPublicKey]
+    });
+
+    const aliceView = createChunkCollector(aliceBundle.signingPublicKey, bus);
+    const specView = createChunkCollector(keyPairToPublicBundle(spectator).signingPublicKey, bus);
+
+    const origin = createNodeStreamOrigin({
+      session,
+      signingSecretKey: broadcaster.signing.secretKey,
+      signingPublicKey: bcBundle.signingPublicKey,
+      broadcasterEncryptionSecretKey: broadcaster.encryption.secretKey,
+      broadcasterEncryptionPublicKey: bcBundle.encryptionPublicKey,
+      recipientPublicBundles: [aliceBundle],
+      bus,
+      mediaIngest: createFileMediaIngest({ filePath: fixturePath, chunkBytes: 16 }),
+      directViewerIds: [aliceBundle.signingPublicKey, keyPairToPublicBundle(spectator).signingPublicKey]
+    });
+
+    aliceView.requestJoin('origin', session.sessionId);
+    specView.requestJoin('origin', session.sessionId);
+    await origin.start();
+
+    expect(aliceView.chunks.length).toBeGreaterThan(0);
+    for (const chunk of aliceView.chunks) {
+      expect(verifyMediaChunk(chunk, session.sessionId)).toBe(true);
+      expect(Buffer.from(decodeMediaChunkPayload(chunk)).equals(fs.readFileSync(fixturePath))).toBe(false);
+    }
+
+    const opened = Buffer.concat(
+      aliceView.chunks.map((c) =>
+        Buffer.from(
+          openPrivateMediaChunk(c, {
+            recipientEncryptionSecretKey: alice.encryption.secretKey,
+            recipientSigningPublicKey: aliceBundle.signingPublicKey
+          })
+        )
+      )
+    );
+    expect(opened.equals(fs.readFileSync(fixturePath))).toBe(true);
+
+    expect(() =>
+      openPrivateMediaChunk(aliceView.chunks[0], {
+        recipientEncryptionSecretKey: spectator.encryption.secretKey,
+        recipientSigningPublicKey: keyPairToPublicBundle(spectator).signingPublicKey
+      })
+    ).toThrow(/not authorized/i);
+
+    expect(specView.chunks.length).toBeGreaterThan(0);
+  });
+
+  test('private-list: both listed open, third fails; invalid bundle count throws', async () => {
+    const broadcaster = await deriveKeyPairFromCredentials({ username: 'pl-bc', password: 'p1' });
+    const alice = await deriveKeyPairFromCredentials({ username: 'pl-alice', password: 'p2' });
+    const bob = await deriveKeyPairFromCredentials({ username: 'pl-bob', password: 'p3' });
+    const carol = await deriveKeyPairFromCredentials({ username: 'pl-carol', password: 'p4' });
+    const bcBundle = keyPairToPublicBundle(broadcaster);
+    const aliceBundle = keyPairToPublicBundle(alice);
+    const bobBundle = keyPairToPublicBundle(bob);
+    const carolBundle = keyPairToPublicBundle(carol);
+
+    const session = createStreamSession({
+      sessionId: 'node-pl',
+      broadcasterId: 'origin',
+      mode: STREAM_ACCESS_MODES.PRIVATE_LIST,
+      privateRecipients: [aliceBundle.signingPublicKey, bobBundle.signingPublicKey]
+    });
+
+    const bus = createInMemoryStreamSignalingBus();
+
+    expect(() =>
+      createNodeStreamOrigin({
+        session,
+        signingSecretKey: broadcaster.signing.secretKey,
+        signingPublicKey: bcBundle.signingPublicKey,
+        broadcasterEncryptionSecretKey: broadcaster.encryption.secretKey,
+        broadcasterEncryptionPublicKey: bcBundle.encryptionPublicKey,
+        recipientPublicBundles: [aliceBundle],
+        bus,
+        mediaIngest: createFileMediaIngest({ filePath: fixturePath })
+      })
+    ).toThrow(/length/i);
+
+    const origin = createNodeStreamOrigin({
+      session,
+      signingSecretKey: broadcaster.signing.secretKey,
+      signingPublicKey: bcBundle.signingPublicKey,
+      broadcasterEncryptionSecretKey: broadcaster.encryption.secretKey,
+      broadcasterEncryptionPublicKey: bcBundle.encryptionPublicKey,
+      recipientPublicBundles: [aliceBundle, bobBundle],
+      bus,
+      mediaIngest: createFileMediaIngest({ filePath: fixturePath, chunkBytes: fixturePath.length }),
+      directViewerIds: [aliceBundle.signingPublicKey, bobBundle.signingPublicKey, carolBundle.signingPublicKey]
+    });
+
+    const aliceView = createChunkCollector(aliceBundle.signingPublicKey, bus);
+    const bobView = createChunkCollector(bobBundle.signingPublicKey, bus);
+    aliceView.requestJoin('origin', session.sessionId);
+    bobView.requestJoin('origin', session.sessionId);
+    await origin.start();
+
+    const fileBytes = fs.readFileSync(fixturePath);
+    const aliceOpened = openPrivateMediaChunk(aliceView.chunks[0], {
+      recipientEncryptionSecretKey: alice.encryption.secretKey,
+      recipientSigningPublicKey: aliceBundle.signingPublicKey
+    });
+    const bobOpened = openPrivateMediaChunk(bobView.chunks[0], {
+      recipientEncryptionSecretKey: bob.encryption.secretKey,
+      recipientSigningPublicKey: bobBundle.signingPublicKey
+    });
+    expect(Buffer.from(aliceOpened).equals(fileBytes)).toBe(true);
+    expect(Buffer.from(bobOpened).equals(fileBytes)).toBe(true);
+
+    expect(() =>
+      openPrivateMediaChunk(aliceView.chunks[0], {
+        recipientEncryptionSecretKey: carol.encryption.secretKey,
+        recipientSigningPublicKey: carolBundle.signingPublicKey
+      })
+    ).toThrow(/not authorized/i);
+  });
+
+  test('combined: public layer decodes to file; only allowlist opens private layer', async () => {
+    const broadcaster = await deriveKeyPairFromCredentials({ username: 'cb-bc', password: 'p1' });
+    const alice = await deriveKeyPairFromCredentials({ username: 'cb-alice', password: 'p2' });
+    const spectator = await deriveKeyPairFromCredentials({ username: 'cb-spec', password: 'p3' });
+    const bcBundle = keyPairToPublicBundle(broadcaster);
+    const aliceBundle = keyPairToPublicBundle(alice);
+    const specBundle = keyPairToPublicBundle(spectator);
+
+    const session = createStreamSession({
+      sessionId: 'node-cb',
+      broadcasterId: 'origin',
+      mode: STREAM_ACCESS_MODES.COMBINED,
+      privateRecipients: [aliceBundle.signingPublicKey]
+    });
+
+    const bus = createInMemoryStreamSignalingBus();
+    const spectatorView = createChunkCollector(specBundle.signingPublicKey, bus);
+    const aliceView = createChunkCollector(aliceBundle.signingPublicKey, bus);
+
+    const origin = createNodeStreamOrigin({
+      session,
+      signingSecretKey: broadcaster.signing.secretKey,
+      signingPublicKey: bcBundle.signingPublicKey,
+      broadcasterEncryptionSecretKey: broadcaster.encryption.secretKey,
+      broadcasterEncryptionPublicKey: bcBundle.encryptionPublicKey,
+      recipientPublicBundles: [aliceBundle],
+      bus,
+      mediaIngest: createFileMediaIngest({ filePath: fixturePath, chunkBytes: fixturePath.length }),
+      directViewerIds: [specBundle.signingPublicKey, aliceBundle.signingPublicKey]
+    });
+
+    spectatorView.requestJoin('origin', session.sessionId);
+    aliceView.requestJoin('origin', session.sessionId);
+    await origin.start();
+
+    const fileBytes = fs.readFileSync(fixturePath);
+    const publicChunks = spectatorView.chunks.filter((c) => c.layerId === 'public');
+    const privateChunks = spectatorView.chunks.filter((c) => c.layerId === 'private');
+    expect(publicChunks).toHaveLength(1);
+    expect(privateChunks).toHaveLength(1);
+    expect(Buffer.from(decodeMediaChunkPayload(publicChunks[0])).equals(fileBytes)).toBe(true);
+
+    expect(() =>
+      openPrivateMediaChunk(privateChunks[0], {
+        recipientEncryptionSecretKey: spectator.encryption.secretKey,
+        recipientSigningPublicKey: specBundle.signingPublicKey
+      })
+    ).toThrow(/not authorized/i);
+
+    const alicePrivate = aliceView.chunks.find((c) => c.layerId === 'private');
+    const opened = openPrivateMediaChunk(alicePrivate, {
+      recipientEncryptionSecretKey: alice.encryption.secretKey,
+      recipientSigningPublicKey: aliceBundle.signingPublicKey
+    });
+    expect(Buffer.from(opened).equals(fileBytes)).toBe(true);
+  });
+
+  test('rotateRecipients: removed key opens before rotation, fails after; remaining key still opens', async () => {
+    const broadcaster = await deriveKeyPairFromCredentials({ username: 'rot-bc', password: 'p1' });
+    const alice = await deriveKeyPairFromCredentials({ username: 'rot-alice', password: 'p2' });
+    const bob = await deriveKeyPairFromCredentials({ username: 'rot-bob', password: 'p3' });
+    const bcBundle = keyPairToPublicBundle(broadcaster);
+    const aliceBundle = keyPairToPublicBundle(alice);
+    const bobBundle = keyPairToPublicBundle(bob);
+
+    const session = createStreamSession({
+      sessionId: 'node-rot',
+      broadcasterId: 'origin',
+      mode: STREAM_ACCESS_MODES.PRIVATE_LIST,
+      privateRecipients: [aliceBundle.signingPublicKey, bobBundle.signingPublicKey]
+    });
+
+    const bus = createInMemoryStreamSignalingBus();
+    const aliceView = createChunkCollector(aliceBundle.signingPublicKey, bus);
+    const bobView = createChunkCollector(bobBundle.signingPublicKey, bus);
+
+    const fileBytes = fs.readFileSync(fixturePath);
+
+    const origin = createNodeStreamOrigin({
+      session,
+      signingSecretKey: broadcaster.signing.secretKey,
+      signingPublicKey: bcBundle.signingPublicKey,
+      broadcasterEncryptionSecretKey: broadcaster.encryption.secretKey,
+      broadcasterEncryptionPublicKey: bcBundle.encryptionPublicKey,
+      recipientPublicBundles: [aliceBundle, bobBundle],
+      bus,
+      mediaIngest: {
+        kind: 'file',
+        filePath: fixturePath,
+        chunkBytes: 4,
+        stop() {},
+        async *frames() {
+          const half = Math.ceil(fileBytes.length / 2);
+          yield { payloadBytes: fileBytes.subarray(0, half) };
+          origin.rotateRecipients(bobBundle.signingPublicKey);
+          yield { payloadBytes: fileBytes.subarray(half) };
+        }
+      },
+      directViewerIds: [aliceBundle.signingPublicKey, bobBundle.signingPublicKey]
+    });
+
+    aliceView.requestJoin('origin', session.sessionId);
+    bobView.requestJoin('origin', session.sessionId);
+    await origin.start();
+
+    expect(aliceView.chunks).toHaveLength(2);
+    expect(bobView.chunks).toHaveLength(2);
+
+    openPrivateMediaChunk(bobView.chunks[0], {
+      recipientEncryptionSecretKey: bob.encryption.secretKey,
+      recipientSigningPublicKey: bobBundle.signingPublicKey
+    });
+
+    expect(() =>
+      openPrivateMediaChunk(bobView.chunks[1], {
+        recipientEncryptionSecretKey: bob.encryption.secretKey,
+        recipientSigningPublicKey: bobBundle.signingPublicKey
+      })
+    ).toThrow(/not authorized/i);
+
+    openPrivateMediaChunk(aliceView.chunks[1], {
+      recipientEncryptionSecretKey: alice.encryption.secretKey,
+      recipientSigningPublicKey: aliceBundle.signingPublicKey
+    });
+  });
+
+  test('private session without encryption keys throws at construction', () => {
     const bus = createInMemoryStreamSignalingBus();
     const keys = testKeyPair('node-private');
     const session = createStreamSession({
       sessionId: 'node-priv',
       broadcasterId: 'origin',
       mode: STREAM_ACCESS_MODES.PRIVATE_SINGLE,
-      privateRecipients: ['bob']
+      privateRecipients: ['bob-signing']
     });
 
     expect(() =>
@@ -126,7 +428,7 @@ describe('node stream origin', () => {
         bus,
         mediaIngest: createFileMediaIngest({ filePath: fixturePath })
       })
-    ).toThrow(/public/);
+    ).toThrow(/recipientPublicBundles|broadcasterEncryption/);
   });
 
   test('stop kills ffmpeg child when present', () => {

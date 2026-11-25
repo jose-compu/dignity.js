@@ -171,7 +171,7 @@ function buildMarkdown() {
 
   if (spec.nodeStreaming) {
     lines.push(heading(2, 'Node streaming (`dignity.js/node`)'));
-    lines.push(`Entry: \`${spec.nodeStreaming.entrypoint}\` (experimental; public origin only)\n\n`);
+    lines.push(`Entry: \`${spec.nodeStreaming.entrypoint}\` (experimental)\n\n`);
     lines.push(
       `${Object.entries(spec.nodeStreaming.exports || {}).map(([k, v]) => `- **\`${k}\`** — ${v}`).join('\n')}\n\n`
     );

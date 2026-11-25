@@ -35,6 +35,18 @@ describe('public API exports', () => {
     expect(pkg.exports['./react'].types).toBe('./types/react.d.ts');
   });
 
+  test('main and streaming indexes do not pull Node-only streaming modules', () => {
+    const mainSrc = require('fs').readFileSync(require('path').join(__dirname, '../../src/index.js'), 'utf8');
+    const streamingSrc = require('fs').readFileSync(
+      require('path').join(__dirname, '../../src/streaming/index.js'),
+      'utf8'
+    );
+    for (const fragment of ['src/node', 'node-stream-origin', 'node-media-ingest', "require('fs')", "require('child_process')"]) {
+      expect(mainSrc.includes(fragment)).toBe(false);
+      expect(streamingSrc.includes(fragment)).toBe(false);
+    }
+  });
+
   test('exports sane default configs', () => {
     expect(Array.isArray(api.DEFAULT_CLOUDFLARE_SIGNALING_URLS)).toBe(true);
     expect(api.DEFAULT_CLOUDFLARE_SIGNALING_URLS.length).toBeGreaterThan(0);
