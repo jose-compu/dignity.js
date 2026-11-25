@@ -18,6 +18,10 @@ describe('assignRelayChildBudget', () => {
   test('rejects invalid forward bitrate', () => {
     expect(assignRelayChildBudget({ uplinkBps: 5_000_000, forwardLayerBps: 0, maxDegree: 16 })).toBe(0);
   });
+
+  test('maxDegree zero yields no children', () => {
+    expect(assignRelayChildBudget({ uplinkBps: 10_000_000, forwardLayerBps: 1, maxDegree: 0 })).toBe(0);
+  });
 });
 
 describe('selectRelayChildren', () => {
@@ -25,9 +29,20 @@ describe('selectRelayChildren', () => {
     expect(selectRelayChildren(['a', 'b', 'c'], 2)).toEqual(['a', 'b']);
     expect(selectRelayChildren(['a', 'b', 'c'], 0)).toEqual([]);
   });
+
+  test('requires an array of child ids', () => {
+    expect(() => selectRelayChildren(null, 1)).toThrow(/childIds must be an array/);
+  });
 });
 
 describe('assignRelayChildren', () => {
+  test('requires peers array and string ids', () => {
+    expect(() => assignRelayChildren({ peers: null, forwardLayerBps: 1 })).toThrow(/peers must be an array/);
+    expect(() =>
+      assignRelayChildren({ peers: [{ id: 7, uplinkBps: 1 }], forwardLayerBps: 1 })
+    ).toThrow(/string id/);
+  });
+
   test('maps peers to budgets in order', () => {
     const rows = assignRelayChildren({
       peers: [
