@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "harness": "scripts/stress-peer-group.js",
+  "profile": "stream-chunk-tier-d",
+  "latencyTiming": "measured",
+  "options": {
+    "subscribers": 50,
+    "publishers": 1,
+    "fanout": 4,
+    "maxHops": 12,
+    "mediaChunks": 24,
+    "bootstrapChain": true,
+    "tiered": false,
+    "liveCap": 0,
+    "network": "InMemoryNetworkAdapter"
+  },
+  "results": {
+    "deliveryRatio": 1,
+    "perSubscriberDeliveryRatioMin": 1,
+    "perSubscriberDeliveryRatioMax": 1,
+    "deliveredChunkCount": 1200,
+    "expectedChunkDeliveries": 1200,
+    "duplicateChunkEvents": 0,
+    "outOfOrderChunkEvents": 0,
+    "medianDeliveryMs": 0,
+    "p95DeliveryMs": 2,
+    "joinDurationMs": 548,
+    "publishDurationMs": 14,
+    "peakSeenGossip": 24,
+    "peakOpenConnections": 50
+  },
+  "notes": [
+    "Payloads are chunk metadata (sessionId, sequence, payloadHash) only — no media bytes.",
+    "Publisher gates on full subscriber delivery per sequence before the next chunk.",
+    "About 50 subscribers; delivery does not extrapolate to 10M sockets."
+  ]
+}
