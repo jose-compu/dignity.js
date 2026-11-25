@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "The scalable data layer of the decentralized browser application ecosystem.",
   "homepage": "https://dignity.js.org/",
   "repository": {
@@ -28,6 +28,12 @@
       "require": "./src/react/index.js",
       "import": "./src/react/index.js",
       "default": "./src/react/index.js"
+    },
+    "./node": {
+      "types": "./types/node-streaming.d.ts",
+      "require": "./src/node/index.js",
+      "import": "./src/node/index.js",
+      "default": "./src/node/index.js"
     }
   },
   "files": [
@@ -68,6 +74,7 @@
     "docs:check": "node -e \"const fs=require('fs');['docs/index.html','docs/favicon.ico','docs/api-reference.md','docs/api-stability.md','docs/threat-model.md','docs/browser-compatibility.md','docs/production-runbook.md','docs/benchmarks/results.json','docs/playground/index.html','docs/assets/playground.js','docs/assets/playground-demos.js','docs/assets/playground.css','docs/chess/index.html','docs/chess/favicon.ico','docs/assets/favicon.svg','docs/chess/assets/chess-app.js','docs/tictactoe/index.html','docs/tictactoe/favicon.ico','docs/tictactoe/assets/tictactoe-app.js','docs/apps/index.html','docs/apps/registry.json','docs/apps/timeline/index.html','docs/assets/dignity-logo.png','docs/assets/dignity.esm.js','docs/assets/highlight/highlight.min.js','docs/assets/highlight/github.min.css','docs/assets/highlight/github-dark.min.css'].forEach(p=>fs.accessSync(p));\"",
     "example:tictactoe": "node examples/decentralized-tictactoe.js",
     "example:chess": "node examples/decentralized-chess-lite.js",
+    "example:node-stream": "node examples/node-stream-origin.js",
     "prepublishOnly": "npm test && npm run build"
   },
   "keywords": [

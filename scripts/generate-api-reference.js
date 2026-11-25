@@ -169,6 +169,14 @@ function buildMarkdown() {
     lines.push(`${(spec.react.hooks || []).map((h) => `- \`${h}\``).join('\n')}\n\n`);
   }
 
+  if (spec.nodeStreaming) {
+    lines.push(heading(2, 'Node streaming (`dignity.js/node`)'));
+    lines.push(`Entry: \`${spec.nodeStreaming.entrypoint}\` (experimental; public origin only)\n\n`);
+    lines.push(
+      `${Object.entries(spec.nodeStreaming.exports || {}).map(([k, v]) => `- **\`${k}\`** — ${v}`).join('\n')}\n\n`
+    );
+  }
+
   if (spec.signaling) {
     lines.push(heading(2, 'Signaling'));
     lines.push(`- Cloudflare: ${spec.signaling.defaults.cloudflare}\n`);

@@ -8,7 +8,8 @@
     "baseUrl": ".",
     "paths": {
       "dignity.js": ["../../types/index.d.ts"],
-      "dignity.js/react": ["../../types/react.d.ts"]
+      "dignity.js/react": ["../../types/react.d.ts"],
+      "dignity.js/node": ["../../types/node-streaming.d.ts"]
     }
   },
   "include": ["smoke.ts"]
