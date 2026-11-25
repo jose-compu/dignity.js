@@ -1,5 +1,9 @@
 # Changelog
 
+## dignity.js 1.17.0
+
+Browser capture and decode via WebCodecs (milestone 9, #152, #159): `detectWebCodecsSupport`, `selectVideoEncoderConfig`, `createBrowserCaptureSource` (`MediaStream` → `VideoEncoder` → signed media chunk v3), and `createWebCodecsDecoder` (verified chunks → `VideoDecoder`, keyframe gate on layer switch). Playground `stream-webcodecs-capture`; browser e2e includes `stream-capacity-relays` and WebCodecs capture (Chromium fake media; skips when WebCodecs is missing). H.264 preferred, VP8 fallback; optional simulcast encoders per ladder layer. **Deferred:** `AudioEncoder` / Opus path, MSE playout, native Node WebRTC peer.
+
 ## dignity.js 1.16.0
 
 Capacity-aware relay child assignment (milestone 8, #152): `assignRelayChildBudget`, `selectRelayChildren`, `assignRelayChildren`; optional `childAssignment: 'capacity'` on `createPublicStreamRelay` and `runScaleSimulation`; benchmark [`docs/benchmarks/scale-simulation-capacity.json`](./docs/benchmarks/scale-simulation-capacity.json); playground `stream-capacity-relays`. Uniform `runScaleSimulation` output matches v1.14.0 JSON. Capacity profile (seed `1520714`) stall share ~0.205 (still `qualified`); effective hops at 10M viewers ~8 with ~8 mean child degree. Still deferred: WebCodecs/getUserMedia (#159), native Node WebRTC, RFC 8888 wire format, AV1 SVC.

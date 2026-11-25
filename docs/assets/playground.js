@@ -49,11 +49,12 @@ function populateFeatureSelect() {
     v114: 'v1.14.0 scale sim',
     v115: 'v1.15.0 stream stress',
     v116: 'v1.16.0 capacity relays',
+    v117: 'v1.17.0 webcodecs capture',
     patterns: 'Browser patterns',
     apps: 'Dignity Apps'
   };
 
-  const order = ['core', 'v013', 'v140', 'v150', 'v160', 'v180', 'v190', 'v110', 'v111', 'v112', 'v113', 'v114', 'patterns', 'apps'];
+  const order = ['core', 'v013', 'v140', 'v150', 'v160', 'v180', 'v190', 'v110', 'v111', 'v112', 'v113', 'v114', 'v116', 'v117', 'patterns', 'apps'];
   const seen = new Set(order);
   for (const key of groups.keys()) {
     if (!seen.has(key)) {

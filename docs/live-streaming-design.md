@@ -224,7 +224,7 @@ Feasibility argument: 10M **concurrent** viewers implies ~6 relay hops at degree
 | Out-of-order chunk deliveries | 0 |
 | p50 / p95 delivery latency (measured) | 0 ms / 1 ms |
 
-**Still deferred:** browser `getUserMedia` / WebCodecs ([#159](https://github.com/jose-compu/dignity.js/issues/159)), native Node WebRTC peer, RFC 8888 TWCC wire format, AV1 SVC.
+**v1.17.0 (milestone 9 — browser WebCodecs capture)** adds `detectWebCodecsSupport`, `selectVideoEncoderConfig`, `createBrowserCaptureSource` (`MediaStream` from app-supplied `getUserMedia` / `getDisplayMedia` → `VideoEncoder` with H.264 preferred and VP8 fallback via `VideoEncoder.isConfigSupported`; `MediaStreamTrackProcessor` when present else canvas + `requestVideoFrameCallback`), and `createWebCodecsDecoder` (verified signed chunks → `VideoDecoder`, keyframe gate after layer switch). Each `EncodedVideoChunk` becomes one signed chunk v3 (`keyframe`, `timestampMs`, ladder `rendition`). Optional simulcast: one encoder per layer from `resolveRendition`. Injectable encoder/decoder/track-processor constructors for Node unit tests. Playground: `stream-webcodecs-capture`. **Deferred:** `AudioEncoder` Opus, MSE playout, wiring capture into `PublicStreamBroadcaster.publishChunk` over live WebRTC trees (callers use `onChunk` today), native Node WebRTC peer, RFC 8888 TWCC wire format, AV1 SVC.
 
 **v1.16.0 (milestone 8 — capacity-aware relay children)** adds `assignRelayChildBudget`, `selectRelayChildren`, and `assignRelayChildren`, optional `childAssignment: 'capacity'` on `createPublicStreamRelay` (`relayUplinkBps` + `forwardLayerBps`), and `childAssignment` on `runScaleSimulation`. Benchmark: [`scale-simulation-capacity.json`](./benchmarks/scale-simulation-capacity.json) (seed `1520714`, profile `ci`). Uniform assignment reproduces v1.14.0 JSON unchanged.
 
@@ -253,6 +253,7 @@ Feasibility argument: 10M **concurrent** viewers implies ~6 relay hops at degree
 | 6. Standard ingest adapters | **Done (v1.13.0)** — MPEG-TS demuxer, HLS/RTMP/SRT/WHIP Node ingest on `dignity.js/node`; WHIP uses injectable WebRTC `peerFactory` |
 | 7. Scale simulation | **Done (v1.14.0 + v1.15.0)** — `runScaleSimulation` (qualified stall claim, unchanged); PeerGroup stream chunk signaling stress harness |
 | 8. Capacity-aware relays | **Done (v1.16.0)** — `assignRelayChildren`; uniform vs capacity `runScaleSimulation`; optional capacity fan-out on `createPublicStreamRelay` |
+| 9. Browser capture (WebCodecs) | **Done (v1.17.0)** — `createBrowserCaptureSource`, `createWebCodecsDecoder`, `detectWebCodecsSupport`; playground `stream-webcodecs-capture` ([#159](https://github.com/jose-compu/dignity.js/issues/159)) |
 
 ---
 
