@@ -1,6 +1,18 @@
 # Browser compatibility (#91)
 
-dignity.js targets **modern evergreen browsers** with WebRTC, IndexedDB, Web Crypto, and (for Dignity Apps) `MessageChannel` + sandboxed iframes. **v1.16.0** bundles verification, CQRS replicas, Dignity Apps, TypeScript definitions, BIP39-style identity mnemonic helpers, PeerJS start-retry, experimental streaming (public signed chunks v3 with signed `rendition` on HD/FHD ladders, v2 `keyframe`, v1 legacy; bandwidth estimator, layer selector, receiver reports; Annex-B/fMP4 framing parsers; sealed `private-single` / `private-list` / `combined` helpers and sender-key epoch rotation), WebRTC stream signaling, and the Vercel default signaling endpoint via `dist/dignity.esm.js`. Node-only stream origin helpers ship on the separate **`dignity.js/node`** subpath (not in the browser bundle).
+dignity.js targets **modern evergreen browsers** with WebRTC, IndexedDB, Web Crypto, and (for Dignity Apps) `MessageChannel` + sandboxed iframes. **v1.17.0** bundles verification, CQRS replicas, Dignity Apps, TypeScript definitions, BIP39-style identity mnemonic helpers, PeerJS start-retry, experimental streaming (public signed chunks v3 with signed `rendition` on HD/FHD ladders, v2 `keyframe`, v1 legacy; bandwidth estimator, layer selector, receiver reports; Annex-B/fMP4 framing parsers; sealed `private-single` / `private-list` / `combined` helpers and sender-key epoch rotation; **WebCodecs capture** via `createBrowserCaptureSource` / `createWebCodecsDecoder`), WebRTC stream signaling, and the Vercel default signaling endpoint via `dist/dignity.esm.js`. Node-only stream origin helpers ship on the separate **`dignity.js/node`** subpath (not in the browser bundle).
+
+## WebCodecs streaming (v1.17.0, experimental)
+
+| API | Chrome / Edge (Chromium) | Firefox | Safari |
+| --- | --- | --- | --- |
+| `VideoEncoder` / `VideoDecoder` | Supported (recent) | Supported (recent) | Safari 16.4+ (varies by codec) |
+| `MediaStreamTrackProcessor` | Supported | Supported | Limited / version-dependent |
+| `getUserMedia` | Supported (secure context) | Supported | Supported (user gesture) |
+| `createBrowserCaptureSource` | Primary target | Re-test after changes | Re-test; may need canvas fallback |
+| `AudioEncoder` (Opus) | Not used in v1.17.0 | — | Deferred (#159 follow-up) |
+
+When `detectWebCodecsSupport()` reports `supported: false`, capture helpers throw `WebCodecsNotSupportedError` (no silent fallback).
 
 ## Required platform APIs
 

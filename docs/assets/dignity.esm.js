@@ -23429,6 +23429,57 @@ var require_simulcast_publish = __commonJS({
   }
 });
 
+// src/streaming/relay-child-assignment.js
+var require_relay_child_assignment = __commonJS({
+  "src/streaming/relay-child-assignment.js"(exports, module) {
+    function assignRelayChildBudget({ uplinkBps, forwardLayerBps, maxDegree = 16 }) {
+      if (!Number.isFinite(uplinkBps) || uplinkBps <= 0) {
+        return 0;
+      }
+      if (!Number.isFinite(forwardLayerBps) || forwardLayerBps <= 0) {
+        return 0;
+      }
+      const max = Math.max(0, Math.floor(maxDegree));
+      if (max === 0) {
+        return 0;
+      }
+      const raw = Math.floor(uplinkBps / forwardLayerBps);
+      return Math.min(max, Math.max(0, raw));
+    }
+    function selectRelayChildren(childIds, budget) {
+      if (!Array.isArray(childIds)) {
+        throw new TypeError("childIds must be an array");
+      }
+      if (!Number.isFinite(budget) || budget <= 0) {
+        return [];
+      }
+      const n = Math.min(childIds.length, Math.floor(budget));
+      return childIds.slice(0, n);
+    }
+    function assignRelayChildren({ peers, forwardLayerBps, maxDegree = 16 }) {
+      if (!Array.isArray(peers)) {
+        throw new TypeError("peers must be an array");
+      }
+      return peers.map((peer) => {
+        if (!peer || typeof peer.id !== "string") {
+          throw new TypeError("each peer needs a string id");
+        }
+        const uplinkBps = Number(peer.uplinkBps);
+        return {
+          peerId: peer.id,
+          uplinkBps,
+          childBudget: assignRelayChildBudget({ uplinkBps, forwardLayerBps, maxDegree })
+        };
+      });
+    }
+    module.exports = {
+      assignRelayChildBudget,
+      selectRelayChildren,
+      assignRelayChildren
+    };
+  }
+});
+
 // src/streaming/public-stream-path.js
 var require_public_stream_path = __commonJS({
   "src/streaming/public-stream-path.js"(exports, module) {
@@ -23440,6 +23491,7 @@ var require_public_stream_path = __commonJS({
       DEFAULT_LAYER_ID
     } = require_media_chunk();
     var { normalizeSimulcastLayers, createLayerSequenceTracker } = require_simulcast_publish();
+    var { assignRelayChildBudget, selectRelayChildren } = require_relay_child_assignment();
     var STREAM_MESSAGE_TYPES = Object.freeze({
       JOIN_OFFER: "stream:join-offer",
       JOIN_REQUEST: "stream:join-request",
@@ -23771,9 +23823,22 @@ var require_public_stream_path = __commonJS({
       return new PublicStreamViewer(options);
     }
     function createPublicStreamRelay(options) {
-      const relay = new PublicStreamRelay(options);
-      if (options.relayLayerPolicy && Array.isArray(options.downstreamViewerIds)) {
-        for (const childId of options.downstreamViewerIds) {
+      let downstreamViewerIds = options.downstreamViewerIds;
+      if (options.childAssignment === "capacity") {
+        const uplinkBps = options.relayUplinkBps;
+        const forwardLayerBps = options.forwardLayerBps;
+        if (Number.isFinite(uplinkBps) && Number.isFinite(forwardLayerBps)) {
+          const budget = assignRelayChildBudget({
+            uplinkBps,
+            forwardLayerBps,
+            maxDegree: options.maxRelayDegree ?? 16
+          });
+          downstreamViewerIds = selectRelayChildren(options.downstreamViewerIds ?? [], budget);
+        }
+      }
+      const relay = new PublicStreamRelay({ ...options, downstreamViewerIds });
+      if (options.relayLayerPolicy && Array.isArray(downstreamViewerIds)) {
+        for (const childId of downstreamViewerIds) {
           const perChild = options.relayChildOptions && options.relayChildOptions[childId];
           options.relayLayerPolicy.registerChild(childId, perChild || {});
         }
@@ -25145,6 +25210,7 @@ var require_scale_simulation = __commonJS({
     var { createReceiverReport } = require_receiver_report();
     var { layerRequiredBps, DEFAULT_HEADROOM_FACTOR } = require_layer_selector();
     var { createRelayLayerPolicy } = require_relay_layer_policy();
+    var { assignRelayChildBudget } = require_relay_child_assignment();
     var DEFAULT_SEED = 1520714;
     var HEADROOM = DEFAULT_HEADROOM_FACTOR;
     var SCALE_TARGET_N = 1e7;
@@ -25210,7 +25276,7 @@ var require_scale_simulation = __commonJS({
     function mbpsToBps(mbps) {
       return Math.round(mbps * 1e6);
     }
-    function sampleRelays(next, peerCap) {
+    function sampleRelays(next, peerCap, childAssignment = "uniform", forwardLayerBps = 0) {
       const relayCapsMbps = UPLOAD_CAP_ASSUMPTIONS_Mbps.relay;
       const superCapsMbps = UPLOAD_CAP_ASSUMPTIONS_Mbps.superPeer;
       const relays = [];
@@ -25218,15 +25284,47 @@ var require_scale_simulation = __commonJS({
       for (let i = 0; i < relaySample; i += 1) {
         const isSuper = next() < 0.08;
         const capMbps = isSuper ? superCapsMbps[Math.floor(next() * superCapsMbps.length)] : relayCapsMbps[Math.floor(next() * relayCapsMbps.length)];
-        const childCount = 1 + Math.floor(next() * SCALE_TARGET_D);
+        const capBps = mbpsToBps(capMbps);
+        let childCount;
+        if (childAssignment === "capacity") {
+          childCount = assignRelayChildBudget({
+            uplinkBps: capBps,
+            forwardLayerBps,
+            maxDegree: SCALE_TARGET_D
+          });
+        } else {
+          childCount = 1 + Math.floor(next() * SCALE_TARGET_D);
+        }
         relays.push({
           id: `r${i}`,
-          capBps: mbpsToBps(capMbps),
+          capBps,
           childCount,
           isSuper
         });
       }
       return relays;
+    }
+    function summarizeFanOut(relays, childAssignment) {
+      const forwarding = relays.filter((r) => r.childCount > 0);
+      const leafOnlyRelayCount = relays.length - forwarding.length;
+      let effectiveDegree = SCALE_TARGET_D;
+      if (childAssignment === "capacity") {
+        if (forwarding.length === 0) {
+          effectiveDegree = 1;
+        } else {
+          const totalChildren = forwarding.reduce((sum, relay) => sum + relay.childCount, 0);
+          effectiveDegree = Math.max(1, Math.round(totalChildren / forwarding.length));
+        }
+      }
+      const hopsAt10M = analyticHops(SCALE_TARGET_N, effectiveDegree);
+      return {
+        childAssignment,
+        leafOnlyRelayCount,
+        forwardingRelayCount: forwarding.length,
+        effectiveDegree,
+        hopsAt10M,
+        interiorRelaysAt10M: interiorRelays(SCALE_TARGET_N, effectiveDegree)
+      };
     }
     function simulateStalls(next, relays) {
       const profile = RENDITION_PROFILE_HD720;
@@ -25237,6 +25335,9 @@ var require_scale_simulation = __commonJS({
       let stalls = 0;
       let virtualNowMs = VIRTUAL_TICK_MS;
       for (const relay of relays) {
+        if (relay.childCount <= 0) {
+          continue;
+        }
         const policy = createRelayLayerPolicy({
           profile,
           floorBps: l0,
@@ -25365,12 +25466,21 @@ var require_scale_simulation = __commonJS({
         forwardedByteLength: forwarded.byteLength
       };
     }
-    function runScaleSimulation({ seed = DEFAULT_SEED, profile: simProfile = "ci" } = {}) {
+    function runScaleSimulation({
+      seed = DEFAULT_SEED,
+      profile: simProfile = "ci",
+      childAssignment = "uniform"
+    } = {}) {
       if (!Object.prototype.hasOwnProperty.call(PEER_CAP, simProfile)) {
         throw new TypeError(`profile must be "ci" or "offline", got ${simProfile}`);
       }
+      if (childAssignment !== "uniform" && childAssignment !== "capacity") {
+        throw new TypeError(`childAssignment must be "uniform" or "capacity", got ${childAssignment}`);
+      }
       const next = createPrng(seed >>> 0);
       const peerCap = PEER_CAP[simProfile];
+      const renditionProfile = RENDITION_PROFILE_HD720;
+      const typicalForwardBps = layerRequiredBps(renditionProfile, "L1", HEADROOM);
       const targets = buildAnalyticTargets();
       const repair = {
         assumptions: {
@@ -25381,18 +25491,23 @@ var require_scale_simulation = __commonJS({
         },
         series: buildRepairSeries()
       };
-      const relays = sampleRelays(next, peerCap);
+      const relays = sampleRelays(next, peerCap, childAssignment, typicalForwardBps);
       const stall = simulateStalls(next, relays);
+      const fanOut = summarizeFanOut(relays, childAssignment);
       const origin = evaluateOriginCoverage(SCALE_TARGET_D);
       const chunk = runChunkVerifyCheck();
       const scaleRow = targets.find((t) => t.viewers === SCALE_TARGET_N && t.degree === SCALE_TARGET_D);
-      const hopsAt10M = scaleRow ? scaleRow.hops : analyticHops(SCALE_TARGET_N, SCALE_TARGET_D);
-      const repairAt6 = repairMs(6);
+      const hopsAt10M = childAssignment === "capacity" ? fanOut.hopsAt10M : scaleRow ? scaleRow.hops : analyticHops(SCALE_TARGET_N, SCALE_TARGET_D);
+      const repairAtMaxDepth = repairMs(hopsAt10M);
       const failedChecks = [];
-      if (hopsAt10M !== 6) {
+      if (childAssignment === "uniform") {
+        if (hopsAt10M !== 6) {
+          failedChecks.push("hops");
+        }
+      } else if (childAssignment === "capacity" && hopsAt10M > 6) {
         failedChecks.push("hops");
       }
-      if (repairAt6 > SIBLING_OVERLAP_BUDGET_MS) {
+      if (repairAtMaxDepth > SIBLING_OVERLAP_BUDGET_MS) {
         failedChecks.push("repair");
       }
       if (!origin.covers) {
@@ -25402,7 +25517,7 @@ var require_scale_simulation = __commonJS({
         failedChecks.push("stall");
       }
       const claim = failedChecks.length === 0 ? { status: "topology" } : { status: "qualified", failedChecks };
-      return {
+      const result = {
         seed,
         profile: simProfile,
         targets,
@@ -25413,6 +25528,11 @@ var require_scale_simulation = __commonJS({
         chunk,
         claim
       };
+      if (childAssignment !== "uniform") {
+        result.childAssignment = childAssignment;
+        result.fanOut = fanOut;
+      }
+      return result;
     }
     module.exports = {
       DEFAULT_SEED,
@@ -25420,6 +25540,8 @@ var require_scale_simulation = __commonJS({
       PEER_CAP,
       UPLOAD_CAP_ASSUMPTIONS_Mbps,
       runScaleSimulation,
+      sampleRelays,
+      summarizeFanOut,
       analyticHops,
       interiorRelays,
       repairMs,
@@ -25751,6 +25873,567 @@ var require_mpegts_demuxer = __commonJS({
   }
 });
 
+// src/streaming/webcodecs-support.js
+var require_webcodecs_support = __commonJS({
+  "src/streaming/webcodecs-support.js"(exports, module) {
+    var { resolveRendition } = require_rendition_ladder();
+    var WebCodecsNotSupportedError = class extends Error {
+      /**
+       * @param {string[]} missing
+       */
+      constructor(missing) {
+        super(`WebCodecs is not available: missing ${missing.join(", ")}`);
+        this.name = "WebCodecsNotSupportedError";
+        this.missing = [...missing];
+      }
+    };
+    function detectWebCodecsSupport(deps = {}) {
+      const root = typeof globalThis !== "undefined" ? globalThis : {};
+      const VideoEncoder = deps.VideoEncoder ?? root.VideoEncoder;
+      const VideoDecoder = deps.VideoDecoder ?? root.VideoDecoder;
+      const MediaStreamTrackProcessor = deps.MediaStreamTrackProcessor ?? root.MediaStreamTrackProcessor;
+      const AudioEncoder = deps.AudioEncoder ?? root.AudioEncoder;
+      const missing = [];
+      if (typeof VideoEncoder !== "function") {
+        missing.push("VideoEncoder");
+      } else if (typeof VideoEncoder.isConfigSupported !== "function") {
+        missing.push("VideoEncoder.isConfigSupported");
+      }
+      if (typeof VideoDecoder !== "function") {
+        missing.push("VideoDecoder");
+      }
+      const result = {
+        supported: missing.length === 0,
+        missing
+      };
+      if (VideoEncoder) {
+        result.VideoEncoder = VideoEncoder;
+      }
+      if (VideoDecoder) {
+        result.VideoDecoder = VideoDecoder;
+      }
+      if (typeof MediaStreamTrackProcessor === "function") {
+        result.MediaStreamTrackProcessor = MediaStreamTrackProcessor;
+      }
+      if (typeof AudioEncoder === "function" && typeof AudioEncoder.isConfigSupported === "function") {
+        result.AudioEncoder = AudioEncoder;
+      }
+      return result;
+    }
+    async function selectVideoEncoderConfig(support, dimensions, deps = {}) {
+      if (!support.VideoEncoder || typeof support.VideoEncoder.isConfigSupported !== "function") {
+        throw new WebCodecsNotSupportedError(
+          support.missing && support.missing.length ? support.missing : ["VideoEncoder"]
+        );
+      }
+      const VideoEncoder = support.VideoEncoder;
+      const width = Math.max(2, Math.floor(dimensions.width));
+      const height = Math.max(2, Math.floor(dimensions.height));
+      const bitrate = dimensions.bitrate != null ? dimensions.bitrate : 15e5;
+      const framerate = dimensions.framerate != null ? dimensions.framerate : 30;
+      const candidates = [
+        { codec: "avc1.42E01E", mimeType: "video/mp4;codecs=avc1.42E01E" },
+        { codec: "vp8", mimeType: "video/webm;codecs=vp8" }
+      ];
+      const isConfigSupported = deps.isConfigSupported ?? ((config) => VideoEncoder.isConfigSupported(config));
+      for (const row of candidates) {
+        const config = {
+          codec: row.codec,
+          width,
+          height,
+          bitrate,
+          framerate,
+          latencyMode: "realtime"
+        };
+        let supported;
+        try {
+          supported = await isConfigSupported(config);
+        } catch {
+          supported = { supported: false };
+        }
+        const ok = supported && (supported.supported === true || supported === true);
+        if (ok) {
+          return {
+            ...config,
+            mimeType: row.mimeType
+          };
+        }
+      }
+      throw new Error("No supported WebCodecs video encoder configuration (tried H.264 and VP8)");
+    }
+    function mimeTypeToDecoderCodec(mimeType) {
+      if (typeof mimeType !== "string" || mimeType.trim() === "") {
+        return "vp8";
+      }
+      const lower = mimeType.toLowerCase();
+      if (lower.includes("avc1") || lower.includes("h264")) {
+        const match = mimeType.match(/codecs=([^;,\s]+)/i);
+        if (match) {
+          return match[1];
+        }
+        return "avc1.42E01E";
+      }
+      if (lower.includes("vp8")) {
+        return "vp8";
+      }
+      if (lower.includes("vp9")) {
+        return "vp9";
+      }
+      return "vp8";
+    }
+    function renditionEncoderDimensions(profile, layerId) {
+      const rendition = resolveRendition(profile, layerId);
+      return {
+        width: rendition.width,
+        height: rendition.height,
+        videoBitrateKbps: rendition.videoBitrateKbps
+      };
+    }
+    module.exports = {
+      WebCodecsNotSupportedError,
+      detectWebCodecsSupport,
+      selectVideoEncoderConfig,
+      mimeTypeToDecoderCodec,
+      renditionEncoderDimensions
+    };
+  }
+});
+
+// src/streaming/browser-capture-source.js
+var require_browser_capture_source = __commonJS({
+  "src/streaming/browser-capture-source.js"(exports, module) {
+    var naclUtil = require_nacl_util();
+    var { createSignedMediaChunk, DEFAULT_LAYER_ID } = require_media_chunk();
+    var { LAYER_IDS, resolveRendition } = require_rendition_ladder();
+    var { createLayerSequenceTracker } = require_simulcast_publish();
+    var {
+      detectWebCodecsSupport,
+      WebCodecsNotSupportedError,
+      selectVideoEncoderConfig
+    } = require_webcodecs_support();
+    function pickVideoTrack(mediaStream, videoTrack) {
+      if (videoTrack) {
+        return videoTrack;
+      }
+      if (!mediaStream || typeof mediaStream.getVideoTracks !== "function") {
+        throw new TypeError("mediaStream must expose getVideoTracks()");
+      }
+      const tracks = mediaStream.getVideoTracks();
+      if (!tracks.length) {
+        throw new Error("mediaStream has no video track");
+      }
+      return tracks[0];
+    }
+    async function createBrowserCaptureSource(options) {
+      if (!options || typeof options !== "object") {
+        throw new TypeError("options object is required");
+      }
+      const {
+        mediaStream,
+        sessionId,
+        broadcasterId,
+        signingSecretKey,
+        signingPublicKey,
+        profile = "hd720",
+        layerId = DEFAULT_LAYER_ID,
+        simulcastLayerIds,
+        onChunk,
+        maxFrames
+      } = options;
+      if (!sessionId || !broadcasterId || !signingSecretKey || !signingPublicKey) {
+        throw new TypeError("sessionId, broadcasterId, signingSecretKey, and signingPublicKey are required");
+      }
+      const support = options.support ?? detectWebCodecsSupport({ VideoEncoder: options.VideoEncoder });
+      if (!support.VideoEncoder || typeof support.VideoEncoder.isConfigSupported !== "function") {
+        throw new WebCodecsNotSupportedError(
+          support.missing && support.missing.length ? support.missing : ["VideoEncoder"]
+        );
+      }
+      const VideoEncoder = options.VideoEncoder ?? support.VideoEncoder;
+      const VideoFrame = options.VideoFrame ?? (typeof globalThis !== "undefined" ? globalThis.VideoFrame : void 0);
+      const track = pickVideoTrack(mediaStream, options.videoTrack);
+      const layerIds = Array.isArray(simulcastLayerIds) && simulcastLayerIds.length > 0 ? simulcastLayerIds.map((id) => String(id)) : [layerId];
+      for (const id of layerIds) {
+        if (!LAYER_IDS.includes(id)) {
+          throw new Error(`Unknown simulcast layerId: ${id}`);
+        }
+      }
+      const sequences = createLayerSequenceTracker();
+      const chunks = [];
+      let framesEncoded = 0;
+      let stopped = false;
+      const encoders = /* @__PURE__ */ new Map();
+      let processor = null;
+      let reader = null;
+      let rvfHandle = null;
+      let videoEl = null;
+      let canvas = null;
+      function emitChunk(encodedChunk, meta, encoderMeta = {}) {
+        let payloadBytes;
+        if (encodedChunk instanceof Uint8Array) {
+          payloadBytes = encodedChunk;
+        } else if (encodedChunk && typeof encodedChunk.copyTo === "function") {
+          payloadBytes = new Uint8Array(encodedChunk.byteLength);
+          encodedChunk.copyTo(payloadBytes);
+        } else if (encodedChunk && encodedChunk.data instanceof Uint8Array) {
+          payloadBytes = encodedChunk.data;
+        } else if (encodedChunk && encodedChunk.data) {
+          payloadBytes = new Uint8Array(encodedChunk.data);
+        } else {
+          throw new TypeError("encoded video output must be Uint8Array or EncodedVideoChunk-like");
+        }
+        const keyframe = encodedChunk.type === "key";
+        const timestampMs = Math.round((encodedChunk.timestamp != null ? encodedChunk.timestamp : 0) / 1e3);
+        const chunk = createSignedMediaChunk({
+          sessionId,
+          broadcasterId,
+          payloadBytes,
+          signingSecretKey,
+          signingPublicKey,
+          sequence: sequences.next(meta.layerId),
+          timestampMs,
+          layerId: meta.layerId,
+          mimeType: meta.mimeType,
+          keyframe,
+          profile,
+          rendition: resolveRendition(profile, meta.layerId)
+        });
+        const description = encoderMeta?.decoderConfig?.description;
+        if (description && description.byteLength > 0) {
+          chunk.codecDescriptionBase64 = naclUtil.encodeBase64(
+            description instanceof Uint8Array ? description : new Uint8Array(description)
+          );
+        }
+        chunks.push(chunk);
+        if (typeof onChunk === "function") {
+          onChunk(chunk);
+        }
+        framesEncoded += 1;
+        if (maxFrames != null && framesEncoded >= maxFrames) {
+          stop();
+        }
+      }
+      function stop() {
+        if (stopped) {
+          return;
+        }
+        stopped = true;
+        for (const entry of encoders.values()) {
+          try {
+            entry.encoder.close();
+          } catch {
+          }
+        }
+        encoders.clear();
+        if (reader) {
+          try {
+            reader.cancel();
+          } catch {
+          }
+          reader = null;
+        }
+        if (processor && typeof processor.readable?.cancel === "function") {
+          try {
+            processor.readable.cancel();
+          } catch {
+          }
+        }
+        processor = null;
+        if (rvfHandle && videoEl && typeof videoEl.cancelVideoFrameCallback === "function") {
+          try {
+            videoEl.cancelVideoFrameCallback(rvfHandle);
+          } catch {
+          }
+        }
+        rvfHandle = null;
+        if (videoEl) {
+          try {
+            videoEl.srcObject = null;
+          } catch {
+          }
+        }
+      }
+      for (const lid of layerIds) {
+        const rendition = resolveRendition(profile, lid);
+        const config = await selectVideoEncoderConfig(
+          support,
+          {
+            width: rendition.width,
+            height: rendition.height,
+            bitrate: rendition.videoBitrateKbps * 1e3
+          },
+          options
+        );
+        const meta = { layerId: lid, mimeType: config.mimeType };
+        const encoder = new VideoEncoder({
+          output: (chunk, metadata) => emitChunk(chunk, meta, metadata),
+          error: (err) => {
+            throw err;
+          }
+        });
+        encoder.configure({
+          codec: config.codec,
+          width: config.width,
+          height: config.height,
+          bitrate: config.bitrate,
+          framerate: config.framerate,
+          latencyMode: "realtime"
+        });
+        encoders.set(lid, { encoder, config });
+      }
+      const primary = encoders.get(layerIds[0]);
+      async function readLoopTrackProcessor() {
+        const MediaStreamTrackProcessor = options.MediaStreamTrackProcessor ?? support.MediaStreamTrackProcessor;
+        if (!MediaStreamTrackProcessor) {
+          return false;
+        }
+        processor = new MediaStreamTrackProcessor({ track });
+        reader = processor.readable.getReader();
+        while (!stopped) {
+          let readResult;
+          try {
+            readResult = await reader.read();
+          } catch {
+            break;
+          }
+          const { value, done } = readResult;
+          if (done || !value || stopped) {
+            break;
+          }
+          try {
+            for (const [lid, entry] of encoders) {
+              const frame = lid === layerIds[0] ? value : new VideoFrame(value, {
+                visibleRect: {
+                  width: entry.config.width,
+                  height: entry.config.height
+                }
+              });
+              const keyFrame = framesEncoded === 0;
+              entry.encoder.encode(frame, { keyFrame });
+              if (frame !== value && typeof frame.close === "function") {
+                frame.close();
+              }
+            }
+          } finally {
+            if (typeof value.close === "function") {
+              value.close();
+            }
+          }
+        }
+        return true;
+      }
+      function readLoopCanvasFallback() {
+        const rVFC = options.requestVideoFrameCallback;
+        videoEl = options.videoElement;
+        canvas = options.canvasElement;
+        if (!videoEl || !canvas || typeof rVFC !== "function") {
+          throw new Error(
+            "MediaStreamTrackProcessor is unavailable; provide videoElement, canvasElement, and requestVideoFrameCallback"
+          );
+        }
+        videoEl.srcObject = mediaStream;
+        videoEl.muted = true;
+        videoEl.playsInline = true;
+        const ctx = canvas.getContext("2d");
+        const tick = (now, metadata) => {
+          if (stopped) {
+            return;
+          }
+          const vw = metadata?.width ?? videoEl.videoWidth;
+          const vh = metadata?.height ?? videoEl.videoHeight;
+          if (!vw || !vh) {
+            rvfHandle = rVFC.call(videoEl, tick);
+            return;
+          }
+          for (const [, entry] of encoders) {
+            canvas.width = entry.config.width;
+            canvas.height = entry.config.height;
+            ctx.drawImage(videoEl, 0, 0, entry.config.width, entry.config.height);
+            const frame = new VideoFrame(canvas, { timestamp: now * 1e3 });
+            const keyFrame = framesEncoded === 0;
+            entry.encoder.encode(frame, { keyFrame });
+            frame.close();
+          }
+          if (!stopped) {
+            rvfHandle = rVFC.call(videoEl, tick);
+          }
+        };
+        const playPromise = typeof videoEl.play === "function" ? videoEl.play() : Promise.resolve();
+        return playPromise.then(() => {
+          rvfHandle = rVFC.call(videoEl, tick);
+        });
+      }
+      let primaryCodec = primary.config.codec;
+      let primaryMime = primary.config.mimeType;
+      return {
+        get codec() {
+          return primaryCodec;
+        },
+        get mimeType() {
+          return primaryMime;
+        },
+        chunks,
+        async start() {
+          if (stopped) {
+            throw new Error("capture source already stopped");
+          }
+          const usedProcessor = await readLoopTrackProcessor();
+          if (!usedProcessor) {
+            await readLoopCanvasFallback();
+          }
+        },
+        stop
+      };
+    }
+    module.exports = {
+      createBrowserCaptureSource
+    };
+  }
+});
+
+// src/streaming/webcodecs-decoder.js
+var require_webcodecs_decoder = __commonJS({
+  "src/streaming/webcodecs-decoder.js"(exports, module) {
+    var naclUtil = require_nacl_util();
+    var { decodeMediaChunkPayload, verifyMediaChunk } = require_media_chunk();
+    var {
+      detectWebCodecsSupport,
+      WebCodecsNotSupportedError,
+      mimeTypeToDecoderCodec
+    } = require_webcodecs_support();
+    function createWebCodecsDecoder(options) {
+      if (!options || typeof options.onFrame !== "function") {
+        throw new TypeError("createWebCodecsDecoder requires onFrame");
+      }
+      const support = options.support ?? detectWebCodecsSupport({ VideoDecoder: options.VideoDecoder });
+      if (!support.VideoDecoder) {
+        throw new WebCodecsNotSupportedError(
+          support.missing && support.missing.length ? support.missing : ["VideoDecoder"]
+        );
+      }
+      const VideoDecoder = options.VideoDecoder ?? support.VideoDecoder;
+      let decoder = null;
+      let configuredCodec = null;
+      let activeLayerId = null;
+      let waitingForKeyframe = true;
+      let configuredDescription = null;
+      function ensureDecoder(codec, description) {
+        const sameDescription = !description && !configuredDescription || description && configuredDescription && description.byteLength === configuredDescription.byteLength && description.every((b, i) => b === configuredDescription[i]);
+        if (decoder && configuredCodec === codec && sameDescription) {
+          return;
+        }
+        if (decoder) {
+          try {
+            decoder.close();
+          } catch {
+          }
+        }
+        decoder = new VideoDecoder({
+          output: (frame) => {
+            if (options.canvas && options.drawFrame) {
+              options.drawFrame(options.canvas, frame);
+            } else if (options.canvas && typeof frame?.close === "function") {
+              const ctx = options.canvas.getContext("2d");
+              if (ctx && typeof frame.width === "number") {
+                options.canvas.width = frame.width;
+                options.canvas.height = frame.height;
+                ctx.drawImage(frame, 0, 0);
+              }
+            }
+            options.onFrame(frame);
+            if (typeof frame?.close === "function") {
+              frame.close();
+            }
+          },
+          error: () => {
+            waitingForKeyframe = true;
+          }
+        });
+        const config = { codec };
+        if (description && description.byteLength > 0) {
+          config.description = description;
+        }
+        decoder.configure(config);
+        configuredCodec = codec;
+        configuredDescription = description ? new Uint8Array(description) : null;
+        waitingForKeyframe = true;
+      }
+      return {
+        get waitingForKeyframe() {
+          return waitingForKeyframe;
+        },
+        get activeLayerId() {
+          return activeLayerId;
+        },
+        feedChunk(chunk, feedOptions = {}) {
+          if (!chunk || typeof chunk !== "object") {
+            throw new TypeError("chunk is required");
+          }
+          const sessionId = feedOptions.sessionId;
+          if (!verifyMediaChunk(chunk, sessionId)) {
+            throw new Error("media chunk signature verification failed");
+          }
+          const layerId = typeof chunk.layerId === "string" && chunk.layerId.trim() !== "" ? chunk.layerId.trim() : "L0";
+          if (activeLayerId !== layerId) {
+            activeLayerId = layerId;
+            waitingForKeyframe = true;
+            if (decoder) {
+              try {
+                decoder.close();
+              } catch {
+              }
+              decoder = null;
+              configuredCodec = null;
+            }
+          }
+          const isKeyframe = Boolean(chunk.keyframe);
+          if (waitingForKeyframe && !isKeyframe) {
+            return;
+          }
+          const mimeType = typeof chunk.mimeType === "string" ? chunk.mimeType : "video/webm;codecs=vp8";
+          const codec = mimeTypeToDecoderCodec(mimeType);
+          let description = null;
+          if (typeof chunk.codecDescriptionBase64 === "string" && chunk.codecDescriptionBase64.trim() !== "") {
+            description = naclUtil.decodeBase64(chunk.codecDescriptionBase64.trim());
+          }
+          ensureDecoder(codec, description);
+          const payload = decodeMediaChunkPayload(chunk);
+          const chunkType = isKeyframe ? "key" : "delta";
+          const timestampUs = Math.round((chunk.timestampMs != null ? chunk.timestampMs : 0) * 1e3);
+          const EncodedVideoChunk = options.EncodedVideoChunk ?? (typeof globalThis !== "undefined" ? globalThis.EncodedVideoChunk : void 0);
+          if (typeof EncodedVideoChunk !== "function") {
+            throw new WebCodecsNotSupportedError(["EncodedVideoChunk"]);
+          }
+          const encoded = new EncodedVideoChunk({
+            type: chunkType,
+            timestamp: timestampUs,
+            data: payload
+          });
+          decoder.decode(encoded);
+          if (isKeyframe) {
+            waitingForKeyframe = false;
+          }
+        },
+        close() {
+          if (decoder) {
+            try {
+              decoder.close();
+            } catch {
+            }
+            decoder = null;
+          }
+          configuredCodec = null;
+          waitingForKeyframe = true;
+          activeLayerId = null;
+        }
+      };
+    }
+    module.exports = {
+      createWebCodecsDecoder
+    };
+  }
+});
+
 // src/streaming/index.js
 var require_streaming = __commonJS({
   "src/streaming/index.js"(exports, module) {
@@ -25770,7 +26453,11 @@ var require_streaming = __commonJS({
     var relayLayerPolicy = require_relay_layer_policy();
     var simulcastPublish = require_simulcast_publish();
     var scaleSimulation = require_scale_simulation();
+    var relayChildAssignment = require_relay_child_assignment();
     var { demuxMpegTs, MpegTsDemuxer, ptsToTimestampMs } = require_mpegts_demuxer();
+    var webcodecsSupport = require_webcodecs_support();
+    var browserCaptureSource = require_browser_capture_source();
+    var webcodecsDecoder = require_webcodecs_decoder();
     module.exports = {
       ...accessModes,
       ...streamSession,
@@ -25788,6 +26475,10 @@ var require_streaming = __commonJS({
       ...relayLayerPolicy,
       ...simulcastPublish,
       ...scaleSimulation,
+      ...relayChildAssignment,
+      ...webcodecsSupport,
+      ...browserCaptureSource,
+      ...webcodecsDecoder,
       demuxMpegTs,
       MpegTsDemuxer,
       ptsToTimestampMs,
@@ -25932,12 +26623,17 @@ var require_index = __commonJS({
       createReceiverReport,
       createBandwidthEstimator,
       createLayerSelector,
+      layerRequiredBps,
+      DEFAULT_HEADROOM_FACTOR,
       createPlayoutBuffer,
       createRelayLayerPolicy,
       normalizeSimulcastLayers,
       createLayerSequenceTracker,
       runSimulcastLoadTrace,
       runScaleSimulation,
+      assignRelayChildBudget,
+      selectRelayChildren,
+      assignRelayChildren,
       normalizePrivateRecipients,
       validateStreamAccessConfig,
       StreamSession,
@@ -25964,7 +26660,14 @@ var require_index = __commonJS({
       PublicStreamRelay,
       parseAnnexBAccessUnits,
       parseFmp4Fragments,
-      demuxMpegTs
+      demuxMpegTs,
+      detectWebCodecsSupport,
+      WebCodecsNotSupportedError,
+      selectVideoEncoderConfig,
+      mimeTypeToDecoderCodec,
+      renditionEncoderDimensions,
+      createBrowserCaptureSource,
+      createWebCodecsDecoder
     } = require_streaming();
     module.exports = {
       DignityP2P,
@@ -26067,12 +26770,17 @@ var require_index = __commonJS({
       createReceiverReport,
       createBandwidthEstimator,
       createLayerSelector,
+      layerRequiredBps,
+      DEFAULT_HEADROOM_FACTOR,
       createPlayoutBuffer,
       createRelayLayerPolicy,
       normalizeSimulcastLayers,
       createLayerSequenceTracker,
       runSimulcastLoadTrace,
       runScaleSimulation,
+      assignRelayChildBudget,
+      selectRelayChildren,
+      assignRelayChildren,
       normalizePrivateRecipients,
       validateStreamAccessConfig,
       StreamSession,
@@ -26099,7 +26807,14 @@ var require_index = __commonJS({
       PublicStreamRelay,
       parseAnnexBAccessUnits,
       parseFmp4Fragments,
-      demuxMpegTs
+      demuxMpegTs,
+      detectWebCodecsSupport,
+      WebCodecsNotSupportedError,
+      selectVideoEncoderConfig,
+      mimeTypeToDecoderCodec,
+      renditionEncoderDimensions,
+      createBrowserCaptureSource,
+      createWebCodecsDecoder
     };
   }
 });

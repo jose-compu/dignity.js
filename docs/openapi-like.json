@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "1.16.0",
+  "version": "1.17.0",
   "description": "The scalable data layer of the decentralized browser application ecosystem — P2P object replication with CQRS read replicas, Dignity Apps, and verification policies",
   "lifecycle": {
     "start": "attach network message handler and begin receiving",
@@ -311,7 +311,7 @@
       "gossip": "PEER_GROUP_SCOPE_PREFIX, DEFAULT_PEER_GROUP_OPTIONS, peerGroupScope, parsePeerGroupScope, selectFanoutPeers",
       "apps": "DIGNITY_APP_MANIFEST_SCHEMA_VERSION",
       "node": "createNodeStreamOrigin, createFileMediaIngest, createFfmpegMediaIngest, resolveNodeMediaIngest (dignity.js/node; Annex-B/fMP4 framing when ffmpeg present)",
-      "streamingExperimental": "parseAnnexBAccessUnits, parseFmp4Fragments, createSignedMediaChunk (v3 rendition), resolveRendition, createBandwidthEstimator, createLayerSelector, createPlayoutBuffer, createRelayLayerPolicy, normalizeSimulcastLayers, runSimulcastLoadTrace, runScaleSimulation, assignRelayChildBudget, assignRelayChildren, publishSimulcastTick, sealPrivateMediaChunk, createPublicStreamRelay (#152 experimental)"
+      "streamingExperimental": "parseAnnexBAccessUnits, parseFmp4Fragments, createSignedMediaChunk (v3 rendition), resolveRendition, createBandwidthEstimator, createLayerSelector, createPlayoutBuffer, createRelayLayerPolicy, normalizeSimulcastLayers, runSimulcastLoadTrace, runScaleSimulation, assignRelayChildBudget, assignRelayChildren, publishSimulcastTick, sealPrivateMediaChunk, createPublicStreamRelay, detectWebCodecsSupport, createBrowserCaptureSource, createWebCodecsDecoder (#152 experimental)"
     }
   },
   "events": {
@@ -470,6 +470,9 @@
     "runScaleSimulation": "seeded analytic and discrete-event fan-out scale model (uniform or capacity child assignment)",
     "assignRelayChildBudget": "uplink-based relay child slot budget (milestone 8)",
     "assignRelayChildren": "per-peer child budgets for a mixed-uplink tree (milestone 8)",
+    "detectWebCodecsSupport": "feature detect VideoEncoder/VideoDecoder; throws WebCodecsNotSupportedError when used without support",
+    "createBrowserCaptureSource": "MediaStream to VideoEncoder to signed chunk v3 (H.264/VP8; optional simulcast layers)",
+    "createWebCodecsDecoder": "verified signed chunks to VideoDecoder with keyframe gate on layer switch",
     "publishSimulcastTick": "origin publishes L0–L2 per tick with shared timestamp",
     "MEDIA_CHUNK_VERSION": "3 (signed rendition); v2 keyframe and v1 chunks still verify"
   },

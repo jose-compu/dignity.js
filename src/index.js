@@ -178,7 +178,14 @@ const {
   PublicStreamRelay,
   parseAnnexBAccessUnits,
   parseFmp4Fragments,
-  demuxMpegTs
+  demuxMpegTs,
+  detectWebCodecsSupport,
+  WebCodecsNotSupportedError,
+  selectVideoEncoderConfig,
+  mimeTypeToDecoderCodec,
+  renditionEncoderDimensions,
+  createBrowserCaptureSource,
+  createWebCodecsDecoder
 } = require('./streaming');
 
 module.exports = {
@@ -319,5 +326,12 @@ module.exports = {
   PublicStreamRelay,
   parseAnnexBAccessUnits,
   parseFmp4Fragments,
-  demuxMpegTs
+  demuxMpegTs,
+  detectWebCodecsSupport,
+  WebCodecsNotSupportedError,
+  selectVideoEncoderConfig,
+  mimeTypeToDecoderCodec,
+  renditionEncoderDimensions,
+  createBrowserCaptureSource,
+  createWebCodecsDecoder
 };

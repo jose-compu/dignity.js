@@ -7,6 +7,12 @@ const { test, expect } = require('@playwright/test');
 
 const shouldRun = () => process.env.RUN_BROWSER_E2E === '1';
 
+test.use({
+  launchOptions: {
+    args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']
+  }
+});
+
 const DIGNITY_APP_DEMOS = [
   {
     hash: 'app-manifest',
@@ -63,6 +69,10 @@ const DIGNITY_APP_DEMOS = [
   {
     hash: 'stream-scale-sim',
     expectLines: ['viewers: 10000000', 'hops: 6', 'chunk verified: true']
+  },
+  {
+    hash: 'stream-capacity-relays',
+    expectLines: ['childBudget:']
   }
 ];
 
@@ -101,4 +111,27 @@ test.describe('Playground browser', () => {
       await expect(page.locator('#output .is-error')).toHaveCount(0);
     });
   }
+});
+
+test.describe('Playground WebCodecs capture (fake media)', () => {
+  test.skip(() => !shouldRun(), 'Set RUN_BROWSER_E2E=1 to run headless browser tests');
+
+  test('stream-webcodecs-capture encodes at least one verified keyframe', async ({ page }, testInfo) => {
+    await page.goto('/playground/index.html#stream-webcodecs-capture');
+    await page.getByRole('button', { name: /Run/ }).click();
+    await expect(page.locator('#run-status')).toHaveText('Done', { timeout: 60000 });
+    const outputText = await page.locator('#output').innerText();
+    if (outputText.includes('webcodecs supported: false')) {
+      testInfo.skip(true, 'WebCodecs not available in this Chromium build');
+      return;
+    }
+    await expect(page.locator('#output')).toContainText('verified keyframes:');
+    const match = outputText.match(/verified keyframes:\s*(\d+)/);
+    expect(Number(match[1])).toBeGreaterThanOrEqual(1);
+    const decodedMatch = outputText.match(/decoded frames:\s*(\d+)/);
+    testInfo.annotations.push({
+      type: 'webcodecs-decode',
+      description: decodedMatch ? `decoded frames: ${decodedMatch[1]}` : 'decode count unavailable'
+    });
+  });
 });

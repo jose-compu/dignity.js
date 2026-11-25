@@ -1998,8 +1998,100 @@ const peers = [
   { id: 'super-1g', uplinkBps: 1_000_000_000 }
 ];
 const budgets = assignRelayChildren({ peers, forwardLayerBps: forwardBps, maxDegree: 16 });
-for (const row of budgets) {
-  log(row.peerId, 'childBudget:', row.childBudget);
+    for (const row of budgets) {
+      log(row.peerId, 'childBudget:', row.childBudget);
 }`
+  },
+  {
+    id: 'stream-webcodecs-capture',
+    group: 'v117',
+    title: 'WebCodecs camera capture',
+    description: 'v1.17.0 (#152 #159): getUserMedia → VideoEncoder → signed chunk → verify → decode to canvas.',
+    code: `const {
+  deriveKeyPairFromCredentials,
+  keyPairToPublicBundle,
+  detectWebCodecsSupport,
+  createBrowserCaptureSource,
+  createWebCodecsDecoder,
+  verifyMediaChunk
+} = dignity;
+
+const support = detectWebCodecsSupport();
+if (!support.supported) {
+  log('webcodecs supported: false');
+  log('missing:', support.missing.join(', '));
+  return;
+}
+log('webcodecs supported: true');
+
+if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+  log('getUserMedia unavailable in this context');
+  return;
+}
+
+const keys = await deriveKeyPairFromCredentials({ username: 'capture-demo', password: 'demo' });
+const { signingPublicKey } = keyPairToPublicBundle(keys);
+const signingSecretKey = keys.signing.secretKey;
+
+const canvas = document.createElement('canvas');
+canvas.width = 640;
+canvas.height = 360;
+document.body.appendChild(canvas);
+helpers.onCleanup(() => canvas.remove());
+
+let decodedKeyframes = 0;
+const decoder = createWebCodecsDecoder({
+  canvas,
+  onFrame: () => {
+    decodedKeyframes += 1;
+  }
+});
+helpers.onCleanup(() => decoder.close());
+
+const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+helpers.onCleanup(() => {
+  for (const track of stream.getTracks()) {
+    track.stop();
+  }
+});
+
+const source = await createBrowserCaptureSource({
+  mediaStream: stream,
+  sessionId: 'webcodecs-demo',
+  broadcasterId: 'capture-broadcaster',
+  signingSecretKey,
+  signingPublicKey,
+  profile: 'hd720',
+  layerId: 'L0',
+  maxFrames: 4,
+  onChunk: (chunk) => {
+    if (!verifyMediaChunk(chunk, 'webcodecs-demo')) {
+      return;
+    }
+    try {
+      decoder.feedChunk(chunk, { sessionId: 'webcodecs-demo' });
+    } catch (err) {
+      log('decode feed error:', err.message);
+    }
+  }
+});
+
+helpers.onCleanup(() => source.stop());
+source.start().catch((err) => log('capture error:', err.message));
+
+for (let i = 0; i < 40 && source.chunks.length < 1; i++) {
+  await helpers.sleep(100);
+}
+
+const keyChunks = source.chunks.filter((c) => c.keyframe);
+const verified = keyChunks.filter((c) => verifyMediaChunk(c, 'webcodecs-demo'));
+source.stop();
+await helpers.sleep(300);
+
+log('signed chunks:', source.chunks.length);
+log('keyframe chunks:', keyChunks.length);
+log('verified keyframes:', verified.length);
+log('decoded frames:', decodedKeyframes);
+log('encoder mime:', source.mimeType);`
   }
 ];

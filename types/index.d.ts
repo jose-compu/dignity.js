@@ -443,6 +443,8 @@ declare module 'dignity.js' {
     signingPublicKey: string;
     keyframe?: boolean;
     rendition?: MediaChunkRendition;
+    /** Wire-only VideoDecoder description from encoder output; not covered by chunk signature */
+    codecDescriptionBase64?: string;
   }
 
   export const MEDIA_CHUNK_VERSION_KEYFRAME: number;
@@ -702,6 +704,84 @@ declare module 'dignity.js' {
   export function parseFmp4Fragments(bytes: Uint8Array): ParsedMediaFrame[];
 
   export function demuxMpegTs(bytes: Uint8Array): ParsedMediaFrame[];
+
+  export class WebCodecsNotSupportedError extends Error {
+    readonly missing: string[];
+  }
+
+  export interface MediaStreamTrackProcessorLike {
+    readonly readable: ReadableStream<VideoFrame>;
+  }
+
+  export interface WebCodecsSupportReport {
+    supported: boolean;
+    missing: string[];
+    VideoEncoder?: typeof VideoEncoder;
+    VideoDecoder?: typeof VideoDecoder;
+    MediaStreamTrackProcessor?: new (init: { track: MediaStreamTrack }) => MediaStreamTrackProcessorLike;
+    AudioEncoder?: typeof AudioEncoder;
+  }
+
+  export function detectWebCodecsSupport(deps?: {
+    VideoEncoder?: typeof VideoEncoder;
+    VideoDecoder?: typeof VideoDecoder;
+    MediaStreamTrackProcessor?: new (init: { track: MediaStreamTrack }) => MediaStreamTrackProcessorLike;
+    AudioEncoder?: typeof AudioEncoder;
+  }): WebCodecsSupportReport;
+
+  export function selectVideoEncoderConfig(
+    support: WebCodecsSupportReport,
+    dimensions: { width: number; height: number; bitrate?: number; framerate?: number },
+    deps?: { isConfigSupported?: (config: VideoEncoderConfig) => Promise<VideoEncoderSupport> }
+  ): Promise<VideoEncoderConfig & { mimeType: string }>;
+
+  export function mimeTypeToDecoderCodec(mimeType: string): string;
+
+  export function renditionEncoderDimensions(
+    profile: 'hd720' | 'fhd1080',
+    layerId: 'L0' | 'L1' | 'L2'
+  ): { width: number; height: number; videoBitrateKbps: number };
+
+  export function createBrowserCaptureSource(options: {
+    mediaStream: MediaStream;
+    videoTrack?: MediaStreamTrack;
+    sessionId: string;
+    broadcasterId: string;
+    signingSecretKey: Uint8Array;
+    signingPublicKey: string;
+    profile?: 'hd720' | 'fhd1080';
+    layerId?: string;
+    simulcastLayerIds?: Array<'L0' | 'L1' | 'L2'>;
+    onChunk?: (chunk: SignedMediaChunk) => void;
+    maxFrames?: number;
+    VideoEncoder?: typeof VideoEncoder;
+    MediaStreamTrackProcessor?: new (init: { track: MediaStreamTrack }) => MediaStreamTrackProcessorLike;
+    VideoFrame?: typeof VideoFrame;
+    requestVideoFrameCallback?: typeof HTMLVideoElement.prototype.requestVideoFrameCallback;
+    videoElement?: HTMLVideoElement;
+    canvasElement?: HTMLCanvasElement;
+    support?: WebCodecsSupportReport;
+  }): Promise<{
+    start(): Promise<void>;
+    stop(): void;
+    chunks: SignedMediaChunk[];
+    codec: string;
+    mimeType: string;
+  }>;
+
+  export function createWebCodecsDecoder(options: {
+    onFrame: (frame: VideoFrame) => void;
+    canvas?: HTMLCanvasElement;
+    drawFrame?: (canvas: HTMLCanvasElement, frame: VideoFrame) => void;
+    VideoDecoder?: typeof VideoDecoder;
+    EncodedVideoChunk?: typeof EncodedVideoChunk;
+    support?: WebCodecsSupportReport;
+  }): {
+    feedChunk(chunk: SignedMediaChunk, options?: { sessionId?: string }): void;
+    close(): void;
+    readonly waitingForKeyframe: boolean;
+    readonly activeLayerId: string | null;
+  };
 
   export function verifyMediaChunk(chunk: SignedMediaChunk, expectedSessionId?: string): boolean;
   export function decodeMediaChunkPayload(chunk: SignedMediaChunk): Uint8Array;

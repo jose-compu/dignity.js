@@ -40409,6 +40409,567 @@ var require_mpegts_demuxer = __commonJS({
   }
 });
 
+// src/streaming/webcodecs-support.js
+var require_webcodecs_support = __commonJS({
+  "src/streaming/webcodecs-support.js"(exports, module) {
+    var { resolveRendition } = require_rendition_ladder();
+    var WebCodecsNotSupportedError = class extends Error {
+      /**
+       * @param {string[]} missing
+       */
+      constructor(missing) {
+        super(`WebCodecs is not available: missing ${missing.join(", ")}`);
+        this.name = "WebCodecsNotSupportedError";
+        this.missing = [...missing];
+      }
+    };
+    function detectWebCodecsSupport(deps = {}) {
+      const root = typeof globalThis !== "undefined" ? globalThis : {};
+      const VideoEncoder = deps.VideoEncoder ?? root.VideoEncoder;
+      const VideoDecoder = deps.VideoDecoder ?? root.VideoDecoder;
+      const MediaStreamTrackProcessor = deps.MediaStreamTrackProcessor ?? root.MediaStreamTrackProcessor;
+      const AudioEncoder = deps.AudioEncoder ?? root.AudioEncoder;
+      const missing = [];
+      if (typeof VideoEncoder !== "function") {
+        missing.push("VideoEncoder");
+      } else if (typeof VideoEncoder.isConfigSupported !== "function") {
+        missing.push("VideoEncoder.isConfigSupported");
+      }
+      if (typeof VideoDecoder !== "function") {
+        missing.push("VideoDecoder");
+      }
+      const result = {
+        supported: missing.length === 0,
+        missing
+      };
+      if (VideoEncoder) {
+        result.VideoEncoder = VideoEncoder;
+      }
+      if (VideoDecoder) {
+        result.VideoDecoder = VideoDecoder;
+      }
+      if (typeof MediaStreamTrackProcessor === "function") {
+        result.MediaStreamTrackProcessor = MediaStreamTrackProcessor;
+      }
+      if (typeof AudioEncoder === "function" && typeof AudioEncoder.isConfigSupported === "function") {
+        result.AudioEncoder = AudioEncoder;
+      }
+      return result;
+    }
+    async function selectVideoEncoderConfig(support, dimensions, deps = {}) {
+      if (!support.VideoEncoder || typeof support.VideoEncoder.isConfigSupported !== "function") {
+        throw new WebCodecsNotSupportedError(
+          support.missing && support.missing.length ? support.missing : ["VideoEncoder"]
+        );
+      }
+      const VideoEncoder = support.VideoEncoder;
+      const width = Math.max(2, Math.floor(dimensions.width));
+      const height = Math.max(2, Math.floor(dimensions.height));
+      const bitrate = dimensions.bitrate != null ? dimensions.bitrate : 15e5;
+      const framerate = dimensions.framerate != null ? dimensions.framerate : 30;
+      const candidates = [
+        { codec: "avc1.42E01E", mimeType: "video/mp4;codecs=avc1.42E01E" },
+        { codec: "vp8", mimeType: "video/webm;codecs=vp8" }
+      ];
+      const isConfigSupported = deps.isConfigSupported ?? ((config) => VideoEncoder.isConfigSupported(config));
+      for (const row of candidates) {
+        const config = {
+          codec: row.codec,
+          width,
+          height,
+          bitrate,
+          framerate,
+          latencyMode: "realtime"
+        };
+        let supported;
+        try {
+          supported = await isConfigSupported(config);
+        } catch {
+          supported = { supported: false };
+        }
+        const ok = supported && (supported.supported === true || supported === true);
+        if (ok) {
+          return {
+            ...config,
+            mimeType: row.mimeType
+          };
+        }
+      }
+      throw new Error("No supported WebCodecs video encoder configuration (tried H.264 and VP8)");
+    }
+    function mimeTypeToDecoderCodec(mimeType) {
+      if (typeof mimeType !== "string" || mimeType.trim() === "") {
+        return "vp8";
+      }
+      const lower = mimeType.toLowerCase();
+      if (lower.includes("avc1") || lower.includes("h264")) {
+        const match = mimeType.match(/codecs=([^;,\s]+)/i);
+        if (match) {
+          return match[1];
+        }
+        return "avc1.42E01E";
+      }
+      if (lower.includes("vp8")) {
+        return "vp8";
+      }
+      if (lower.includes("vp9")) {
+        return "vp9";
+      }
+      return "vp8";
+    }
+    function renditionEncoderDimensions(profile, layerId) {
+      const rendition = resolveRendition(profile, layerId);
+      return {
+        width: rendition.width,
+        height: rendition.height,
+        videoBitrateKbps: rendition.videoBitrateKbps
+      };
+    }
+    module.exports = {
+      WebCodecsNotSupportedError,
+      detectWebCodecsSupport,
+      selectVideoEncoderConfig,
+      mimeTypeToDecoderCodec,
+      renditionEncoderDimensions
+    };
+  }
+});
+
+// src/streaming/browser-capture-source.js
+var require_browser_capture_source = __commonJS({
+  "src/streaming/browser-capture-source.js"(exports, module) {
+    var naclUtil3 = require_nacl_util();
+    var { createSignedMediaChunk, DEFAULT_LAYER_ID } = require_media_chunk();
+    var { LAYER_IDS, resolveRendition } = require_rendition_ladder();
+    var { createLayerSequenceTracker } = require_simulcast_publish();
+    var {
+      detectWebCodecsSupport,
+      WebCodecsNotSupportedError,
+      selectVideoEncoderConfig
+    } = require_webcodecs_support();
+    function pickVideoTrack(mediaStream, videoTrack) {
+      if (videoTrack) {
+        return videoTrack;
+      }
+      if (!mediaStream || typeof mediaStream.getVideoTracks !== "function") {
+        throw new TypeError("mediaStream must expose getVideoTracks()");
+      }
+      const tracks = mediaStream.getVideoTracks();
+      if (!tracks.length) {
+        throw new Error("mediaStream has no video track");
+      }
+      return tracks[0];
+    }
+    async function createBrowserCaptureSource(options) {
+      if (!options || typeof options !== "object") {
+        throw new TypeError("options object is required");
+      }
+      const {
+        mediaStream,
+        sessionId,
+        broadcasterId,
+        signingSecretKey,
+        signingPublicKey,
+        profile = "hd720",
+        layerId = DEFAULT_LAYER_ID,
+        simulcastLayerIds,
+        onChunk,
+        maxFrames
+      } = options;
+      if (!sessionId || !broadcasterId || !signingSecretKey || !signingPublicKey) {
+        throw new TypeError("sessionId, broadcasterId, signingSecretKey, and signingPublicKey are required");
+      }
+      const support = options.support ?? detectWebCodecsSupport({ VideoEncoder: options.VideoEncoder });
+      if (!support.VideoEncoder || typeof support.VideoEncoder.isConfigSupported !== "function") {
+        throw new WebCodecsNotSupportedError(
+          support.missing && support.missing.length ? support.missing : ["VideoEncoder"]
+        );
+      }
+      const VideoEncoder = options.VideoEncoder ?? support.VideoEncoder;
+      const VideoFrame2 = options.VideoFrame ?? (typeof globalThis !== "undefined" ? globalThis.VideoFrame : void 0);
+      const track = pickVideoTrack(mediaStream, options.videoTrack);
+      const layerIds = Array.isArray(simulcastLayerIds) && simulcastLayerIds.length > 0 ? simulcastLayerIds.map((id) => String(id)) : [layerId];
+      for (const id of layerIds) {
+        if (!LAYER_IDS.includes(id)) {
+          throw new Error(`Unknown simulcast layerId: ${id}`);
+        }
+      }
+      const sequences = createLayerSequenceTracker();
+      const chunks = [];
+      let framesEncoded = 0;
+      let stopped = false;
+      const encoders = /* @__PURE__ */ new Map();
+      let processor = null;
+      let reader = null;
+      let rvfHandle = null;
+      let videoEl = null;
+      let canvas = null;
+      function emitChunk(encodedChunk, meta, encoderMeta = {}) {
+        let payloadBytes;
+        if (encodedChunk instanceof Uint8Array) {
+          payloadBytes = encodedChunk;
+        } else if (encodedChunk && typeof encodedChunk.copyTo === "function") {
+          payloadBytes = new Uint8Array(encodedChunk.byteLength);
+          encodedChunk.copyTo(payloadBytes);
+        } else if (encodedChunk && encodedChunk.data instanceof Uint8Array) {
+          payloadBytes = encodedChunk.data;
+        } else if (encodedChunk && encodedChunk.data) {
+          payloadBytes = new Uint8Array(encodedChunk.data);
+        } else {
+          throw new TypeError("encoded video output must be Uint8Array or EncodedVideoChunk-like");
+        }
+        const keyframe = encodedChunk.type === "key";
+        const timestampMs = Math.round((encodedChunk.timestamp != null ? encodedChunk.timestamp : 0) / 1e3);
+        const chunk = createSignedMediaChunk({
+          sessionId,
+          broadcasterId,
+          payloadBytes,
+          signingSecretKey,
+          signingPublicKey,
+          sequence: sequences.next(meta.layerId),
+          timestampMs,
+          layerId: meta.layerId,
+          mimeType: meta.mimeType,
+          keyframe,
+          profile,
+          rendition: resolveRendition(profile, meta.layerId)
+        });
+        const description = encoderMeta?.decoderConfig?.description;
+        if (description && description.byteLength > 0) {
+          chunk.codecDescriptionBase64 = naclUtil3.encodeBase64(
+            description instanceof Uint8Array ? description : new Uint8Array(description)
+          );
+        }
+        chunks.push(chunk);
+        if (typeof onChunk === "function") {
+          onChunk(chunk);
+        }
+        framesEncoded += 1;
+        if (maxFrames != null && framesEncoded >= maxFrames) {
+          stop();
+        }
+      }
+      function stop() {
+        if (stopped) {
+          return;
+        }
+        stopped = true;
+        for (const entry of encoders.values()) {
+          try {
+            entry.encoder.close();
+          } catch {
+          }
+        }
+        encoders.clear();
+        if (reader) {
+          try {
+            reader.cancel();
+          } catch {
+          }
+          reader = null;
+        }
+        if (processor && typeof processor.readable?.cancel === "function") {
+          try {
+            processor.readable.cancel();
+          } catch {
+          }
+        }
+        processor = null;
+        if (rvfHandle && videoEl && typeof videoEl.cancelVideoFrameCallback === "function") {
+          try {
+            videoEl.cancelVideoFrameCallback(rvfHandle);
+          } catch {
+          }
+        }
+        rvfHandle = null;
+        if (videoEl) {
+          try {
+            videoEl.srcObject = null;
+          } catch {
+          }
+        }
+      }
+      for (const lid of layerIds) {
+        const rendition = resolveRendition(profile, lid);
+        const config = await selectVideoEncoderConfig(
+          support,
+          {
+            width: rendition.width,
+            height: rendition.height,
+            bitrate: rendition.videoBitrateKbps * 1e3
+          },
+          options
+        );
+        const meta = { layerId: lid, mimeType: config.mimeType };
+        const encoder = new VideoEncoder({
+          output: (chunk, metadata) => emitChunk(chunk, meta, metadata),
+          error: (err) => {
+            throw err;
+          }
+        });
+        encoder.configure({
+          codec: config.codec,
+          width: config.width,
+          height: config.height,
+          bitrate: config.bitrate,
+          framerate: config.framerate,
+          latencyMode: "realtime"
+        });
+        encoders.set(lid, { encoder, config });
+      }
+      const primary = encoders.get(layerIds[0]);
+      async function readLoopTrackProcessor() {
+        const MediaStreamTrackProcessor = options.MediaStreamTrackProcessor ?? support.MediaStreamTrackProcessor;
+        if (!MediaStreamTrackProcessor) {
+          return false;
+        }
+        processor = new MediaStreamTrackProcessor({ track });
+        reader = processor.readable.getReader();
+        while (!stopped) {
+          let readResult;
+          try {
+            readResult = await reader.read();
+          } catch {
+            break;
+          }
+          const { value, done } = readResult;
+          if (done || !value || stopped) {
+            break;
+          }
+          try {
+            for (const [lid, entry] of encoders) {
+              const frame = lid === layerIds[0] ? value : new VideoFrame2(value, {
+                visibleRect: {
+                  width: entry.config.width,
+                  height: entry.config.height
+                }
+              });
+              const keyFrame = framesEncoded === 0;
+              entry.encoder.encode(frame, { keyFrame });
+              if (frame !== value && typeof frame.close === "function") {
+                frame.close();
+              }
+            }
+          } finally {
+            if (typeof value.close === "function") {
+              value.close();
+            }
+          }
+        }
+        return true;
+      }
+      function readLoopCanvasFallback() {
+        const rVFC = options.requestVideoFrameCallback;
+        videoEl = options.videoElement;
+        canvas = options.canvasElement;
+        if (!videoEl || !canvas || typeof rVFC !== "function") {
+          throw new Error(
+            "MediaStreamTrackProcessor is unavailable; provide videoElement, canvasElement, and requestVideoFrameCallback"
+          );
+        }
+        videoEl.srcObject = mediaStream;
+        videoEl.muted = true;
+        videoEl.playsInline = true;
+        const ctx = canvas.getContext("2d");
+        const tick = (now, metadata) => {
+          if (stopped) {
+            return;
+          }
+          const vw = metadata?.width ?? videoEl.videoWidth;
+          const vh = metadata?.height ?? videoEl.videoHeight;
+          if (!vw || !vh) {
+            rvfHandle = rVFC.call(videoEl, tick);
+            return;
+          }
+          for (const [, entry] of encoders) {
+            canvas.width = entry.config.width;
+            canvas.height = entry.config.height;
+            ctx.drawImage(videoEl, 0, 0, entry.config.width, entry.config.height);
+            const frame = new VideoFrame2(canvas, { timestamp: now * 1e3 });
+            const keyFrame = framesEncoded === 0;
+            entry.encoder.encode(frame, { keyFrame });
+            frame.close();
+          }
+          if (!stopped) {
+            rvfHandle = rVFC.call(videoEl, tick);
+          }
+        };
+        const playPromise = typeof videoEl.play === "function" ? videoEl.play() : Promise.resolve();
+        return playPromise.then(() => {
+          rvfHandle = rVFC.call(videoEl, tick);
+        });
+      }
+      let primaryCodec = primary.config.codec;
+      let primaryMime = primary.config.mimeType;
+      return {
+        get codec() {
+          return primaryCodec;
+        },
+        get mimeType() {
+          return primaryMime;
+        },
+        chunks,
+        async start() {
+          if (stopped) {
+            throw new Error("capture source already stopped");
+          }
+          const usedProcessor = await readLoopTrackProcessor();
+          if (!usedProcessor) {
+            await readLoopCanvasFallback();
+          }
+        },
+        stop
+      };
+    }
+    module.exports = {
+      createBrowserCaptureSource
+    };
+  }
+});
+
+// src/streaming/webcodecs-decoder.js
+var require_webcodecs_decoder = __commonJS({
+  "src/streaming/webcodecs-decoder.js"(exports, module) {
+    var naclUtil3 = require_nacl_util();
+    var { decodeMediaChunkPayload, verifyMediaChunk } = require_media_chunk();
+    var {
+      detectWebCodecsSupport,
+      WebCodecsNotSupportedError,
+      mimeTypeToDecoderCodec
+    } = require_webcodecs_support();
+    function createWebCodecsDecoder(options) {
+      if (!options || typeof options.onFrame !== "function") {
+        throw new TypeError("createWebCodecsDecoder requires onFrame");
+      }
+      const support = options.support ?? detectWebCodecsSupport({ VideoDecoder: options.VideoDecoder });
+      if (!support.VideoDecoder) {
+        throw new WebCodecsNotSupportedError(
+          support.missing && support.missing.length ? support.missing : ["VideoDecoder"]
+        );
+      }
+      const VideoDecoder = options.VideoDecoder ?? support.VideoDecoder;
+      let decoder = null;
+      let configuredCodec = null;
+      let activeLayerId = null;
+      let waitingForKeyframe = true;
+      let configuredDescription = null;
+      function ensureDecoder(codec, description) {
+        const sameDescription = !description && !configuredDescription || description && configuredDescription && description.byteLength === configuredDescription.byteLength && description.every((b, i) => b === configuredDescription[i]);
+        if (decoder && configuredCodec === codec && sameDescription) {
+          return;
+        }
+        if (decoder) {
+          try {
+            decoder.close();
+          } catch {
+          }
+        }
+        decoder = new VideoDecoder({
+          output: (frame) => {
+            if (options.canvas && options.drawFrame) {
+              options.drawFrame(options.canvas, frame);
+            } else if (options.canvas && typeof frame?.close === "function") {
+              const ctx = options.canvas.getContext("2d");
+              if (ctx && typeof frame.width === "number") {
+                options.canvas.width = frame.width;
+                options.canvas.height = frame.height;
+                ctx.drawImage(frame, 0, 0);
+              }
+            }
+            options.onFrame(frame);
+            if (typeof frame?.close === "function") {
+              frame.close();
+            }
+          },
+          error: () => {
+            waitingForKeyframe = true;
+          }
+        });
+        const config = { codec };
+        if (description && description.byteLength > 0) {
+          config.description = description;
+        }
+        decoder.configure(config);
+        configuredCodec = codec;
+        configuredDescription = description ? new Uint8Array(description) : null;
+        waitingForKeyframe = true;
+      }
+      return {
+        get waitingForKeyframe() {
+          return waitingForKeyframe;
+        },
+        get activeLayerId() {
+          return activeLayerId;
+        },
+        feedChunk(chunk, feedOptions = {}) {
+          if (!chunk || typeof chunk !== "object") {
+            throw new TypeError("chunk is required");
+          }
+          const sessionId = feedOptions.sessionId;
+          if (!verifyMediaChunk(chunk, sessionId)) {
+            throw new Error("media chunk signature verification failed");
+          }
+          const layerId = typeof chunk.layerId === "string" && chunk.layerId.trim() !== "" ? chunk.layerId.trim() : "L0";
+          if (activeLayerId !== layerId) {
+            activeLayerId = layerId;
+            waitingForKeyframe = true;
+            if (decoder) {
+              try {
+                decoder.close();
+              } catch {
+              }
+              decoder = null;
+              configuredCodec = null;
+            }
+          }
+          const isKeyframe = Boolean(chunk.keyframe);
+          if (waitingForKeyframe && !isKeyframe) {
+            return;
+          }
+          const mimeType = typeof chunk.mimeType === "string" ? chunk.mimeType : "video/webm;codecs=vp8";
+          const codec = mimeTypeToDecoderCodec(mimeType);
+          let description = null;
+          if (typeof chunk.codecDescriptionBase64 === "string" && chunk.codecDescriptionBase64.trim() !== "") {
+            description = naclUtil3.decodeBase64(chunk.codecDescriptionBase64.trim());
+          }
+          ensureDecoder(codec, description);
+          const payload = decodeMediaChunkPayload(chunk);
+          const chunkType = isKeyframe ? "key" : "delta";
+          const timestampUs = Math.round((chunk.timestampMs != null ? chunk.timestampMs : 0) * 1e3);
+          const EncodedVideoChunk = options.EncodedVideoChunk ?? (typeof globalThis !== "undefined" ? globalThis.EncodedVideoChunk : void 0);
+          if (typeof EncodedVideoChunk !== "function") {
+            throw new WebCodecsNotSupportedError(["EncodedVideoChunk"]);
+          }
+          const encoded = new EncodedVideoChunk({
+            type: chunkType,
+            timestamp: timestampUs,
+            data: payload
+          });
+          decoder.decode(encoded);
+          if (isKeyframe) {
+            waitingForKeyframe = false;
+          }
+        },
+        close() {
+          if (decoder) {
+            try {
+              decoder.close();
+            } catch {
+            }
+            decoder = null;
+          }
+          configuredCodec = null;
+          waitingForKeyframe = true;
+          activeLayerId = null;
+        }
+      };
+    }
+    module.exports = {
+      createWebCodecsDecoder
+    };
+  }
+});
+
 // src/streaming/index.js
 var require_streaming = __commonJS({
   "src/streaming/index.js"(exports, module) {
@@ -40430,6 +40991,9 @@ var require_streaming = __commonJS({
     var scaleSimulation = require_scale_simulation();
     var relayChildAssignment = require_relay_child_assignment();
     var { demuxMpegTs, MpegTsDemuxer, ptsToTimestampMs } = require_mpegts_demuxer();
+    var webcodecsSupport = require_webcodecs_support();
+    var browserCaptureSource = require_browser_capture_source();
+    var webcodecsDecoder = require_webcodecs_decoder();
     module.exports = {
       ...accessModes,
       ...streamSession,
@@ -40448,6 +41012,9 @@ var require_streaming = __commonJS({
       ...simulcastPublish,
       ...scaleSimulation,
       ...relayChildAssignment,
+      ...webcodecsSupport,
+      ...browserCaptureSource,
+      ...webcodecsDecoder,
       demuxMpegTs,
       MpegTsDemuxer,
       ptsToTimestampMs,
@@ -40629,7 +41196,14 @@ var require_src = __commonJS({
       PublicStreamRelay,
       parseAnnexBAccessUnits,
       parseFmp4Fragments,
-      demuxMpegTs
+      demuxMpegTs,
+      detectWebCodecsSupport,
+      WebCodecsNotSupportedError,
+      selectVideoEncoderConfig,
+      mimeTypeToDecoderCodec,
+      renditionEncoderDimensions,
+      createBrowserCaptureSource,
+      createWebCodecsDecoder
     } = require_streaming();
     module.exports = {
       DignityP2P: DignityP2P2,
@@ -40769,7 +41343,14 @@ var require_src = __commonJS({
       PublicStreamRelay,
       parseAnnexBAccessUnits,
       parseFmp4Fragments,
-      demuxMpegTs
+      demuxMpegTs,
+      detectWebCodecsSupport,
+      WebCodecsNotSupportedError,
+      selectVideoEncoderConfig,
+      mimeTypeToDecoderCodec,
+      renditionEncoderDimensions,
+      createBrowserCaptureSource,
+      createWebCodecsDecoder
     };
   }
 });
@@ -42032,7 +42613,7 @@ function Lobby({
       emptyText: "No finished games yet.",
       onOpen: handleOpenGame
     }
-  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.16.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
+  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.17.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
       id: usernameInputId,

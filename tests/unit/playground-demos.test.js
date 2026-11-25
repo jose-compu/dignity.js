@@ -66,7 +66,7 @@ function createHelpers() {
 }
 
 // Demos that require DOM (document/window) - skip in Node tests
-const DOM_REQUIRED_DEMOS = new Set(['app-sandbox-host', 'app-error-panel']);
+const DOM_REQUIRED_DEMOS = new Set(['app-sandbox-host', 'app-error-panel', 'stream-webcodecs-capture']);
 
 describe('Playground demos', () => {
   for (const demo of PLAYGROUND_DEMOS) {

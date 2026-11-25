@@ -22,6 +22,9 @@ const simulcastPublish = require('./simulcast-publish');
 const scaleSimulation = require('./scale-simulation');
 const relayChildAssignment = require('./relay-child-assignment');
 const { demuxMpegTs, MpegTsDemuxer, ptsToTimestampMs } = require('./ingest/mpegts-demuxer');
+const webcodecsSupport = require('./webcodecs-support');
+const browserCaptureSource = require('./browser-capture-source');
+const webcodecsDecoder = require('./webcodecs-decoder');
 
 module.exports = {
   ...accessModes,
@@ -41,6 +44,9 @@ module.exports = {
   ...simulcastPublish,
   ...scaleSimulation,
   ...relayChildAssignment,
+  ...webcodecsSupport,
+  ...browserCaptureSource,
+  ...webcodecsDecoder,
   demuxMpegTs,
   MpegTsDemuxer,
   ptsToTimestampMs,
