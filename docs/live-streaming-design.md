@@ -166,7 +166,9 @@ Two patterns (implementation choice in a later milestone):
 - **Timer-based** rotation (e.g. every 15–60 min) limits exposure.
 - Combined mode maintains **separate key domains** for public (optional group key or unsigned) vs private track.
 
-**v1.5.0** implements sender-key wrapping for `private-single` and `private-list` via `sealPrivateMediaChunk` / `openPrivateMediaChunk` (signed ciphertext envelope; relays verify without plaintext). Combined-mode and MLS-style rotation remain future work.
+**v1.5.0** added sender-key wrapping for `private-single` and `private-list` via `sealPrivateMediaChunk` / `openPrivateMediaChunk` (signed ciphertext envelope; relays verify without plaintext).
+
+**v1.6.0** adds `combined` for the private layer (public layer remains signed clear chunks in the same `sessionId`), plus `createPrivateSenderKeyEpoch` / `rotatePrivateSenderKeyEpoch` so removed allowlist members cannot open chunks sealed after rotation. MLS-style group evolution for large rosters remains future work.
 
 ---
 
@@ -188,8 +190,8 @@ Feasibility argument: 10M **concurrent** viewers implies ~6 relay hops at degree
 |-----------|--------|
 | 1. Research doc | **Done** (this file, v1.2.0) |
 | 2. Prototype browser origin | **Partial (v1.3.0)** — public-mode signed chunks + join handshake over injectable bus; no real A/V capture |
-| 3. Private modes + combined | **Partial (v1.5.0)** — E2E sealed chunks for `private-single` / `private-list`; combined + MLS rotation not yet |
-| 4. Node origin | Not started |
+| 3. Private modes + combined | **Done (v1.6.0)** — E2E sealed chunks for `private-single` / `private-list` / `combined`; sender-key epoch rotation on removal |
+| 4. Node origin | Not started (next milestone) |
 | 5. Adaptive layer | Documented only |
 | 6. Scale simulation | Plan documented |
 

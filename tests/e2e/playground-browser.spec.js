@@ -35,6 +35,10 @@ const DIGNITY_APP_DEMOS = [
   {
     hash: 'stream-private-chunks',
     expectLine: 'recipient plaintext: sealed-frame'
+  },
+  {
+    hash: 'stream-combined-rotation',
+    expectLine: 'bob after rotation failed: true'
   }
 ];
 

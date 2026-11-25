@@ -1429,7 +1429,7 @@ bus3.destroy();`
     id: 'stream-private-chunks',
     group: 'v150',
     title: 'Private stream chunks — seal',
-    description: 'v1.5.0 (#152): sealPrivateMediaChunk and openPrivateMediaChunk for private-single and private-list.',
+    description: 'v1.6.0 (#152): sealPrivateMediaChunk and openPrivateMediaChunk for private-single and private-list.',
     code: `const {
   STREAM_ACCESS_MODES,
   deriveKeyPairFromCredentials,
@@ -1477,5 +1477,112 @@ try {
   spectatorFailed = true;
 }
 log('spectator decrypt failed:', spectatorFailed);`
+  },
+  {
+    id: 'stream-combined-rotation',
+    group: 'v160',
+    title: 'Combined stream + sender-key rotation',
+    description: 'v1.6.0 (#152): combined public/private session, private layer for allowlist, epoch rotation on removal.',
+    code: `const {
+  STREAM_ACCESS_MODES,
+  deriveKeyPairFromCredentials,
+  keyPairToPublicBundle,
+  createSignedMediaChunk,
+  decodeMediaChunkPayload,
+  verifyMediaChunk,
+  createPrivateSenderKeyEpoch,
+  rotatePrivateSenderKeyEpoch,
+  sealPrivateMediaChunk,
+  openPrivateMediaChunk
+} = dignity;
+
+const broadcaster = await deriveKeyPairFromCredentials({ username: 'bc', password: 'demo' });
+const alice = await deriveKeyPairFromCredentials({ username: 'alice', password: 'demo' });
+const bob = await deriveKeyPairFromCredentials({ username: 'bob', password: 'demo' });
+const spectator = await deriveKeyPairFromCredentials({ username: 'spec', password: 'demo' });
+
+const bcBundle = keyPairToPublicBundle(broadcaster);
+const aliceBundle = keyPairToPublicBundle(alice);
+const bobBundle = keyPairToPublicBundle(bob);
+const specBundle = keyPairToPublicBundle(spectator);
+
+const sessionId = 'demo-combined';
+const encryptOpts = {
+  broadcasterEncryptionSecretKey: broadcaster.encryption.secretKey,
+  broadcasterEncryptionPublicKey: bcBundle.encryptionPublicKey
+};
+
+const publicChunk = createSignedMediaChunk({
+  sessionId,
+  broadcasterId: 'origin',
+  payloadBytes: new TextEncoder().encode('public-audio'),
+  signingSecretKey: broadcaster.signing.secretKey,
+  signingPublicKey: bcBundle.signingPublicKey,
+  layerId: 'public'
+});
+log('spectator public:', new TextDecoder().decode(decodeMediaChunkPayload(publicChunk)));
+
+const privateChunk = sealPrivateMediaChunk({
+  accessMode: STREAM_ACCESS_MODES.COMBINED,
+  sessionId,
+  broadcasterId: 'origin',
+  plaintextBytes: new TextEncoder().encode('private-video'),
+  signingSecretKey: broadcaster.signing.secretKey,
+  signingPublicKey: bcBundle.signingPublicKey,
+  recipientPublicBundles: [aliceBundle, bobBundle],
+  layerId: 'private',
+  ...encryptOpts
+});
+log('private signed:', verifyMediaChunk(privateChunk, sessionId));
+
+const alicePriv = openPrivateMediaChunk(privateChunk, {
+  recipientEncryptionSecretKey: alice.encryption.secretKey,
+  recipientSigningPublicKey: aliceBundle.signingPublicKey
+});
+log('alice private:', new TextDecoder().decode(alicePriv));
+
+let spectatorPrivateFailed = false;
+try {
+  openPrivateMediaChunk(privateChunk, {
+    recipientEncryptionSecretKey: spectator.encryption.secretKey,
+    recipientSigningPublicKey: specBundle.signingPublicKey
+  });
+} catch (err) {
+  spectatorPrivateFailed = true;
+}
+log('spectator private failed:', spectatorPrivateFailed);
+
+const epoch1 = createPrivateSenderKeyEpoch({
+  recipientPublicBundles: [aliceBundle, bobBundle],
+  ...encryptOpts
+});
+const epoch2 = rotatePrivateSenderKeyEpoch(epoch1, {
+  removeRecipientSigningPublicKey: bobBundle.signingPublicKey,
+  recipientPublicBundles: [aliceBundle],
+  ...encryptOpts
+});
+
+const chunkAfterRemoval = sealPrivateMediaChunk({
+  accessMode: STREAM_ACCESS_MODES.PRIVATE_LIST,
+  sessionId: 'demo-rot',
+  broadcasterId: 'origin',
+  plaintextBytes: new TextEncoder().encode('after-removal'),
+  signingSecretKey: broadcaster.signing.secretKey,
+  signingPublicKey: bcBundle.signingPublicKey,
+  recipientPublicBundles: [aliceBundle],
+  privateSenderKeyEpoch: epoch2,
+  ...encryptOpts
+});
+
+let bobAfterRemovalFailed = false;
+try {
+  openPrivateMediaChunk(chunkAfterRemoval, {
+    recipientEncryptionSecretKey: bob.encryption.secretKey,
+    recipientSigningPublicKey: bobBundle.signingPublicKey
+  });
+} catch (err) {
+  bobAfterRemovalFailed = true;
+}
+log('bob after rotation failed:', bobAfterRemovalFailed);`
   }
 ];

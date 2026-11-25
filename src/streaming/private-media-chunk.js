@@ -8,11 +8,19 @@ const nacl = require('tweetnacl');
 const naclUtil = require('tweetnacl-util');
 const { STREAM_ACCESS_MODES, validateStreamAccessConfig } = require('./access-modes');
 const { createSignedMediaChunk, verifyMediaChunk } = require('./media-chunk');
+const { wrapSenderKeyForRecipients } = require('./private-sender-key-epoch');
+
+const PRIVATE_CHUNK_ACCESS_MODES = new Set([
+  STREAM_ACCESS_MODES.PRIVATE_SINGLE,
+  STREAM_ACCESS_MODES.PRIVATE_LIST,
+  STREAM_ACCESS_MODES.COMBINED
+]);
 
 /**
  * @typedef {import('./media-chunk').SignedMediaChunk & {
  *   accessMode?: string;
  *   secretboxNonceBase64?: string;
+ *   senderKeyEpoch?: number;
  *   senderKeyWraps?: Array<{
  *     recipientSigningPublicKey: string;
  *     wrapNonceBase64: string;
@@ -47,7 +55,7 @@ function normalizeRecipientBundles(recipientPublicBundles) {
 
 /**
  * @param {Object} options
- * @param {'private-single' | 'private-list'} options.accessMode
+ * @param {'private-single' | 'private-list' | 'combined'} options.accessMode
  * @param {string} options.sessionId
  * @param {string} options.broadcasterId
  * @param {Uint8Array} options.plaintextBytes
@@ -56,6 +64,7 @@ function normalizeRecipientBundles(recipientPublicBundles) {
  * @param {Uint8Array} options.broadcasterEncryptionSecretKey
  * @param {string} options.broadcasterEncryptionPublicKey
  * @param {Array<{ signingPublicKey: string; encryptionPublicKey: string }>} options.recipientPublicBundles
+ * @param {import('./private-sender-key-epoch').PrivateSenderKeyEpoch} [options.privateSenderKeyEpoch]
  * @param {number} [options.sequence]
  * @param {number} [options.timestampMs]
  * @param {string} [options.layerId]
@@ -72,13 +81,16 @@ function sealPrivateMediaChunk({
   broadcasterEncryptionSecretKey,
   broadcasterEncryptionPublicKey,
   recipientPublicBundles,
+  privateSenderKeyEpoch,
   sequence,
   timestampMs,
   layerId,
   mimeType
 }) {
-  if (accessMode !== STREAM_ACCESS_MODES.PRIVATE_SINGLE && accessMode !== STREAM_ACCESS_MODES.PRIVATE_LIST) {
-    throw new Error('sealPrivateMediaChunk supports only private-single and private-list access modes');
+  if (!PRIVATE_CHUNK_ACCESS_MODES.has(accessMode)) {
+    throw new Error(
+      'sealPrivateMediaChunk supports only private-single, private-list, and combined access modes'
+    );
   }
   if (!(plaintextBytes instanceof Uint8Array)) {
     throw new TypeError('plaintextBytes must be a Uint8Array');
@@ -94,31 +106,38 @@ function sealPrivateMediaChunk({
   const recipientIds = bundles.map((b) => b.signingPublicKey);
   validateStreamAccessConfig(accessMode, { privateRecipients: recipientIds });
 
-  const senderKey = nacl.randomBytes(nacl.secretbox.keyLength);
+  let senderKey;
+  let senderKeyWraps;
+  let senderKeyEpoch;
+
+  if (privateSenderKeyEpoch != null) {
+    if (typeof privateSenderKeyEpoch !== 'object') {
+      throw new TypeError('privateSenderKeyEpoch must be an object when provided');
+    }
+    if (!(privateSenderKeyEpoch.senderKey instanceof Uint8Array)) {
+      throw new TypeError('privateSenderKeyEpoch.senderKey must be a Uint8Array');
+    }
+    if (!Array.isArray(privateSenderKeyEpoch.senderKeyWraps)) {
+      throw new TypeError('privateSenderKeyEpoch.senderKeyWraps must be an array');
+    }
+    senderKey = privateSenderKeyEpoch.senderKey;
+    senderKeyWraps = privateSenderKeyEpoch.senderKeyWraps;
+    senderKeyEpoch = privateSenderKeyEpoch.epoch;
+  } else {
+    senderKey = nacl.randomBytes(nacl.secretbox.keyLength);
+    senderKeyWraps = wrapSenderKeyForRecipients(
+      senderKey,
+      bundles,
+      broadcasterEncryptionSecretKey,
+      broadcasterEncryptionPublicKey
+    );
+  }
+
   const secretboxNonce = nacl.randomBytes(nacl.secretbox.nonceLength);
   const ciphertext = nacl.secretbox(plaintextBytes, secretboxNonce, senderKey);
   if (!ciphertext) {
     throw new Error('Failed to seal private media chunk payload');
   }
-
-  const senderKeyWraps = bundles.map((bundle) => {
-    const wrapNonce = nacl.randomBytes(nacl.box.nonceLength);
-    const wrapped = nacl.box(
-      senderKey,
-      wrapNonce,
-      naclUtil.decodeBase64(bundle.encryptionPublicKey),
-      broadcasterEncryptionSecretKey
-    );
-    if (!wrapped) {
-      throw new Error(`Failed to wrap sender key for recipient ${bundle.signingPublicKey}`);
-    }
-    return {
-      recipientSigningPublicKey: bundle.signingPublicKey,
-      wrapNonceBase64: naclUtil.encodeBase64(wrapNonce),
-      wrappedSenderKeyBase64: naclUtil.encodeBase64(wrapped),
-      senderEncryptionPublicKey: broadcasterEncryptionPublicKey.trim()
-    };
-  });
 
   const signed = createSignedMediaChunk({
     sessionId,
@@ -132,12 +151,16 @@ function sealPrivateMediaChunk({
     mimeType
   });
 
-  return {
+  const chunk = {
     ...signed,
     accessMode,
     secretboxNonceBase64: naclUtil.encodeBase64(secretboxNonce),
     senderKeyWraps
   };
+  if (senderKeyEpoch != null) {
+    chunk.senderKeyEpoch = senderKeyEpoch;
+  }
+  return chunk;
 }
 
 /**
@@ -160,7 +183,7 @@ function openPrivateMediaChunk(chunk, { recipientEncryptionSecretKey, recipientS
   }
 
   const mode = chunk.accessMode;
-  if (mode !== STREAM_ACCESS_MODES.PRIVATE_SINGLE && mode !== STREAM_ACCESS_MODES.PRIVATE_LIST) {
+  if (!PRIVATE_CHUNK_ACCESS_MODES.has(mode)) {
     throw new Error('chunk is not a private media chunk');
   }
   if (!chunk.secretboxNonceBase64 || !Array.isArray(chunk.senderKeyWraps)) {

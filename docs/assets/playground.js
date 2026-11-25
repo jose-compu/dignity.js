@@ -39,11 +39,12 @@ function populateFeatureSelect() {
     v013: 'v0.13 verification',
     v140: 'v1.4.0 streaming',
     v150: 'v1.5.0 streaming',
+    v160: 'v1.6.0 streaming',
     patterns: 'Browser patterns',
     apps: 'Dignity Apps'
   };
 
-  const order = ['core', 'v013', 'v140', 'v150', 'patterns', 'apps'];
+  const order = ['core', 'v013', 'v140', 'v150', 'v160', 'patterns', 'apps'];
   const seen = new Set(order);
   for (const key of groups.keys()) {
     if (!seen.has(key)) {
