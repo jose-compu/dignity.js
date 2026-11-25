@@ -55,6 +55,20 @@ One relay, two downstream children on scripted receiver reports: per-child layer
   node examples/relay-degrade-sim.js
   ```
 
+### Simulcast load trace (experimental, v1.12.0)
+
+Origin publishes L0–L2 per tick; relay layer policy forwards one layer per child; viewer selector tracks the degraded child.
+
+* **Script:** [`simulcast-load-sim.js`](./simulcast-load-sim.js)
+* **Run Command:**
+  ```bash
+  npm run example:simulcast-load
+  ```
+  or
+  ```bash
+  node examples/simulcast-load-sim.js
+  ```
+
 ### Adaptive layer simulation (experimental, v1.10.0)
 
 Signed HD ladder chunks, scripted receiver reports, bandwidth estimator, and hysteresis layer selector (no ffmpeg).

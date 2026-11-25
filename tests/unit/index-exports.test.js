@@ -35,6 +35,9 @@ describe('public API exports', () => {
     expect(api.createReceiverReport).toBeDefined();
     expect(api.createPlayoutBuffer).toBeDefined();
     expect(api.createRelayLayerPolicy).toBeDefined();
+    expect(api.normalizeSimulcastLayers).toBeDefined();
+    expect(api.runSimulcastLoadTrace).toBeDefined();
+    expect(api.PublicStreamBroadcaster.prototype.publishSimulcastTick).toBeDefined();
   });
 
   test('package.json exposes TypeScript definitions', () => {

@@ -51,6 +51,10 @@ const DIGNITY_APP_DEMOS = [
   {
     hash: 'stream-relay-degrade',
     expectLines: ['child A layer: L2', 'child B layer: L0', 'buffer target:']
+  },
+  {
+    hash: 'stream-simulcast-load',
+    expectLines: ['published layers: L0 L1 L2', 'relay forwards: L0', 'viewer layer: L0']
   }
 ];
 

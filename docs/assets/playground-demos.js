@@ -1847,5 +1847,110 @@ for (const step of steps) {
   log('child B layer:', relay.getChildLayer('child-b'));
   log('buffer target:', target, 'ms');
 }`
+  },
+  {
+    id: 'stream-simulcast-load',
+    group: 'v112',
+    title: 'Simulcast publish + relay load trace',
+    description: 'v1.12.0 (#152): origin publishes L0–L2 per tick; relay picks one layer per child; viewer matches relay.',
+    code: `const {
+  RENDITION_PROFILE_HD720,
+  resolveRendition,
+  createInMemoryStreamSignalingBus,
+  createPublicStreamBroadcaster,
+  createPublicStreamViewer,
+  createPublicStreamRelay,
+  createRelayLayerPolicy,
+  createPlayoutBuffer,
+  createBandwidthEstimator,
+  createLayerSelector,
+  runSimulcastLoadTrace,
+  deriveKeyPairFromCredentials,
+  keyPairToPublicBundle
+} = dignity;
+
+function layerBps(layerId) {
+  const row = resolveRendition(RENDITION_PROFILE_HD720, layerId);
+  return (row.videoBitrateKbps + row.audioBitrateKbps) * 1000 * 1.2;
+}
+
+const bus = createInMemoryStreamSignalingBus();
+const creds = await deriveKeyPairFromCredentials({ username: 'simulcast-demo', password: 'demo' });
+const bundle = keyPairToPublicBundle(creds);
+const l0Bps = layerBps('L0');
+const l1Bps = layerBps('L1');
+const l2Bps = layerBps('L2');
+const policy = createRelayLayerPolicy({
+  profile: RENDITION_PROFILE_HD720,
+  floorBps: l0Bps,
+  ceilingBps: l2Bps,
+  quietGainBps: 80000,
+  initialEstimateBps: l2Bps
+});
+
+const broadcaster = createPublicStreamBroadcaster({
+  sessionId: 'simulcast-demo',
+  broadcasterId: 'origin',
+  signingSecretKey: creds.signing.secretKey,
+  signingPublicKey: bundle.signingPublicKey,
+  bus,
+  initialViewerIds: ['relay-1']
+});
+
+const relay = createPublicStreamRelay({
+  relayId: 'relay-1',
+  upstreamId: 'origin',
+  sessionId: 'simulcast-demo',
+  broadcasterSigningPublicKey: bundle.signingPublicKey,
+  broadcasterId: 'origin',
+  bus,
+  downstreamViewerIds: ['child-a', 'child-b'],
+  relayLayerPolicy: policy,
+  relayChildOptions: {
+    'child-a': { initialEstimateBps: l2Bps },
+    'child-b': { initialEstimateBps: l2Bps }
+  }
+});
+
+const viewerA = createPublicStreamViewer({
+  viewerId: 'child-a',
+  sessionId: 'simulcast-demo',
+  broadcasterId: 'origin',
+  broadcasterSigningPublicKey: bundle.signingPublicKey,
+  bus
+});
+const viewerB = createPublicStreamViewer({
+  viewerId: 'child-b',
+  sessionId: 'simulcast-demo',
+  broadcasterId: 'origin',
+  broadcasterSigningPublicKey: bundle.signingPublicKey,
+  bus
+});
+
+broadcaster.announce();
+viewerA.requestJoin();
+viewerB.requestJoin();
+
+const result = runSimulcastLoadTrace({
+  bus,
+  broadcaster,
+  relay,
+  viewerHealthy: viewerA,
+  viewerDegraded: viewerB,
+  viewerSelectorDegraded: createLayerSelector({ profile: RENDITION_PROFILE_HD720 }),
+  playoutDegraded: createPlayoutBuffer({ raiseStepMs: 50 }),
+  estimatorDegraded: createBandwidthEstimator({ floorBps: l0Bps, ceilingBps: l2Bps, initialEstimateBps: l2Bps }),
+  degradedChildId: 'child-b',
+  healthyChildId: 'child-a',
+  sessionId: 'simulcast-demo',
+  l0Bps,
+  l1Bps,
+  l2Bps
+});
+
+for (const line of result.logLines) {
+  log(line);
+}
+log('healthy relay layer:', result.relayLayerHealthy);`
   }
 ];

@@ -400,6 +400,44 @@ describe('public stream path (experimental)', () => {
     expect(verifyMediaChunk(viewer.chunks[0], 'sealed-relay')).toBe(true);
   });
 
+  test('publishSimulcastTick shares timestamp and signs each layer', () => {
+    const bus = createInMemoryStreamSignalingBus();
+    const keys = testKeyPair('simulcast-public');
+    const broadcaster = createPublicStreamBroadcaster({
+      sessionId: 'simulcast-public',
+      broadcasterId: 'alice',
+      signingSecretKey: keys.signingSecretKey,
+      signingPublicKey: keys.signingPublicKey,
+      bus,
+      initialViewerIds: ['viewer-1']
+    });
+    const viewer = createPublicStreamViewer({
+      viewerId: 'viewer-1',
+      sessionId: 'simulcast-public',
+      broadcasterId: 'alice',
+      broadcasterSigningPublicKey: keys.signingPublicKey,
+      bus
+    });
+
+    const chunks = broadcaster.publishSimulcastTick(
+      [
+        { layerId: 'L0', payloadBytes: naclUtil.decodeUTF8('k'), keyframe: true },
+        { layerId: 'L1', payloadBytes: naclUtil.decodeUTF8('m') },
+        { layerId: 'L2', payloadBytes: naclUtil.decodeUTF8('h') }
+      ],
+      { timestampMs: 999, profile: RENDITION_PROFILE_HD720 }
+    );
+
+    expect(chunks).toHaveLength(3);
+    expect(chunks.every((c) => c.timestampMs === 999)).toBe(true);
+    expect(chunks[0].keyframe).toBe(true);
+    expect(viewer.chunks).toHaveLength(3);
+    for (const chunk of viewer.chunks) {
+      expect(verifyMediaChunk(chunk, 'simulcast-public')).toBe(true);
+      expect(chunk.rendition.profile).toBe(RENDITION_PROFILE_HD720);
+    }
+  });
+
   test('non-public session cannot use public broadcaster helper', () => {
     const bus = createInMemoryStreamSignalingBus();
     const keys = testKeyPair('private-origin');

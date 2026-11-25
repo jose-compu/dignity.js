@@ -18,6 +18,7 @@ const bandwidthEstimator = require('./bandwidth-estimator');
 const layerSelector = require('./layer-selector');
 const playoutBuffer = require('./playout-buffer');
 const relayLayerPolicy = require('./relay-layer-policy');
+const simulcastPublish = require('./simulcast-publish');
 
 module.exports = {
   ...accessModes,
@@ -34,5 +35,6 @@ module.exports = {
   ...layerSelector,
   ...playoutBuffer,
   ...relayLayerPolicy,
+  ...simulcastPublish,
   STREAMING_API_EXPERIMENTAL: true
 };
