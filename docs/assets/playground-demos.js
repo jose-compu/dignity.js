@@ -1427,9 +1427,9 @@ bus3.destroy();`
   },
   {
     id: 'stream-private-chunks',
-    group: 'v150',
+    group: 'v170',
     title: 'Private stream chunks — seal',
-    description: 'v1.6.0 (#152): sealPrivateMediaChunk and openPrivateMediaChunk for private-single and private-list.',
+    description: 'v1.7.0 package (#152): sealPrivateMediaChunk and openPrivateMediaChunk for private-single and private-list.',
     code: `const {
   STREAM_ACCESS_MODES,
   deriveKeyPairFromCredentials,
@@ -1480,9 +1480,9 @@ log('spectator decrypt failed:', spectatorFailed);`
   },
   {
     id: 'stream-combined-rotation',
-    group: 'v160',
+    group: 'v170',
     title: 'Combined stream + sender-key rotation',
-    description: 'v1.6.0 (#152): combined public/private session, private layer for allowlist, epoch rotation on removal.',
+    description: 'v1.7.0 package (#152): combined public/private session, private layer for allowlist, epoch rotation on removal.',
     code: `const {
   STREAM_ACCESS_MODES,
   deriveKeyPairFromCredentials,

@@ -28,6 +28,19 @@ This directory contains standalone example scripts and consumer projects demonst
   node examples/decentralized-chess-lite.js
   ```
 
+### Node.js public stream origin (experimental)
+* **File:** [`node-stream-origin.js`](./node-stream-origin.js)
+* **Description:** Console public broadcaster over a fixture file and `InMemoryStreamSignalingBus` (no ffmpeg required).
+* **Run Command:**
+  ```bash
+  npm run example:node-stream
+  ```
+  or
+  ```bash
+  node examples/node-stream-origin.js
+  ```
+* **Import path:** `dignity.js/node` (`createNodeStreamOrigin`, `resolveNodeMediaIngest`).
+
 ### TypeScript Consumer Project
 * **Directory:** [`typescript-consumer/`](./typescript-consumer/)
 * **Description:** Sample TypeScript project demonstrating type definitions, type safety, and verification rules compile-time checking.

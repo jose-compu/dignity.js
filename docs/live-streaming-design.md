@@ -76,6 +76,14 @@ Operationally, media chunk topics can reuse **scoped PeerGroups** (`peerGroupSco
 - **WebRTC stack (future prototype):** [`node-datachannel`](https://github.com/murat-dogan/node-datachannel) or [`werift`](https://github.com/shinyoshiaki/werift) for SCTP/data channels and selective RTP bridging.
 - Chunks are signed and published into the same overlay as browser origins.
 
+**v1.7.0 (milestone 4, partial)** ships `dignity.js/node`:
+
+- `createFileMediaIngest` / `createFfmpegMediaIngest` (injectable `spawn`; ffmpeg is **not** an npm dependency).
+- `resolveNodeMediaIngest` — ffmpeg when a probe succeeds; otherwise the same file bytes in fixed chunks.
+- `createNodeStreamOrigin` — **public** `StreamSession` only: `start()` calls `PublicStreamBroadcaster.publishChunk` on the injectable bus and, when a `WebRTCDataChannelTransport` is passed, `sendChunk` to listed peers; `stop()` kills an ffmpeg child when present.
+
+Example: `npm run example:node-stream` (`examples/node-stream-origin.js`, fixture file + `InMemoryStreamSignalingBus`). Private/combined Node origins, real camera/RTMP framing, and a Node data-channel peer are the next slice.
+
 ### WebRTC tracks vs data-channel chunking
 
 | Approach | Pros | Cons |
@@ -191,7 +199,7 @@ Feasibility argument: 10M **concurrent** viewers implies ~6 relay hops at degree
 | 1. Research doc | **Done** (this file, v1.2.0) |
 | 2. Prototype browser origin | **Partial (v1.3.0)** — public-mode signed chunks + join handshake over injectable bus; no real A/V capture |
 | 3. Private modes + combined | **Done (v1.6.0)** — E2E sealed chunks for `private-single` / `private-list` / `combined`; sender-key epoch rotation on removal |
-| 4. Node origin | Not started (next milestone) |
+| 4. Node origin | **Partial (v1.7.0)** — public origin on `dignity.js/node`; file/ffmpeg ingest; next: private/combined, real framing, Node peer |
 | 5. Adaptive layer | Documented only |
 | 6. Scale simulation | Plan documented |
 
