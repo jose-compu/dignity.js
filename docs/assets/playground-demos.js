@@ -1424,5 +1424,58 @@ log('viewer2 got fanout:', received2.length > 0);
 bus1.destroy();
 bus2.destroy();
 bus3.destroy();`
+  },
+  {
+    id: 'stream-private-chunks',
+    group: 'v150',
+    title: 'Private stream chunks — seal',
+    description: 'v1.5.0 (#152): sealPrivateMediaChunk and openPrivateMediaChunk for private-single and private-list.',
+    code: `const {
+  STREAM_ACCESS_MODES,
+  deriveKeyPairFromCredentials,
+  keyPairToPublicBundle,
+  sealPrivateMediaChunk,
+  openPrivateMediaChunk,
+  verifyMediaChunk
+} = dignity;
+
+const broadcaster = await deriveKeyPairFromCredentials({ username: 'bc', password: 'demo' });
+const alice = await deriveKeyPairFromCredentials({ username: 'alice', password: 'demo' });
+const spectator = await deriveKeyPairFromCredentials({ username: 'spec', password: 'demo' });
+
+const bcBundle = keyPairToPublicBundle(broadcaster);
+const aliceBundle = keyPairToPublicBundle(alice);
+const specBundle = keyPairToPublicBundle(spectator);
+
+const chunk = sealPrivateMediaChunk({
+  accessMode: STREAM_ACCESS_MODES.PRIVATE_SINGLE,
+  sessionId: 'demo-priv',
+  broadcasterId: 'bc',
+  plaintextBytes: new TextEncoder().encode('sealed-frame'),
+  signingSecretKey: broadcaster.signing.secretKey,
+  signingPublicKey: bcBundle.signingPublicKey,
+  broadcasterEncryptionSecretKey: broadcaster.encryption.secretKey,
+  broadcasterEncryptionPublicKey: bcBundle.encryptionPublicKey,
+  recipientPublicBundles: [aliceBundle]
+});
+
+log('chunk signed:', verifyMediaChunk(chunk, 'demo-priv'));
+
+const plain = openPrivateMediaChunk(chunk, {
+  recipientEncryptionSecretKey: alice.encryption.secretKey,
+  recipientSigningPublicKey: aliceBundle.signingPublicKey
+});
+log('recipient plaintext:', new TextDecoder().decode(plain));
+
+let spectatorFailed = false;
+try {
+  openPrivateMediaChunk(chunk, {
+    recipientEncryptionSecretKey: spectator.encryption.secretKey,
+    recipientSigningPublicKey: specBundle.signingPublicKey
+  });
+} catch (err) {
+  spectatorFailed = true;
+}
+log('spectator decrypt failed:', spectatorFailed);`
   }
 ];
