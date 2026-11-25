@@ -58,6 +58,8 @@ describe('public API exports', () => {
     expect(nodeApi.createRtmpIngest).toBeDefined();
     expect(nodeApi.createSrtIngest).toBeDefined();
     expect(nodeApi.createWhipIngest).toBeDefined();
+    expect(nodeApi.createNodeWebRTCPeerFactory).toBeDefined();
+    expect(nodeApi.NODE_WEBRTC_PEER_LIBRARY_MISSING).toBeDefined();
     expect(nodeApi.INGEST_FFMPEG_NOT_FOUND).toBe('INGEST_FFMPEG_NOT_FOUND');
   });
 

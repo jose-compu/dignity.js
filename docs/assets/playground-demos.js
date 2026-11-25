@@ -2006,7 +2006,7 @@ const budgets = assignRelayChildren({ peers, forwardLayerBps: forwardBps, maxDeg
     id: 'stream-webcodecs-capture',
     group: 'v117',
     title: 'WebCodecs camera capture',
-    description: 'v1.17.0 (#152 #159): getUserMedia → VideoEncoder → signed chunk → verify → decode to canvas.',
+    description: 'v1.17.0 / package 1.18.0 (#152 #159): getUserMedia → VideoEncoder → signed chunk → verify → decode to canvas.',
     code: `const {
   deriveKeyPairFromCredentials,
   keyPairToPublicBundle,

@@ -17,6 +17,10 @@ const { InMemoryNetworkHub, InMemoryNetworkAdapter } = require('../../src/networ
 const { EventEmitter } = require('events');
 const { createFileMediaIngest, createFfmpegMediaIngest } = require('../../src/streaming/node-media-ingest');
 const { createNodeStreamOrigin } = require('../../src/streaming/node-stream-origin');
+const {
+  createNodeWebRTCPeerFactory,
+  createFakeNodeWebRTCBackend
+} = require('../../src/streaming/node-webrtc-peer');
 const fs = require('fs');
 const path = require('path');
 
@@ -96,6 +100,41 @@ describe('node stream origin', () => {
     }
     const payload = Buffer.concat(viewer.chunks.map((c) => Buffer.from(decodeMediaChunkPayload(c))));
     expect(payload.equals(fs.readFileSync(fixturePath))).toBe(true);
+  });
+
+  test('origin webrtc option forwards signed chunk via native factory', async () => {
+    const fake = createFakeNodeWebRTCBackend();
+    const factory = await createNodeWebRTCPeerFactory({ testBackend: fake });
+    const viewerAdapter = await factory.createNetworkAdapter('viewer-webrtc');
+    const transportViewer = createWebRTCDataChannelTransport(viewerAdapter);
+    const received = [];
+    transportViewer.onChunk((_, chunk) => received.push(chunk));
+
+    const bus = createInMemoryStreamSignalingBus();
+    const keys = testKeyPair('node-webrtc-origin');
+    const session = createStreamSession({
+      sessionId: 'node-webrtc',
+      broadcasterId: 'origin-webrtc',
+      mode: STREAM_ACCESS_MODES.PUBLIC
+    });
+
+    const origin = createNodeStreamOrigin({
+      session,
+      signingSecretKey: keys.signingSecretKey,
+      signingPublicKey: keys.signingPublicKey,
+      bus,
+      mediaIngest: createFileMediaIngest({ filePath: fixturePath, chunkBytes: 16 }),
+      webrtc: { factory, peerIds: ['viewer-webrtc'] }
+    });
+
+    const publish = origin.start();
+    await publish;
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(received.length).toBeGreaterThan(0);
+    expect(verifyMediaChunk(received[0], 'node-webrtc')).toBe(true);
+    transportViewer.destroy();
+    await factory.close();
   });
 
   test('origin forwards sealed chunk over WebRTCDataChannelTransport', async () => {

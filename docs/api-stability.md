@@ -62,9 +62,9 @@ All events documented in `openapi-like.json` → `events`, `warningSubtypes`, `q
 3. **Support window** — deprecated APIs remain functional for at least **one full minor release** (e.g. deprecated in 1.1, removed no earlier than 2.0).
 4. **Remove** — only in a major release (2.0+), with migration notes.
 
-No public APIs are currently deprecated as of v1.17.0.
+No public APIs are currently deprecated as of v1.18.0.
 
-Experimental streaming helpers (`STREAMING_API_EXPERIMENTAL`, `createStreamSession`, signed and sealed private media chunks, `createPublicStreamBroadcaster`, WebRTC signaling/transport, related public-path helpers, **`runScaleSimulation`**, **WebCodecs capture** (`createBrowserCaptureSource`, `createWebCodecsDecoder`), and **`dignity.js/node` origin ingest**) may change without a major release until the full browser media pipeline ships ([#152](https://github.com/jose-compu/dignity.js/issues/152)).
+Experimental streaming helpers (`STREAMING_API_EXPERIMENTAL`, `createStreamSession`, signed and sealed private media chunks, `createPublicStreamBroadcaster`, WebRTC signaling/transport, related public-path helpers, **`runScaleSimulation`**, **WebCodecs capture** (`createBrowserCaptureSource`, `createWebCodecsDecoder`), **`dignity.js/node` origin ingest**, and **`createNodeWebRTCPeerFactory` / `createNodeStreamOrigin({ webrtc })`**) may change without a major release until the full browser media pipeline ships ([#152](https://github.com/jose-compu/dignity.js/issues/152)).
 
 ## Internal and non-guaranteed surfaces
 

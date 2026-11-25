@@ -1,6 +1,6 @@
 {
   "name": "dignity.js",
-  "version": "1.17.0",
+  "version": "1.18.0",
   "description": "The scalable data layer of the decentralized browser application ecosystem.",
   "homepage": "https://dignity.js.org/",
   "repository": {
@@ -78,6 +78,7 @@
     "example:node-stream": "node examples/node-stream-origin.js",
     "example:ingest-mpegts": "node examples/node-ingest-mpegts.js",
     "example:ingest-whip": "node examples/node-ingest-whip.js",
+    "example:node-webrtc": "node examples/node-webrtc-origin.js",
     "example:node-framed-stream": "node examples/node-framed-stream-origin.js",
     "example:node-private-stream": "node examples/node-private-stream-origin.js",
     "example:adaptive-layer": "node examples/adaptive-layer-sim.js",
@@ -96,10 +97,18 @@
   ],
   "license": "Apache-2.0",
   "peerDependencies": {
-    "react": ">=18"
+    "react": ">=18",
+    "node-datachannel": ">=0.33.0",
+    "werift": ">=0.28.0"
   },
   "peerDependenciesMeta": {
     "react": {
+      "optional": true
+    },
+    "node-datachannel": {
+      "optional": true
+    },
+    "werift": {
       "optional": true
     }
   },

@@ -111,6 +111,44 @@ declare module 'dignity.js/node' {
     handleRequest(req: import('http').IncomingMessage, res: import('http').ServerResponse): Promise<void>;
   };
 
+  export const NODE_WEBRTC_PEER_LIBRARY_MISSING: string;
+
+  export class NodeWebRTCPeerLibraryMissingError extends Error {
+    code: string;
+    triedPackages: string[];
+  }
+
+  export class NodeWebRTCNetworkAdapter {
+    nodeId: string | null;
+    start(nodeId?: string): Promise<void>;
+    stop(): Promise<void>;
+    connectToPeer(remotePeerId: string): Promise<void>;
+    listOpenPeerIds(): string[];
+    on(event: 'message' | 'peer-connected', handler: (...args: unknown[]) => void): this;
+    onMessage(handler: (message: object) => void): void;
+    offMessage(handler: (message: object) => void): void;
+    send(peerId: string, message: object): Promise<void>;
+    sendToPeers(message: object, peerIds?: string[]): Promise<void>;
+    broadcast(message: object): Promise<void>;
+  }
+
+  export class NodeWebRTCPeerFactory {
+    backend: { name: string };
+    createWhipPeerFactory(): (
+      offerSdp: string,
+      ctx: { resourceId: string }
+    ) => Promise<WhipPeerFactoryResult>;
+    createNetworkAdapter(nodeId: string): Promise<NodeWebRTCNetworkAdapter>;
+    close(): Promise<void>;
+  }
+
+  export function createNodeWebRTCPeerFactory(options?: {
+    backend?: 'auto' | 'node-datachannel' | 'werift';
+    iceServers?: string[];
+    loadModule?: (id: string) => Promise<unknown>;
+    testBackend?: unknown;
+  }): Promise<NodeWebRTCPeerFactory>;
+
   export class NodeStreamOrigin {
     constructor(options: {
       session: StreamSession;
@@ -120,6 +158,7 @@ declare module 'dignity.js/node' {
       mediaIngest?: NodeMediaIngest;
       ingest?: NodeIngestAdapter;
       dataChannelTransport?: WebRTCDataChannelTransport;
+      webrtc?: 'auto' | { factory?: NodeWebRTCPeerFactory | (() => Promise<NodeWebRTCPeerFactory>); peerIds?: string[]; connectOnStart?: boolean };
       dataChannelPeerIds?: string[];
       directViewerIds?: string[];
       broadcasterEncryptionSecretKey?: Uint8Array;

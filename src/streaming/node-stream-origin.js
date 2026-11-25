@@ -13,6 +13,8 @@ const {
 } = require('./private-sender-key-epoch');
 const { DEFAULT_LAYER_ID } = require('./media-chunk');
 const { normalizeSimulcastLayers, createLayerSequenceTracker } = require('./simulcast-publish');
+const { createWebRTCDataChannelTransport } = require('./webrtc-stream-signaling');
+const { createNodeWebRTCPeerFactory } = require('./node-webrtc-peer');
 
 const PRIVATE_MODES = new Set([
   STREAM_ACCESS_MODES.PRIVATE_SINGLE,
@@ -306,6 +308,7 @@ class NodeStreamOrigin {
    * @param {import('./node-media-ingest').ReturnType<typeof import('./node-media-ingest').createFileMediaIngest>} [options.mediaIngest]
    * @param {{ stop?: () => void, frames: () => AsyncIterable<unknown> }} [options.ingest]
    * @param {import('./webrtc-stream-signaling').WebRTCDataChannelTransport} [options.dataChannelTransport]
+   * @param {'auto' | { factory?: import('./node-webrtc-peer').NodeWebRTCPeerFactory | (() => Promise<import('./node-webrtc-peer').NodeWebRTCPeerFactory>), peerIds?: string[], connectOnStart?: boolean }} [options.webrtc]
    * @param {string[]} [options.dataChannelPeerIds]
    * @param {string[]} [options.directViewerIds]
    * @param {Uint8Array} [options.broadcasterEncryptionSecretKey]
@@ -320,6 +323,7 @@ class NodeStreamOrigin {
     mediaIngest,
     ingest,
     dataChannelTransport,
+    webrtc,
     dataChannelPeerIds = [],
     directViewerIds = [],
     broadcasterEncryptionSecretKey,
@@ -333,7 +337,18 @@ class NodeStreamOrigin {
 
     this.mediaIngest = source;
     this.dataChannelTransport = dataChannelTransport;
-    this.dataChannelPeerIds = [...dataChannelPeerIds];
+    this._webrtc = webrtc;
+    this._webrtcFactory = null;
+    this._webrtcAdapter = null;
+    this.dataChannelPeerIds = [
+      ...dataChannelPeerIds,
+      ...(webrtc && typeof webrtc === 'object' && Array.isArray(webrtc.peerIds) ? webrtc.peerIds : [])
+    ];
+    if (webrtc && !dataChannelTransport) {
+      if (this.dataChannelPeerIds.length === 0) {
+        throw new TypeError('dataChannelPeerIds or webrtc.peerIds is required when webrtc is enabled');
+      }
+    }
     this._running = false;
     this.session = session;
 
@@ -382,11 +397,42 @@ class NodeStreamOrigin {
     this._privateBroadcaster.rotateRecipients(removeRecipientSigningPublicKey);
   }
 
+  async _ensureWebRtcTransport() {
+    if (this.dataChannelTransport || !this._webrtc) {
+      return;
+    }
+    let factory =
+      this._webrtc === 'auto'
+        ? await createNodeWebRTCPeerFactory({ backend: 'auto' })
+        : this._webrtc.factory;
+    if (typeof factory === 'function') {
+      factory = await factory();
+    }
+    if (!factory || typeof factory.createNetworkAdapter !== 'function') {
+      throw new TypeError('webrtc.factory must be a NodeWebRTCPeerFactory or async factory function');
+    }
+    this._webrtcFactory = factory;
+    const nodeId = this.session.broadcasterId;
+    const adapter = await factory.createNetworkAdapter(nodeId);
+    const connectOnStart =
+      this._webrtc === 'auto' ||
+      (typeof this._webrtc === 'object' && this._webrtc.connectOnStart !== false);
+    if (connectOnStart) {
+      for (const peerId of this.dataChannelPeerIds) {
+        await adapter.connectToPeer(peerId);
+      }
+    }
+    this._webrtcAdapter = adapter;
+    this.dataChannelTransport = createWebRTCDataChannelTransport(adapter);
+  }
+
   async start() {
     if (this._running) {
       return;
     }
     this._running = true;
+
+    await this._ensureWebRtcTransport();
 
     if (this.broadcaster) {
       this.broadcaster.announce();
@@ -472,6 +518,18 @@ class NodeStreamOrigin {
 
   stop() {
     this._running = false;
+    if (this.dataChannelTransport && typeof this.dataChannelTransport.destroy === 'function') {
+      this.dataChannelTransport.destroy();
+      this.dataChannelTransport = null;
+    }
+    if (this._webrtcAdapter && typeof this._webrtcAdapter.stop === 'function') {
+      this._webrtcAdapter.stop();
+      this._webrtcAdapter = null;
+    }
+    if (this._webrtcFactory && typeof this._webrtcFactory.close === 'function') {
+      this._webrtcFactory.close();
+      this._webrtcFactory = null;
+    }
     if (this.mediaIngest && typeof this.mediaIngest.stop === 'function') {
       this.mediaIngest.stop();
     }

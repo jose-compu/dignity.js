@@ -6,9 +6,11 @@
 const mediaIngest = require('../streaming/node-media-ingest');
 const streamOrigin = require('../streaming/node-stream-origin');
 const ingestAdapters = require('../streaming/ingest');
+const nodeWebRtcPeer = require('../streaming/node-webrtc-peer');
 
 module.exports = {
   ...mediaIngest,
   ...streamOrigin,
-  ...ingestAdapters
+  ...ingestAdapters,
+  ...nodeWebRtcPeer
 };

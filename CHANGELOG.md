@@ -1,5 +1,9 @@
 # Changelog
 
+## dignity.js 1.18.0
+
+Optional native WebRTC peer for Node.js (milestone 10, #152): `createNodeWebRTCPeerFactory` on `dignity.js/node` with runtime `import()` of **node-datachannel** (MPL-2.0, preferred) or **werift** (MIT); optional `peerDependencies` only — `npm install dignity.js` does not install a WebRTC stack. `NodeWebRTCNetworkAdapter` matches `WebRTCDataChannelTransport` / WHIP `peerFactory` shapes; `createNodeStreamOrigin({ webrtc: 'auto' | { factory, peerIds } })` mirrors signed (and sealed) chunks over SCTP data channels. Example `npm run example:node-webrtc`; integration test gated by `RUN_NODE_WEBRTC_TESTS=1`. **Still deferred:** RFC 8888 TWCC on the wire, AV1 SVC, Opus/AudioEncoder and MSE from #159, WHIP RTP depacketization to frames without an app-side bridge.
+
 ## dignity.js 1.17.0
 
 Browser capture and decode via WebCodecs (milestone 9, #152, #159): `detectWebCodecsSupport`, `selectVideoEncoderConfig`, `createBrowserCaptureSource` (`MediaStream` → `VideoEncoder` → signed media chunk v3), and `createWebCodecsDecoder` (verified chunks → `VideoDecoder`, keyframe gate on layer switch). Playground `stream-webcodecs-capture`; browser e2e includes `stream-capacity-relays` and WebCodecs capture (Chromium fake media; skips when WebCodecs is missing). H.264 preferred, VP8 fallback; optional simulcast encoders per ladder layer. **Deferred:** `AudioEncoder` / Opus path, MSE playout, native Node WebRTC peer.
