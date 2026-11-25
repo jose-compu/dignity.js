@@ -38024,6 +38024,108 @@ var require_webrtc_stream_signaling = __commonJS({
   }
 });
 
+// src/streaming/private-sender-key-epoch.js
+var require_private_sender_key_epoch = __commonJS({
+  "src/streaming/private-sender-key-epoch.js"(exports, module) {
+    var nacl3 = require_nacl_fast();
+    var naclUtil3 = require_nacl_util();
+    function wrapSenderKeyForRecipients(senderKey, bundles, broadcasterEncryptionSecretKey, broadcasterEncryptionPublicKey) {
+      if (!(senderKey instanceof Uint8Array) || senderKey.length !== nacl3.secretbox.keyLength) {
+        throw new TypeError("senderKey must be a secretbox key Uint8Array");
+      }
+      if (!(broadcasterEncryptionSecretKey instanceof Uint8Array)) {
+        throw new TypeError("broadcasterEncryptionSecretKey must be a Uint8Array");
+      }
+      if (typeof broadcasterEncryptionPublicKey !== "string" || broadcasterEncryptionPublicKey.trim() === "") {
+        throw new TypeError("broadcasterEncryptionPublicKey must be a non-empty string");
+      }
+      return bundles.map((bundle) => {
+        const wrapNonce = nacl3.randomBytes(nacl3.box.nonceLength);
+        const wrapped = nacl3.box(
+          senderKey,
+          wrapNonce,
+          naclUtil3.decodeBase64(bundle.encryptionPublicKey),
+          broadcasterEncryptionSecretKey
+        );
+        if (!wrapped) {
+          throw new Error(`Failed to wrap sender key for recipient ${bundle.signingPublicKey}`);
+        }
+        return {
+          recipientSigningPublicKey: bundle.signingPublicKey,
+          wrapNonceBase64: naclUtil3.encodeBase64(wrapNonce),
+          wrappedSenderKeyBase64: naclUtil3.encodeBase64(wrapped),
+          senderEncryptionPublicKey: broadcasterEncryptionPublicKey.trim()
+        };
+      });
+    }
+    function createPrivateSenderKeyEpoch({
+      recipientPublicBundles,
+      broadcasterEncryptionSecretKey,
+      broadcasterEncryptionPublicKey,
+      epoch = 1
+    }) {
+      if (!Array.isArray(recipientPublicBundles) || recipientPublicBundles.length === 0) {
+        throw new TypeError("recipientPublicBundles must be a non-empty array");
+      }
+      if (typeof epoch !== "number" || !Number.isInteger(epoch) || epoch < 1) {
+        throw new TypeError("epoch must be a positive integer");
+      }
+      const senderKey = nacl3.randomBytes(nacl3.secretbox.keyLength);
+      const senderKeyWraps = wrapSenderKeyForRecipients(
+        senderKey,
+        recipientPublicBundles,
+        broadcasterEncryptionSecretKey,
+        broadcasterEncryptionPublicKey
+      );
+      const recipientSigningPublicKeys = recipientPublicBundles.map((b) => b.signingPublicKey.trim());
+      return Object.freeze({
+        epoch,
+        senderKey,
+        senderKeyWraps,
+        recipientSigningPublicKeys: Object.freeze([...recipientSigningPublicKeys])
+      });
+    }
+    function rotatePrivateSenderKeyEpoch(currentEpoch, {
+      removeRecipientSigningPublicKey,
+      recipientPublicBundles,
+      broadcasterEncryptionSecretKey,
+      broadcasterEncryptionPublicKey
+    }) {
+      if (!currentEpoch || typeof currentEpoch !== "object") {
+        throw new TypeError("currentEpoch must be a PrivateSenderKeyEpoch");
+      }
+      if (typeof removeRecipientSigningPublicKey !== "string" || removeRecipientSigningPublicKey.trim() === "") {
+        throw new TypeError("removeRecipientSigningPublicKey must be a non-empty string");
+      }
+      const removed = removeRecipientSigningPublicKey.trim();
+      if (!currentEpoch.recipientSigningPublicKeys.includes(removed)) {
+        const error2 = new Error("Recipient to remove is not in the current sender-key epoch roster");
+        error2.code = "PRIVATE_SENDER_KEY_EPOCH_RECIPIENT_NOT_LISTED";
+        throw error2;
+      }
+      if (!Array.isArray(recipientPublicBundles) || recipientPublicBundles.length === 0) {
+        throw new TypeError("recipientPublicBundles must be a non-empty array after rotation");
+      }
+      for (const bundle of recipientPublicBundles) {
+        if (bundle.signingPublicKey.trim() === removed) {
+          throw new Error("recipientPublicBundles must not include the removed recipient");
+        }
+      }
+      return createPrivateSenderKeyEpoch({
+        epoch: currentEpoch.epoch + 1,
+        recipientPublicBundles,
+        broadcasterEncryptionSecretKey,
+        broadcasterEncryptionPublicKey
+      });
+    }
+    module.exports = {
+      wrapSenderKeyForRecipients,
+      createPrivateSenderKeyEpoch,
+      rotatePrivateSenderKeyEpoch
+    };
+  }
+});
+
 // src/streaming/private-media-chunk.js
 var require_private_media_chunk = __commonJS({
   "src/streaming/private-media-chunk.js"(exports, module) {
@@ -38031,6 +38133,12 @@ var require_private_media_chunk = __commonJS({
     var naclUtil3 = require_nacl_util();
     var { STREAM_ACCESS_MODES, validateStreamAccessConfig } = require_access_modes();
     var { createSignedMediaChunk, verifyMediaChunk } = require_media_chunk();
+    var { wrapSenderKeyForRecipients } = require_private_sender_key_epoch();
+    var PRIVATE_CHUNK_ACCESS_MODES = /* @__PURE__ */ new Set([
+      STREAM_ACCESS_MODES.PRIVATE_SINGLE,
+      STREAM_ACCESS_MODES.PRIVATE_LIST,
+      STREAM_ACCESS_MODES.COMBINED
+    ]);
     function normalizeRecipientBundles(recipientPublicBundles) {
       if (!Array.isArray(recipientPublicBundles) || recipientPublicBundles.length === 0) {
         throw new TypeError("recipientPublicBundles must be a non-empty array");
@@ -38063,13 +38171,16 @@ var require_private_media_chunk = __commonJS({
       broadcasterEncryptionSecretKey,
       broadcasterEncryptionPublicKey,
       recipientPublicBundles,
+      privateSenderKeyEpoch,
       sequence,
       timestampMs,
       layerId,
       mimeType
     }) {
-      if (accessMode !== STREAM_ACCESS_MODES.PRIVATE_SINGLE && accessMode !== STREAM_ACCESS_MODES.PRIVATE_LIST) {
-        throw new Error("sealPrivateMediaChunk supports only private-single and private-list access modes");
+      if (!PRIVATE_CHUNK_ACCESS_MODES.has(accessMode)) {
+        throw new Error(
+          "sealPrivateMediaChunk supports only private-single, private-list, and combined access modes"
+        );
       }
       if (!(plaintextBytes instanceof Uint8Array)) {
         throw new TypeError("plaintextBytes must be a Uint8Array");
@@ -38083,30 +38194,36 @@ var require_private_media_chunk = __commonJS({
       const bundles = normalizeRecipientBundles(recipientPublicBundles);
       const recipientIds = bundles.map((b) => b.signingPublicKey);
       validateStreamAccessConfig(accessMode, { privateRecipients: recipientIds });
-      const senderKey = nacl3.randomBytes(nacl3.secretbox.keyLength);
+      let senderKey;
+      let senderKeyWraps;
+      let senderKeyEpoch;
+      if (privateSenderKeyEpoch != null) {
+        if (typeof privateSenderKeyEpoch !== "object") {
+          throw new TypeError("privateSenderKeyEpoch must be an object when provided");
+        }
+        if (!(privateSenderKeyEpoch.senderKey instanceof Uint8Array)) {
+          throw new TypeError("privateSenderKeyEpoch.senderKey must be a Uint8Array");
+        }
+        if (!Array.isArray(privateSenderKeyEpoch.senderKeyWraps)) {
+          throw new TypeError("privateSenderKeyEpoch.senderKeyWraps must be an array");
+        }
+        senderKey = privateSenderKeyEpoch.senderKey;
+        senderKeyWraps = privateSenderKeyEpoch.senderKeyWraps;
+        senderKeyEpoch = privateSenderKeyEpoch.epoch;
+      } else {
+        senderKey = nacl3.randomBytes(nacl3.secretbox.keyLength);
+        senderKeyWraps = wrapSenderKeyForRecipients(
+          senderKey,
+          bundles,
+          broadcasterEncryptionSecretKey,
+          broadcasterEncryptionPublicKey
+        );
+      }
       const secretboxNonce = nacl3.randomBytes(nacl3.secretbox.nonceLength);
       const ciphertext = nacl3.secretbox(plaintextBytes, secretboxNonce, senderKey);
       if (!ciphertext) {
         throw new Error("Failed to seal private media chunk payload");
       }
-      const senderKeyWraps = bundles.map((bundle) => {
-        const wrapNonce = nacl3.randomBytes(nacl3.box.nonceLength);
-        const wrapped = nacl3.box(
-          senderKey,
-          wrapNonce,
-          naclUtil3.decodeBase64(bundle.encryptionPublicKey),
-          broadcasterEncryptionSecretKey
-        );
-        if (!wrapped) {
-          throw new Error(`Failed to wrap sender key for recipient ${bundle.signingPublicKey}`);
-        }
-        return {
-          recipientSigningPublicKey: bundle.signingPublicKey,
-          wrapNonceBase64: naclUtil3.encodeBase64(wrapNonce),
-          wrappedSenderKeyBase64: naclUtil3.encodeBase64(wrapped),
-          senderEncryptionPublicKey: broadcasterEncryptionPublicKey.trim()
-        };
-      });
       const signed = createSignedMediaChunk({
         sessionId,
         broadcasterId,
@@ -38118,12 +38235,16 @@ var require_private_media_chunk = __commonJS({
         layerId,
         mimeType
       });
-      return {
+      const chunk = {
         ...signed,
         accessMode,
         secretboxNonceBase64: naclUtil3.encodeBase64(secretboxNonce),
         senderKeyWraps
       };
+      if (senderKeyEpoch != null) {
+        chunk.senderKeyEpoch = senderKeyEpoch;
+      }
+      return chunk;
     }
     function openPrivateMediaChunk(chunk, { recipientEncryptionSecretKey, recipientSigningPublicKey, verify = true }) {
       if (!chunk || typeof chunk !== "object") {
@@ -38136,7 +38257,7 @@ var require_private_media_chunk = __commonJS({
         throw new TypeError("recipientSigningPublicKey must be a non-empty string");
       }
       const mode = chunk.accessMode;
-      if (mode !== STREAM_ACCESS_MODES.PRIVATE_SINGLE && mode !== STREAM_ACCESS_MODES.PRIVATE_LIST) {
+      if (!PRIVATE_CHUNK_ACCESS_MODES.has(mode)) {
         throw new Error("chunk is not a private media chunk");
       }
       if (!chunk.secretboxNonceBase64 || !Array.isArray(chunk.senderKeyWraps)) {
@@ -38190,11 +38311,13 @@ var require_streaming = __commonJS({
     var publicStreamPath = require_public_stream_path();
     var webrtcSignaling = require_webrtc_stream_signaling();
     var privateMediaChunk = require_private_media_chunk();
+    var privateSenderKeyEpoch = require_private_sender_key_epoch();
     module.exports = {
       ...accessModes,
       ...streamSession,
       ...mediaChunk,
       ...privateMediaChunk,
+      ...privateSenderKeyEpoch,
       ...publicStreamPath,
       ...webrtcSignaling,
       STREAMING_API_EXPERIMENTAL: true
@@ -38341,6 +38464,8 @@ var require_src = __commonJS({
       decodeMediaChunkPayload,
       sealPrivateMediaChunk,
       openPrivateMediaChunk,
+      createPrivateSenderKeyEpoch,
+      rotatePrivateSenderKeyEpoch,
       InMemoryStreamSignalingBus,
       createInMemoryStreamSignalingBus,
       WebRTCStreamSignalingBus,
@@ -38458,6 +38583,8 @@ var require_src = __commonJS({
       decodeMediaChunkPayload,
       sealPrivateMediaChunk,
       openPrivateMediaChunk,
+      createPrivateSenderKeyEpoch,
+      rotatePrivateSenderKeyEpoch,
       InMemoryStreamSignalingBus,
       createInMemoryStreamSignalingBus,
       WebRTCStreamSignalingBus,
@@ -39732,7 +39859,7 @@ function Lobby({
       emptyText: "No finished games yet.",
       onOpen: handleOpenGame
     }
-  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.5.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
+  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.6.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
       id: usernameInputId,

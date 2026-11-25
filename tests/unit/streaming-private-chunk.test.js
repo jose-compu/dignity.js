@@ -2,7 +2,11 @@ const {
   STREAM_ACCESS_MODES,
   sealPrivateMediaChunk,
   openPrivateMediaChunk,
+  createPrivateSenderKeyEpoch,
+  rotatePrivateSenderKeyEpoch,
+  createSignedMediaChunk,
   verifyMediaChunk,
+  decodeMediaChunkPayload,
   deriveKeyPairFromCredentials,
   keyPairToPublicBundle
 } = require('../../src/index');
@@ -66,5 +70,141 @@ describe('private media chunks', () => {
       recipientSigningPublicKey: bobBundle.signingPublicKey
     });
     expect(new TextDecoder().decode(openedBob)).toBe('private-frame');
+  });
+
+  test('combined mode: public chunk readable; listed recipient opens private layer; spectator private open fails', async () => {
+    const broadcaster = await deriveKeyPairFromCredentials({ username: 'bc2', password: 'p1' });
+    const alice = await deriveKeyPairFromCredentials({ username: 'alice2', password: 'p2' });
+    const spectator = await deriveKeyPairFromCredentials({ username: 'spec2', password: 'p3' });
+
+    const bcBundle = keyPairToPublicBundle(broadcaster);
+    const aliceBundle = keyPairToPublicBundle(alice);
+
+    const sessionId = 'combined-1';
+    const publicPlain = new TextEncoder().encode('public-feed-bytes');
+    const privatePlain = new TextEncoder().encode('private-track-bytes');
+
+    const publicChunk = createSignedMediaChunk({
+      sessionId,
+      broadcasterId: 'bc-origin',
+      payloadBytes: publicPlain,
+      signingSecretKey: broadcaster.signing.secretKey,
+      signingPublicKey: bcBundle.signingPublicKey,
+      layerId: 'public'
+    });
+
+    expect(verifyMediaChunk(publicChunk, sessionId)).toBe(true);
+    expect(decodeMediaChunkPayload(publicChunk)).toEqual(publicPlain);
+
+    const privateChunk = sealPrivateMediaChunk({
+      accessMode: STREAM_ACCESS_MODES.COMBINED,
+      sessionId,
+      broadcasterId: 'bc-origin',
+      plaintextBytes: privatePlain,
+      signingSecretKey: broadcaster.signing.secretKey,
+      signingPublicKey: bcBundle.signingPublicKey,
+      broadcasterEncryptionSecretKey: broadcaster.encryption.secretKey,
+      broadcasterEncryptionPublicKey: bcBundle.encryptionPublicKey,
+      recipientPublicBundles: [aliceBundle],
+      layerId: 'private'
+    });
+
+    expect(verifyMediaChunk(privateChunk, sessionId)).toBe(true);
+
+    const opened = openPrivateMediaChunk(privateChunk, {
+      recipientEncryptionSecretKey: alice.encryption.secretKey,
+      recipientSigningPublicKey: aliceBundle.signingPublicKey
+    });
+    expect(new TextDecoder().decode(opened)).toBe('private-track-bytes');
+
+    expect(() =>
+      openPrivateMediaChunk(privateChunk, {
+        recipientEncryptionSecretKey: spectator.encryption.secretKey,
+        recipientSigningPublicKey: keyPairToPublicBundle(spectator).signingPublicKey
+      })
+    ).toThrow(/not authorized/i);
+
+    expect(verifyMediaChunk(privateChunk)).toBe(true);
+  });
+
+  test('sender-key epoch rotation drops removed recipient on later chunks only', async () => {
+    const broadcaster = await deriveKeyPairFromCredentials({ username: 'bc3', password: 'p1' });
+    const alice = await deriveKeyPairFromCredentials({ username: 'alice3', password: 'p2' });
+    const bob = await deriveKeyPairFromCredentials({ username: 'bob3', password: 'p3' });
+
+    const bcBundle = keyPairToPublicBundle(broadcaster);
+    const aliceBundle = keyPairToPublicBundle(alice);
+    const bobBundle = keyPairToPublicBundle(bob);
+
+    const encryptOpts = {
+      broadcasterEncryptionSecretKey: broadcaster.encryption.secretKey,
+      broadcasterEncryptionPublicKey: bcBundle.encryptionPublicKey
+    };
+
+    const epoch1 = createPrivateSenderKeyEpoch({
+      recipientPublicBundles: [aliceBundle, bobBundle],
+      ...encryptOpts
+    });
+
+    const plaintext = (n) => new TextEncoder().encode(`frame-${n}`);
+
+    const chunk1 = sealPrivateMediaChunk({
+      accessMode: STREAM_ACCESS_MODES.PRIVATE_LIST,
+      sessionId: 'rot-1',
+      broadcasterId: 'bc-origin',
+      plaintextBytes: plaintext(1),
+      signingSecretKey: broadcaster.signing.secretKey,
+      signingPublicKey: bcBundle.signingPublicKey,
+      recipientPublicBundles: [aliceBundle, bobBundle],
+      privateSenderKeyEpoch: epoch1,
+      sequence: 1,
+      ...encryptOpts
+    });
+
+    const epoch2 = rotatePrivateSenderKeyEpoch(epoch1, {
+      removeRecipientSigningPublicKey: bobBundle.signingPublicKey,
+      recipientPublicBundles: [aliceBundle],
+      ...encryptOpts
+    });
+
+    const chunk2 = sealPrivateMediaChunk({
+      accessMode: STREAM_ACCESS_MODES.PRIVATE_LIST,
+      sessionId: 'rot-1',
+      broadcasterId: 'bc-origin',
+      plaintextBytes: plaintext(2),
+      signingSecretKey: broadcaster.signing.secretKey,
+      signingPublicKey: bcBundle.signingPublicKey,
+      recipientPublicBundles: [aliceBundle],
+      privateSenderKeyEpoch: epoch2,
+      sequence: 2,
+      ...encryptOpts
+    });
+
+    expect(chunk1.senderKeyEpoch).toBe(1);
+    expect(chunk2.senderKeyEpoch).toBe(2);
+
+    const aliceOpen1 = openPrivateMediaChunk(chunk1, {
+      recipientEncryptionSecretKey: alice.encryption.secretKey,
+      recipientSigningPublicKey: aliceBundle.signingPublicKey
+    });
+    const bobOpen1 = openPrivateMediaChunk(chunk1, {
+      recipientEncryptionSecretKey: bob.encryption.secretKey,
+      recipientSigningPublicKey: bobBundle.signingPublicKey
+    });
+    expect(new TextDecoder().decode(aliceOpen1)).toBe('frame-1');
+    expect(new TextDecoder().decode(bobOpen1)).toBe('frame-1');
+
+    const aliceOpen2 = openPrivateMediaChunk(chunk2, {
+      recipientEncryptionSecretKey: alice.encryption.secretKey,
+      recipientSigningPublicKey: aliceBundle.signingPublicKey
+    });
+    expect(new TextDecoder().decode(aliceOpen2)).toBe('frame-2');
+
+    expect(() =>
+      openPrivateMediaChunk(chunk2, {
+        recipientEncryptionSecretKey: bob.encryption.secretKey,
+        recipientSigningPublicKey: bobBundle.signingPublicKey
+      })
+    ).toThrow(/not authorized/i);
   });
 });

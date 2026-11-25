@@ -65,9 +65,10 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Auto `connectToPeers` on create/update/delete replication (owner + collaborators)
 - Optional IndexedDB persistence for browser reload survival
 - Optional React hooks via `dignity.js/react`
-- **Live P2P AV streaming (v1.5.0)** — WebRTC signaling + data channel transport for public browser-origin streams; `sealPrivateMediaChunk` / `openPrivateMediaChunk` for `private-single` and `private-list` ([#152](https://github.com/jose-compu/dignity.js/issues/152)). Examples in the [playground](https://dignity.js.org/playground/).
+- **Live P2P AV streaming (v1.6.0)** — WebRTC signaling + data channel transport; public signed chunks plus `sealPrivateMediaChunk` / `openPrivateMediaChunk` for `private-single`, `private-list`, and `combined`; sender-key epoch rotation via `createPrivateSenderKeyEpoch` / `rotatePrivateSenderKeyEpoch` ([#152](https://github.com/jose-compu/dignity.js/issues/152)). Examples in the [playground](https://dignity.js.org/playground/).
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
+- **v1.6.0** — Combined public/private stream chunks, sender-key epoch rotation on recipient removal, playground `stream-combined-rotation` (#152 milestone 3 complete; next: Node.js origin, milestone 4)
 - **v1.5.0** — Sealed private stream chunks (`private-single`, `private-list`), playground browser CI fix, runbook streaming update (#152)
 - **v1.4.1** — WebRTC signaling + data channel transport for live streaming, playground stream examples, milestone 2 complete (#152)
 - **v1.3.2** — Browser console diagnostics stay off unless `localStorage.dignityDebug` is `1`

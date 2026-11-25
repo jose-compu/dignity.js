@@ -458,13 +458,38 @@ declare module 'dignity.js' {
   }
 
   export interface PrivateSignedMediaChunk extends SignedMediaChunk {
-    accessMode?: 'private-single' | 'private-list';
+    accessMode?: 'private-single' | 'private-list' | 'combined';
     secretboxNonceBase64?: string;
+    senderKeyEpoch?: number;
     senderKeyWraps?: PrivateSenderKeyWrap[];
   }
 
+  export interface PrivateSenderKeyEpoch {
+    epoch: number;
+    senderKey: Uint8Array;
+    senderKeyWraps: PrivateSenderKeyWrap[];
+    recipientSigningPublicKeys: string[];
+  }
+
+  export function createPrivateSenderKeyEpoch(options: {
+    recipientPublicBundles: Array<{ signingPublicKey: string; encryptionPublicKey: string }>;
+    broadcasterEncryptionSecretKey: Uint8Array;
+    broadcasterEncryptionPublicKey: string;
+    epoch?: number;
+  }): PrivateSenderKeyEpoch;
+
+  export function rotatePrivateSenderKeyEpoch(
+    currentEpoch: PrivateSenderKeyEpoch,
+    options: {
+      removeRecipientSigningPublicKey: string;
+      recipientPublicBundles: Array<{ signingPublicKey: string; encryptionPublicKey: string }>;
+      broadcasterEncryptionSecretKey: Uint8Array;
+      broadcasterEncryptionPublicKey: string;
+    }
+  ): PrivateSenderKeyEpoch;
+
   export function sealPrivateMediaChunk(options: {
-    accessMode: 'private-single' | 'private-list';
+    accessMode: 'private-single' | 'private-list' | 'combined';
     sessionId: string;
     broadcasterId: string;
     plaintextBytes: Uint8Array;
@@ -473,6 +498,7 @@ declare module 'dignity.js' {
     broadcasterEncryptionSecretKey: Uint8Array;
     broadcasterEncryptionPublicKey: string;
     recipientPublicBundles: Array<{ signingPublicKey: string; encryptionPublicKey: string }>;
+    privateSenderKeyEpoch?: PrivateSenderKeyEpoch;
     sequence?: number;
     timestampMs?: number;
     layerId?: string;
