@@ -56,9 +56,11 @@ async function benchmarkGossip(tiers) {
   const results = [];
 
   for (const tier of tiers) {
+    const nodeOptions = [process.env.NODE_OPTIONS, '--max-old-space-size=4096'].filter(Boolean).join(' ');
     const proc = spawnSync(process.execPath, [worker, JSON.stringify(tier)], {
       encoding: 'utf8',
-      maxBuffer: 16 * 1024 * 1024
+      maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, NODE_OPTIONS: nodeOptions }
     });
 
     if (proc.status !== 0) {
