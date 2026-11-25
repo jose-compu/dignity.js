@@ -9,6 +9,7 @@ const {
   WebCodecsNotSupportedError,
   selectVideoEncoderConfig,
   mimeTypeToDecoderCodec,
+  renditionEncoderDimensions,
   createBrowserCaptureSource,
   createWebCodecsDecoder,
   createSignedMediaChunk,
@@ -59,13 +60,17 @@ function createFakeVideoEncoder() {
 
     encode(frame, options = {}) {
       const data = new Uint8Array([0, 0, 0, 1, options.keyFrame ? 0xaa : 0xbb]);
+      const metadata =
+        options.keyFrame && options.withDescription
+          ? { decoderConfig: { description: new Uint8Array([1, 2, 3, 4]) } }
+          : {};
       this.handlers.output(
         new FakeEncodedVideoChunk({
           type: options.keyFrame ? 'key' : 'delta',
           timestamp: frame.timestamp != null ? frame.timestamp : 33_000,
           data
         }),
-        {}
+        metadata
       );
     }
 
@@ -140,6 +145,37 @@ describe('webcodecs support', () => {
     expect(support.missing).toContain('VideoEncoder');
   });
 
+  test('detectWebCodecsSupport reports full support when APIs are injectable', () => {
+    class Encoder {
+      static async isConfigSupported() {
+        return { supported: true };
+      }
+    }
+    class Processor {}
+    class Decoder {}
+    class AudioEnc {
+      static async isConfigSupported() {
+        return { supported: true };
+      }
+    }
+    const support = detectWebCodecsSupport({
+      VideoEncoder: Encoder,
+      VideoDecoder: Decoder,
+      MediaStreamTrackProcessor: Processor,
+      AudioEncoder: AudioEnc
+    });
+    expect(support.supported).toBe(true);
+    expect(support.missing).toEqual([]);
+    expect(support.AudioEncoder).toBe(AudioEnc);
+  });
+
+  test('detectWebCodecsSupport flags missing isConfigSupported on VideoEncoder', () => {
+    function Encoder() {}
+    const support = detectWebCodecsSupport({ VideoEncoder: Encoder, VideoDecoder: function D() {} });
+    expect(support.supported).toBe(false);
+    expect(support.missing).toContain('VideoEncoder.isConfigSupported');
+  });
+
   test('selectVideoEncoderConfig prefers H.264 when supported', async () => {
     const VideoEncoder = createFakeVideoEncoder();
     const VideoDecoder = createFakeVideoDecoder();
@@ -154,6 +190,7 @@ describe('webcodecs support', () => {
     expect(mimeTypeToDecoderCodec('video/webm;codecs=vp8')).toBe('vp8');
     expect(mimeTypeToDecoderCodec('video/webm;codecs=vp9')).toBe('vp9');
     expect(mimeTypeToDecoderCodec('')).toBe('vp8');
+    expect(mimeTypeToDecoderCodec('video/mp4;codecs=h264')).toBe('h264');
   });
 
   test('selectVideoEncoderConfig falls back to VP8 when H.264 unsupported', async () => {
@@ -165,6 +202,18 @@ describe('webcodecs support', () => {
     const support = { VideoEncoder: Vp8OnlyEncoder, missing: [], supported: true };
     const config = await selectVideoEncoderConfig(support, { width: 640, height: 360 });
     expect(config.codec).toBe('vp8');
+  });
+
+  test('renditionEncoderDimensions resolves ladder bitrates', () => {
+    const row = renditionEncoderDimensions('hd720', 'L1');
+    expect(row.width).toBe(1280);
+    expect(row.videoBitrateKbps).toBe(1800);
+  });
+
+  test('WebCodecsNotSupportedError lists missing APIs', () => {
+    const err = new WebCodecsNotSupportedError(['VideoEncoder', 'VideoDecoder']);
+    expect(err.missing).toEqual(['VideoEncoder', 'VideoDecoder']);
+    expect(err.name).toBe('WebCodecsNotSupportedError');
   });
 
   test('selectVideoEncoderConfig throws when no codec is supported', async () => {
@@ -181,6 +230,59 @@ describe('webcodecs support', () => {
 });
 
 describe('createBrowserCaptureSource', () => {
+  test('throws when options object is omitted', async () => {
+    await expect(createBrowserCaptureSource(null)).rejects.toThrow(/options object is required/);
+  });
+
+  test('throws when required signing fields are missing', async () => {
+    const VideoEncoder = createFakeVideoEncoder();
+    const support = { VideoEncoder, missing: [], supported: true };
+    await expect(
+      createBrowserCaptureSource({
+        mediaStream: fakeMediaStream(),
+        sessionId: '',
+        broadcasterId: 'bc',
+        signingSecretKey: new Uint8Array(64),
+        signingPublicKey: '',
+        VideoEncoder,
+        support
+      })
+    ).rejects.toThrow(/sessionId, broadcasterId/);
+  });
+
+  test('throws when media stream has no video track', async () => {
+    const VideoEncoder = createFakeVideoEncoder();
+    const support = { VideoEncoder, missing: [], supported: true };
+    const keys = signingKeys();
+    await expect(
+      createBrowserCaptureSource({
+        mediaStream: { getVideoTracks: () => [] },
+        sessionId: 'x',
+        broadcasterId: 'bc',
+        ...keys,
+        VideoEncoder,
+        support
+      })
+    ).rejects.toThrow(/no video track/);
+  });
+
+  test('rejects unknown simulcast layer ids', async () => {
+    const VideoEncoder = createFakeVideoEncoder();
+    const support = { VideoEncoder, missing: [], supported: true };
+    const keys = signingKeys();
+    await expect(
+      createBrowserCaptureSource({
+        mediaStream: fakeMediaStream(),
+        sessionId: 'x',
+        broadcasterId: 'bc',
+        ...keys,
+        simulcastLayerIds: ['LX'],
+        VideoEncoder,
+        support
+      })
+    ).rejects.toThrow(/Unknown simulcast layerId/);
+  });
+
   test('throws WebCodecsNotSupportedError when encoders are missing', async () => {
     const keys = signingKeys();
     await expect(
@@ -221,6 +323,38 @@ describe('createBrowserCaptureSource', () => {
     expect(chunk.layerId).toBe('L0');
     expect(chunk.rendition.profile).toBe('hd720');
     expect(verifyMediaChunk(chunk, 'wc-sess')).toBe(true);
+    expect(chunk.codecDescriptionBase64).toBeUndefined();
+    source.stop();
+  });
+
+  test('attaches codecDescriptionBase64 from encoder metadata on keyframes', async () => {
+    const BaseEncoder = createFakeVideoEncoder();
+    class EncoderWithMeta extends BaseEncoder {
+      encode(frame, options = {}) {
+        const data = new Uint8Array([0xaa]);
+        this.handlers.output(
+          new FakeEncodedVideoChunk({ type: 'key', timestamp: 33_000, data }),
+          { decoderConfig: { description: new Uint8Array([1, 2, 3, 4]) } }
+        );
+      }
+    }
+    const VideoEncoder = EncoderWithMeta;
+    const support = { VideoEncoder, missing: [], supported: true };
+    const keys = signingKeys();
+    const frames = [{ timestamp: 33_000, close() {} }];
+
+    const source = await createBrowserCaptureSource({
+      mediaStream: fakeMediaStream(),
+      sessionId: 'desc-sess',
+      broadcasterId: 'bc',
+      ...keys,
+      maxFrames: 1,
+      VideoEncoder,
+      MediaStreamTrackProcessor: fakeTrackProcessor(frames),
+      support
+    });
+    await source.start();
+    expect(source.chunks[0].codecDescriptionBase64).toBeDefined();
     source.stop();
   });
 
@@ -256,6 +390,63 @@ describe('createBrowserCaptureSource', () => {
     source.stop();
   });
 
+  test('encodes via canvas fallback when MediaStreamTrackProcessor is absent', async () => {
+    const VideoEncoder = createFakeVideoEncoder();
+    const support = { VideoEncoder, missing: [], supported: true };
+    const keys = signingKeys();
+    const OriginalVideoFrame = global.VideoFrame;
+    global.VideoFrame = class VF {
+      constructor() {
+        this.timestamp = 1000;
+      }
+      close() {}
+    };
+
+    const videoEl = {
+      srcObject: null,
+      muted: false,
+      playsInline: false,
+      videoWidth: 640,
+      videoHeight: 480,
+      play: () => Promise.resolve(),
+      requestVideoFrameCallback(cb) {
+        setTimeout(() => cb(1, { width: 640, height: 480 }), 0);
+        return 1;
+      },
+      cancelVideoFrameCallback() {}
+    };
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext() {
+        return { drawImage() {} };
+      }
+    };
+
+    try {
+      const source = await createBrowserCaptureSource({
+        mediaStream: fakeMediaStream(),
+        sessionId: 'canvas',
+        broadcasterId: 'bc',
+        ...keys,
+        maxFrames: 1,
+        VideoEncoder,
+        VideoFrame: global.VideoFrame,
+        videoElement: videoEl,
+        canvasElement: canvas,
+        requestVideoFrameCallback: (...args) => videoEl.requestVideoFrameCallback(...args),
+        support
+      });
+
+      await source.start();
+      await new Promise((r) => setTimeout(r, 30));
+      source.stop();
+      expect(source.chunks.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      global.VideoFrame = OriginalVideoFrame;
+    }
+  });
+
   test('requires canvas fallback dependencies when track processor is missing', async () => {
     const VideoEncoder = createFakeVideoEncoder();
     const support = { VideoEncoder, missing: [], supported: true };
@@ -276,6 +467,21 @@ describe('createBrowserCaptureSource', () => {
 });
 
 describe('createWebCodecsDecoder', () => {
+  test('requires onFrame callback', () => {
+    expect(() => createWebCodecsDecoder({})).toThrow(/onFrame/);
+  });
+
+  test('rejects invalid chunk objects', () => {
+    const VideoDecoder = createFakeVideoDecoder();
+    const decoder = createWebCodecsDecoder({
+      onFrame: () => {},
+      VideoDecoder,
+      support: { VideoDecoder, missing: [], supported: true }
+    });
+    expect(() => decoder.feedChunk(null)).toThrow(/chunk is required/);
+    decoder.close();
+  });
+
   test('waits for keyframe after layer switch', () => {
     const decoded = [];
     const keys = signingKeys();
@@ -373,6 +579,141 @@ describe('createWebCodecsDecoder', () => {
     });
 
     expect(() => decoder.feedChunk(bad, { sessionId: 'dec' })).toThrow(/Invalid media chunk signature/);
+    decoder.close();
+  });
+
+  test('uses custom drawFrame when provided', () => {
+    const custom = [];
+    const canvas = {};
+    const VideoDecoder = createFakeVideoDecoder();
+    const keys = signingKeys();
+    const decoder = createWebCodecsDecoder({
+      canvas,
+      drawFrame: (c, frame) => custom.push(frame.width),
+      onFrame: () => {},
+      VideoDecoder,
+      EncodedVideoChunk: FakeEncodedVideoChunk,
+      support: { VideoDecoder, missing: [], supported: true }
+    });
+    decoder.feedChunk(
+      createSignedMediaChunk({
+        sessionId: 'dec',
+        broadcasterId: 'bc',
+        ...keys,
+        layerId: 'L0',
+        keyframe: true,
+        timestampMs: 3,
+        mimeType: 'video/webm;codecs=vp8',
+        payloadBytes: new Uint8Array([8])
+      }),
+      { sessionId: 'dec' }
+    );
+    expect(custom).toEqual([640]);
+    decoder.close();
+  });
+
+  test('throws WebCodecsNotSupportedError when VideoDecoder is absent', () => {
+    expect(() =>
+      createWebCodecsDecoder({
+        onFrame: () => {},
+        support: detectWebCodecsSupport({})
+      })
+    ).toThrow(WebCodecsNotSupportedError);
+  });
+
+  test('renders decoded frames onto an optional canvas', () => {
+    const drawn = [];
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext() {
+        return {
+          drawImage(frame) {
+            drawn.push(frame.width);
+          }
+        };
+      }
+    };
+    const VideoDecoder = createFakeVideoDecoder();
+    const keys = signingKeys();
+    const decoder = createWebCodecsDecoder({
+      canvas,
+      onFrame: () => {},
+      VideoDecoder,
+      EncodedVideoChunk: FakeEncodedVideoChunk,
+      support: { VideoDecoder, missing: [], supported: true }
+    });
+    const chunk = createSignedMediaChunk({
+      sessionId: 'dec',
+      broadcasterId: 'bc',
+      ...keys,
+      layerId: 'L0',
+      keyframe: true,
+      timestampMs: 5,
+      mimeType: 'video/webm;codecs=vp8',
+      payloadBytes: new Uint8Array([2])
+    });
+    decoder.feedChunk(chunk, { sessionId: 'dec' });
+    expect(drawn).toEqual([640]);
+    decoder.close();
+  });
+
+  test('tolerates canvas without a 2d context', () => {
+    const canvas = { width: 0, height: 0, getContext: () => null };
+    const VideoDecoder = createFakeVideoDecoder();
+    const keys = signingKeys();
+    const decoder = createWebCodecsDecoder({
+      canvas,
+      onFrame: () => {},
+      VideoDecoder,
+      EncodedVideoChunk: FakeEncodedVideoChunk,
+      support: { VideoDecoder, missing: [], supported: true }
+    });
+    decoder.feedChunk(
+      createSignedMediaChunk({
+        sessionId: 'dec',
+        broadcasterId: 'bc',
+        ...keys,
+        layerId: 'L0',
+        keyframe: true,
+        timestampMs: 1,
+        mimeType: 'video/webm;codecs=vp8',
+        payloadBytes: new Uint8Array([1])
+      }),
+      { sessionId: 'dec' }
+    );
+    decoder.close();
+  });
+
+  test('feeds decoder with codecDescriptionBase64 from signed keyframe', () => {
+    let configuredDescriptionLength = 0;
+    class TrackingDecoder extends createFakeVideoDecoder() {
+      configure(config) {
+        super.configure(config);
+        configuredDescriptionLength = config.description ? config.description.byteLength : 0;
+      }
+    }
+    const keys = signingKeys();
+    const chunk = createSignedMediaChunk({
+      sessionId: 'dec',
+      broadcasterId: 'bc',
+      ...keys,
+      layerId: 'L0',
+      keyframe: true,
+      timestampMs: 12,
+      mimeType: 'video/mp4;codecs=avc1.42E01E',
+      payloadBytes: new Uint8Array([5, 6, 7])
+    });
+    chunk.codecDescriptionBase64 = Buffer.from([9, 8, 7, 6]).toString('base64');
+
+    const decoder = createWebCodecsDecoder({
+      onFrame: () => {},
+      VideoDecoder: TrackingDecoder,
+      EncodedVideoChunk: FakeEncodedVideoChunk,
+      support: { VideoDecoder: TrackingDecoder, missing: [], supported: true }
+    });
+    decoder.feedChunk(chunk, { sessionId: 'dec' });
+    expect(configuredDescriptionLength).toBe(4);
     decoder.close();
   });
 });
