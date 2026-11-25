@@ -13,9 +13,20 @@ const {
   createPublicStreamBroadcaster,
   createPublicStreamViewer,
   createPublicStreamRelay,
-  STREAM_ACCESS_MODES
+  createRelayLayerPolicy,
+  createReceiverReport,
+  DEFAULT_HEADROOM_FACTOR,
+  STREAM_ACCESS_MODES,
+  STREAM_MESSAGE_TYPES,
+  sealPrivateMediaChunk,
 } = require('../../src/streaming');
+const { deriveKeyPairFromCredentials, keyPairToPublicBundle } = require('../../src/index');
 const { createStreamSession } = require('../../src/streaming/stream-session');
+
+function layerBitrateBps(layerId) {
+  const row = resolveRendition(RENDITION_PROFILE_HD720, layerId);
+  return (row.videoBitrateKbps + row.audioBitrateKbps) * 1000 * DEFAULT_HEADROOM_FACTOR;
+}
 
 function testKeyPair(label) {
   const pair = nacl.sign.keyPair.fromSeed(nacl.hash(naclUtil.decodeUTF8(label)).slice(0, 32));
@@ -205,6 +216,188 @@ describe('public stream path (experimental)', () => {
 
     expect(viewer.chunks).toHaveLength(1);
     expect(naclUtil.encodeUTF8(decodeMediaChunkPayload(viewer.chunks[0]))).toBe('via-relay');
+  });
+
+  test('relay applies per-child layers on scripted reports', () => {
+    const bus = createInMemoryStreamSignalingBus();
+    const aliceKeys = testKeyPair('relay-degrade-origin');
+    const l0Bps = layerBitrateBps('L0');
+    const l1Bps = layerBitrateBps('L1');
+    const l2Bps = layerBitrateBps('L2');
+
+    const policy = createRelayLayerPolicy({
+      profile: RENDITION_PROFILE_HD720,
+      floorBps: l0Bps,
+      ceilingBps: l2Bps,
+      quietGainBps: 80_000,
+      initialEstimateBps: l2Bps
+    });
+
+    const broadcaster = createPublicStreamBroadcaster({
+      sessionId: 'degrade-session',
+      broadcasterId: 'alice',
+      signingSecretKey: aliceKeys.signingSecretKey,
+      signingPublicKey: aliceKeys.signingPublicKey,
+      bus,
+      initialViewerIds: ['relay-1']
+    });
+
+    const relay = createPublicStreamRelay({
+      relayId: 'relay-1',
+      upstreamId: 'alice',
+      sessionId: 'degrade-session',
+      broadcasterSigningPublicKey: aliceKeys.signingPublicKey,
+      broadcasterId: 'alice',
+      bus,
+      downstreamViewerIds: ['child-a', 'child-b'],
+      relayLayerPolicy: policy,
+      relayChildOptions: {
+        'child-a': { initialEstimateBps: l2Bps },
+        'child-b': { initialEstimateBps: l2Bps }
+      }
+    });
+
+    const viewerA = createPublicStreamViewer({
+      viewerId: 'child-a',
+      sessionId: 'degrade-session',
+      broadcasterId: 'alice',
+      broadcasterSigningPublicKey: aliceKeys.signingPublicKey,
+      bus
+    });
+    const viewerB = createPublicStreamViewer({
+      viewerId: 'child-b',
+      sessionId: 'degrade-session',
+      broadcasterId: 'alice',
+      broadcasterSigningPublicKey: aliceKeys.signingPublicKey,
+      bus
+    });
+
+    broadcaster.announce();
+    viewerA.requestJoin();
+    viewerB.requestJoin();
+
+    const publishLayer = (layerId, keyframe = false, sequenceOffset = 0) =>
+      broadcaster.publishChunk(naclUtil.decodeUTF8(`frame-${layerId}-${sequenceOffset}`), {
+        layerId,
+        profile: RENDITION_PROFILE_HD720,
+        keyframe: keyframe || layerId === 'L0',
+        timestampMs: 100 + sequenceOffset
+      });
+
+    publishLayer('L2', false, 0);
+    publishLayer('L1', false, 1);
+    publishLayer('L0', true, 2);
+
+    expect(viewerA.chunks).toHaveLength(3);
+    expect(viewerB.chunks).toHaveLength(3);
+
+    relay.observeChildReport(
+      'child-b',
+      createReceiverReport({
+        sessionId: 'degrade-session',
+        viewerId: 'child-b',
+        layerId: 'L2',
+        timestampMs: 1000,
+        intervalMs: 1000,
+        bytesReceived: Math.floor(l1Bps / 8) - 2000,
+        packetsReceived: 1000,
+        packetsLost: 0,
+        interarrivalDelayMs: 0
+      })
+    );
+    relay.observeChildReport(
+      'child-b',
+      createReceiverReport({
+        sessionId: 'degrade-session',
+        viewerId: 'child-b',
+        layerId: 'L1',
+        timestampMs: 1250,
+        intervalMs: 250,
+        bytesReceived: Math.floor(l0Bps / 8) - 5000,
+        packetsReceived: 1000,
+        packetsLost: 0,
+        interarrivalDelayMs: 0
+      })
+    );
+    relay.observeChildReport(
+      'child-b',
+      createReceiverReport({
+        sessionId: 'degrade-session',
+        viewerId: 'child-b',
+        layerId: 'L1',
+        timestampMs: 1500,
+        intervalMs: 250,
+        bytesReceived: Math.floor(l0Bps / 8) - 8000,
+        packetsReceived: 1000,
+        packetsLost: 0,
+        interarrivalDelayMs: 0
+      })
+    );
+
+    viewerA.chunks.length = 0;
+    viewerB.chunks.length = 0;
+    publishLayer('L2', false, 3);
+    publishLayer('L1', false, 4);
+    publishLayer('L0', true, 5);
+
+    expect(relay.getChildLayer('child-a')).toBe('L2');
+    expect(relay.getChildLayer('child-b')).toBe('L0');
+    expect(viewerA.chunks.map((c) => c.layerId).sort()).toEqual(['L0', 'L1', 'L2']);
+    expect(viewerB.chunks.map((c) => c.layerId).sort()).toEqual(['L0']);
+    for (const chunk of viewerB.chunks) {
+      expect(verifyMediaChunk(chunk, 'degrade-session')).toBe(true);
+    }
+  });
+
+  test('relay forwards sealed private chunk without opening payload', async () => {
+    const bus = createInMemoryStreamSignalingBus();
+    const broadcaster = await deriveKeyPairFromCredentials({ username: 'sealed-bc', password: 'demo' });
+    const alice = await deriveKeyPairFromCredentials({ username: 'sealed-alice', password: 'demo' });
+    const bcBundle = keyPairToPublicBundle(broadcaster);
+    const aliceBundle = keyPairToPublicBundle(alice);
+
+    createPublicStreamRelay({
+      relayId: 'relay-sealed',
+      upstreamId: 'alice-origin',
+      sessionId: 'sealed-relay',
+      broadcasterSigningPublicKey: bcBundle.signingPublicKey,
+      broadcasterId: 'alice-origin',
+      bus,
+      downstreamViewerIds: ['viewer-sealed']
+    });
+
+    const viewer = createPublicStreamViewer({
+      viewerId: 'viewer-sealed',
+      sessionId: 'sealed-relay',
+      broadcasterId: 'alice-origin',
+      broadcasterSigningPublicKey: bcBundle.signingPublicKey,
+      bus
+    });
+
+    const sealed = sealPrivateMediaChunk({
+      accessMode: STREAM_ACCESS_MODES.PRIVATE_SINGLE,
+      sessionId: 'sealed-relay',
+      broadcasterId: 'alice-origin',
+      plaintextBytes: naclUtil.decodeUTF8('sealed-frame'),
+      signingSecretKey: broadcaster.signing.secretKey,
+      signingPublicKey: bcBundle.signingPublicKey,
+      broadcasterEncryptionSecretKey: broadcaster.encryption.secretKey,
+      broadcasterEncryptionPublicKey: bcBundle.encryptionPublicKey,
+      recipientPublicBundles: [aliceBundle],
+      layerId: 'L1',
+      profile: RENDITION_PROFILE_HD720
+    });
+
+    expect(verifyMediaChunk(sealed, 'sealed-relay')).toBe(true);
+    bus.send('alice-origin', 'relay-sealed', {
+      messageType: STREAM_MESSAGE_TYPES.MEDIA_CHUNK,
+      chunk: sealed
+    });
+
+    expect(viewer.chunks).toHaveLength(1);
+    expect(viewer.chunks[0].layerId).toBe('L1');
+    expect(viewer.chunks[0].secretboxNonceBase64).toBeDefined();
+    expect(verifyMediaChunk(viewer.chunks[0], 'sealed-relay')).toBe(true);
   });
 
   test('non-public session cannot use public broadcaster helper', () => {
