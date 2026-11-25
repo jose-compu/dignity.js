@@ -8,7 +8,9 @@ const {
   verifyMediaChunk,
   decodeMediaChunkPayload,
   deriveKeyPairFromCredentials,
-  keyPairToPublicBundle
+  keyPairToPublicBundle,
+  RENDITION_PROFILE_HD720,
+  MEDIA_CHUNK_VERSION
 } = require('../../src/index');
 
 describe('private media chunks', () => {
@@ -206,5 +208,37 @@ describe('private media chunks', () => {
         recipientSigningPublicKey: bobBundle.signingPublicKey
       })
     ).toThrow(/not authorized/i);
+  });
+
+  test('sealed chunk carries signed rendition on version 3', async () => {
+    const broadcaster = await deriveKeyPairFromCredentials({ username: 'bc-rend', password: 'p1' });
+    const alice = await deriveKeyPairFromCredentials({ username: 'alice-rend', password: 'p2' });
+    const bcBundle = keyPairToPublicBundle(broadcaster);
+    const aliceBundle = keyPairToPublicBundle(alice);
+    const plaintext = new TextEncoder().encode('sealed-rendition');
+
+    const chunk = sealPrivateMediaChunk({
+      accessMode: STREAM_ACCESS_MODES.PRIVATE_SINGLE,
+      sessionId: 'rend-priv',
+      broadcasterId: 'bc',
+      plaintextBytes: plaintext,
+      signingSecretKey: broadcaster.signing.secretKey,
+      signingPublicKey: bcBundle.signingPublicKey,
+      broadcasterEncryptionSecretKey: broadcaster.encryption.secretKey,
+      broadcasterEncryptionPublicKey: bcBundle.encryptionPublicKey,
+      recipientPublicBundles: [aliceBundle],
+      layerId: 'L1',
+      profile: RENDITION_PROFILE_HD720,
+      keyframe: true
+    });
+
+    expect(chunk.version).toBe(MEDIA_CHUNK_VERSION);
+    expect(chunk.rendition).toMatchObject({ profile: RENDITION_PROFILE_HD720, videoBitrateKbps: 1800 });
+    expect(verifyMediaChunk(chunk)).toBe(true);
+    const opened = openPrivateMediaChunk(chunk, {
+      recipientEncryptionSecretKey: alice.encryption.secretKey,
+      recipientSigningPublicKey: aliceBundle.signingPublicKey
+    });
+    expect(new TextDecoder().decode(opened)).toBe('sealed-rendition');
   });
 });

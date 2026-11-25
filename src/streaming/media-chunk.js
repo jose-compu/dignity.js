@@ -6,8 +6,10 @@
 const nacl = require('tweetnacl');
 const naclUtil = require('tweetnacl-util');
 const { stableStringify } = require('../security/message-security-service');
+const { resolveRendition, renditionMatchesLadder } = require('./rendition-ladder');
 
-const MEDIA_CHUNK_VERSION = 2;
+const MEDIA_CHUNK_VERSION = 3;
+const MEDIA_CHUNK_VERSION_KEYFRAME = 2;
 const MEDIA_CHUNK_VERSION_LEGACY = 1;
 const DEFAULT_LAYER_ID = 'L0';
 
@@ -35,10 +37,50 @@ function canonicalMediaChunkSigningPayload(fields) {
     mimeType: fields.mimeType,
     payloadFingerprint: fields.payloadFingerprint
   };
-  if (version >= MEDIA_CHUNK_VERSION) {
+  if (version >= MEDIA_CHUNK_VERSION_KEYFRAME) {
     payload.keyframe = Boolean(fields.keyframe);
   }
+  if (version >= MEDIA_CHUNK_VERSION) {
+    if (!fields.rendition || typeof fields.rendition !== 'object') {
+      throw new TypeError('rendition must be provided for media chunk version 3');
+    }
+    payload.rendition = {
+      profile: fields.rendition.profile,
+      width: fields.rendition.width,
+      height: fields.rendition.height,
+      videoBitrateKbps: fields.rendition.videoBitrateKbps,
+      audioBitrateKbps: fields.rendition.audioBitrateKbps
+    };
+  }
   return stableStringify(payload);
+}
+
+/**
+ * @param {string} layerId
+ * @param {{ profile: string, layerId: string, width: number, height: number, videoBitrateKbps: number, audioBitrateKbps: number }} rendition
+ */
+function assertLayerMatchesRendition(layerId, rendition) {
+  if (!renditionMatchesLadder(rendition)) {
+    throw new Error('rendition does not match a known ladder row');
+  }
+  if (rendition.layerId !== layerId) {
+    throw new Error('layerId must match rendition.layerId');
+  }
+}
+
+function normalizeRenditionOption(rendition, profile, layerId) {
+  if (rendition != null) {
+    if (typeof rendition !== 'object') {
+      throw new TypeError('rendition must be an object when provided');
+    }
+    assertLayerMatchesRendition(layerId, rendition);
+    return rendition;
+  }
+  if (typeof profile === 'string' && profile.trim() !== '') {
+    const resolved = resolveRendition(profile, layerId);
+    return resolved;
+  }
+  return null;
 }
 
 /**
@@ -55,6 +97,7 @@ function canonicalMediaChunkSigningPayload(fields) {
  * @property {string} signatureBase64
  * @property {string} signingPublicKey
  * @property {boolean} [keyframe]
+ * @property {{ profile: string, width: number, height: number, videoBitrateKbps: number, audioBitrateKbps: number }} [rendition]
  */
 
 /**
@@ -69,6 +112,9 @@ function canonicalMediaChunkSigningPayload(fields) {
  * @param {string} [options.layerId]
  * @param {string} [options.mimeType]
  * @param {boolean} [options.keyframe]
+ * @param {string} [options.profile] hd720 | fhd1080 — builds signed rendition with layerId
+ * @param {Object} [options.rendition] explicit ladder row (must match layerId)
+ * @param {number} [options.chunkVersion] override envelope version (1, 2, or 3)
  * @returns {SignedMediaChunk}
  */
 function createSignedMediaChunk({
@@ -81,7 +127,10 @@ function createSignedMediaChunk({
   timestampMs = Date.now(),
   layerId = DEFAULT_LAYER_ID,
   mimeType = 'application/octet-stream',
-  keyframe = false
+  keyframe = false,
+  profile,
+  rendition,
+  chunkVersion
 }) {
   if (typeof sessionId !== 'string' || sessionId.trim() === '') {
     throw new TypeError('sessionId must be a non-empty string');
@@ -96,6 +145,18 @@ function createSignedMediaChunk({
     throw new TypeError('signingPublicKey must be a non-empty string');
   }
 
+  const resolvedRendition = normalizeRenditionOption(rendition, profile, layerId);
+  let envelopeVersion = chunkVersion;
+  if (envelopeVersion == null) {
+    envelopeVersion = resolvedRendition ? MEDIA_CHUNK_VERSION : MEDIA_CHUNK_VERSION_KEYFRAME;
+  }
+  if (envelopeVersion >= MEDIA_CHUNK_VERSION && !resolvedRendition) {
+    throw new TypeError('rendition or profile is required for media chunk version 3');
+  }
+  if (envelopeVersion < MEDIA_CHUNK_VERSION && resolvedRendition) {
+    throw new TypeError('rendition requires media chunk version 3');
+  }
+
   const fingerprint = payloadFingerprint(payloadBytes);
   const signingPayload = canonicalMediaChunkSigningPayload({
     sessionId: sessionId.trim(),
@@ -105,13 +166,15 @@ function createSignedMediaChunk({
     layerId,
     mimeType,
     payloadFingerprint: fingerprint,
-    keyframe
+    keyframe,
+    rendition: resolvedRendition,
+    chunkVersion: envelopeVersion
   });
 
   const signature = nacl.sign.detached(utf8ToBytes(signingPayload), signingSecretKey);
 
-  return {
-    version: MEDIA_CHUNK_VERSION,
+  const chunk = {
+    version: envelopeVersion,
     sessionId: sessionId.trim(),
     broadcasterId: broadcasterId.trim(),
     sequence,
@@ -125,6 +188,16 @@ function createSignedMediaChunk({
     keyframe: Boolean(keyframe),
     experimental: true
   };
+  if (resolvedRendition) {
+    chunk.rendition = {
+      profile: resolvedRendition.profile,
+      width: resolvedRendition.width,
+      height: resolvedRendition.height,
+      videoBitrateKbps: resolvedRendition.videoBitrateKbps,
+      audioBitrateKbps: resolvedRendition.audioBitrateKbps
+    };
+  }
+  return chunk;
 }
 
 /**
@@ -158,7 +231,8 @@ function verifyMediaChunk(chunk, expectedSessionId) {
     mimeType: chunk.mimeType,
     payloadFingerprint: chunk.payloadFingerprint,
     chunkVersion,
-    keyframe: chunk.keyframe
+    keyframe: chunk.keyframe,
+    rendition: chunk.rendition
   });
 
   const ok = nacl.sign.detached.verify(
@@ -171,6 +245,13 @@ function verifyMediaChunk(chunk, expectedSessionId) {
     const error = new Error('Invalid media chunk signature');
     error.code = 'INVALID_MEDIA_CHUNK_SIGNATURE';
     throw error;
+  }
+
+  if (chunkVersion >= MEDIA_CHUNK_VERSION) {
+    if (!chunk.rendition || typeof chunk.rendition !== 'object') {
+      throw new Error('Media chunk version 3 requires rendition metadata');
+    }
+    assertLayerMatchesRendition(chunk.layerId, { ...chunk.rendition, layerId: chunk.layerId });
   }
 
   return true;
@@ -187,10 +268,12 @@ function decodeMediaChunkPayload(chunk) {
 
 module.exports = {
   MEDIA_CHUNK_VERSION,
+  MEDIA_CHUNK_VERSION_KEYFRAME,
   MEDIA_CHUNK_VERSION_LEGACY,
   DEFAULT_LAYER_ID,
   createSignedMediaChunk,
   verifyMediaChunk,
   decodeMediaChunkPayload,
-  payloadFingerprint
+  payloadFingerprint,
+  assertLayerMatchesRendition
 };

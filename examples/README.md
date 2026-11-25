@@ -41,6 +41,20 @@ This directory contains standalone example scripts and consumer projects demonst
   ```
 * **Import path:** `dignity.js/node` (`createNodeStreamOrigin`, `resolveNodeMediaIngest`).
 
+### Adaptive layer simulation (experimental, v1.10.0)
+
+Signed HD ladder chunks, scripted receiver reports, bandwidth estimator, and hysteresis layer selector (no ffmpeg).
+
+* **Script:** [`adaptive-layer-sim.js`](./adaptive-layer-sim.js)
+* **Run Command:**
+  ```bash
+  npm run example:adaptive-layer
+  ```
+  or
+  ```bash
+  node examples/adaptive-layer-sim.js
+  ```
+
 ### Node.js framed stream origin (experimental, v1.9.0)
 
 Annex-B or fMP4 stdout from ffmpeg is parsed into access units with `timestampMs` and `keyframe`; the example uses a mock ffmpeg child and the Annex-B fixture.

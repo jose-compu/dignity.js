@@ -22924,13 +22924,75 @@ var require_stream_session = __commonJS({
   }
 });
 
+// src/streaming/rendition-ladder.js
+var require_rendition_ladder = __commonJS({
+  "src/streaming/rendition-ladder.js"(exports, module) {
+    var RENDITION_PROFILE_HD720 = "hd720";
+    var RENDITION_PROFILE_FHD1080 = "fhd1080";
+    var RENDITION_LADDERS = Object.freeze({
+      [RENDITION_PROFILE_HD720]: Object.freeze({
+        L0: Object.freeze({ width: 640, height: 360, videoBitrateKbps: 400, audioBitrateKbps: 48 }),
+        L1: Object.freeze({ width: 1280, height: 720, videoBitrateKbps: 1800, audioBitrateKbps: 64 }),
+        L2: Object.freeze({ width: 1280, height: 720, videoBitrateKbps: 3e3, audioBitrateKbps: 96 })
+      }),
+      [RENDITION_PROFILE_FHD1080]: Object.freeze({
+        L0: Object.freeze({ width: 854, height: 480, videoBitrateKbps: 800, audioBitrateKbps: 48 }),
+        L1: Object.freeze({ width: 1920, height: 1080, videoBitrateKbps: 4500, audioBitrateKbps: 96 }),
+        L2: Object.freeze({ width: 1920, height: 1080, videoBitrateKbps: 8e3, audioBitrateKbps: 128 })
+      })
+    });
+    var LAYER_IDS = Object.freeze(["L0", "L1", "L2"]);
+    function resolveRendition(profile, layerId) {
+      if (typeof profile !== "string" || profile.trim() === "") {
+        throw new TypeError("profile must be a non-empty string");
+      }
+      if (typeof layerId !== "string" || layerId.trim() === "") {
+        throw new TypeError("layerId must be a non-empty string");
+      }
+      const ladder = RENDITION_LADDERS[profile];
+      if (!ladder) {
+        throw new Error(`Unknown rendition profile: ${profile}`);
+      }
+      const row = ladder[layerId];
+      if (!row) {
+        throw new Error(`Unknown layerId ${layerId} for profile ${profile}`);
+      }
+      return {
+        profile,
+        layerId,
+        width: row.width,
+        height: row.height,
+        videoBitrateKbps: row.videoBitrateKbps,
+        audioBitrateKbps: row.audioBitrateKbps
+      };
+    }
+    function renditionMatchesLadder(rendition) {
+      if (!rendition || typeof rendition !== "object") {
+        return false;
+      }
+      const expected = resolveRendition(rendition.profile, rendition.layerId);
+      return expected.width === rendition.width && expected.height === rendition.height && expected.videoBitrateKbps === rendition.videoBitrateKbps && expected.audioBitrateKbps === rendition.audioBitrateKbps && expected.layerId === rendition.layerId && expected.profile === rendition.profile;
+    }
+    module.exports = {
+      RENDITION_PROFILE_HD720,
+      RENDITION_PROFILE_FHD1080,
+      RENDITION_LADDERS,
+      LAYER_IDS,
+      resolveRendition,
+      renditionMatchesLadder
+    };
+  }
+});
+
 // src/streaming/media-chunk.js
 var require_media_chunk = __commonJS({
   "src/streaming/media-chunk.js"(exports, module) {
     var nacl = require_nacl_fast();
     var naclUtil = require_nacl_util();
     var { stableStringify } = require_message_security_service();
-    var MEDIA_CHUNK_VERSION = 2;
+    var { resolveRendition, renditionMatchesLadder } = require_rendition_ladder();
+    var MEDIA_CHUNK_VERSION = 3;
+    var MEDIA_CHUNK_VERSION_KEYFRAME = 2;
     var MEDIA_CHUNK_VERSION_LEGACY = 1;
     var DEFAULT_LAYER_ID = "L0";
     function utf8ToBytes(value) {
@@ -22954,10 +23016,44 @@ var require_media_chunk = __commonJS({
         mimeType: fields.mimeType,
         payloadFingerprint: fields.payloadFingerprint
       };
-      if (version >= MEDIA_CHUNK_VERSION) {
+      if (version >= MEDIA_CHUNK_VERSION_KEYFRAME) {
         payload.keyframe = Boolean(fields.keyframe);
       }
+      if (version >= MEDIA_CHUNK_VERSION) {
+        if (!fields.rendition || typeof fields.rendition !== "object") {
+          throw new TypeError("rendition must be provided for media chunk version 3");
+        }
+        payload.rendition = {
+          profile: fields.rendition.profile,
+          width: fields.rendition.width,
+          height: fields.rendition.height,
+          videoBitrateKbps: fields.rendition.videoBitrateKbps,
+          audioBitrateKbps: fields.rendition.audioBitrateKbps
+        };
+      }
       return stableStringify(payload);
+    }
+    function assertLayerMatchesRendition(layerId, rendition) {
+      if (!renditionMatchesLadder(rendition)) {
+        throw new Error("rendition does not match a known ladder row");
+      }
+      if (rendition.layerId !== layerId) {
+        throw new Error("layerId must match rendition.layerId");
+      }
+    }
+    function normalizeRenditionOption(rendition, profile, layerId) {
+      if (rendition != null) {
+        if (typeof rendition !== "object") {
+          throw new TypeError("rendition must be an object when provided");
+        }
+        assertLayerMatchesRendition(layerId, rendition);
+        return rendition;
+      }
+      if (typeof profile === "string" && profile.trim() !== "") {
+        const resolved = resolveRendition(profile, layerId);
+        return resolved;
+      }
+      return null;
     }
     function createSignedMediaChunk({
       sessionId,
@@ -22969,7 +23065,10 @@ var require_media_chunk = __commonJS({
       timestampMs = Date.now(),
       layerId = DEFAULT_LAYER_ID,
       mimeType = "application/octet-stream",
-      keyframe = false
+      keyframe = false,
+      profile,
+      rendition,
+      chunkVersion
     }) {
       if (typeof sessionId !== "string" || sessionId.trim() === "") {
         throw new TypeError("sessionId must be a non-empty string");
@@ -22983,6 +23082,17 @@ var require_media_chunk = __commonJS({
       if (typeof signingPublicKey !== "string" || signingPublicKey.trim() === "") {
         throw new TypeError("signingPublicKey must be a non-empty string");
       }
+      const resolvedRendition = normalizeRenditionOption(rendition, profile, layerId);
+      let envelopeVersion = chunkVersion;
+      if (envelopeVersion == null) {
+        envelopeVersion = resolvedRendition ? MEDIA_CHUNK_VERSION : MEDIA_CHUNK_VERSION_KEYFRAME;
+      }
+      if (envelopeVersion >= MEDIA_CHUNK_VERSION && !resolvedRendition) {
+        throw new TypeError("rendition or profile is required for media chunk version 3");
+      }
+      if (envelopeVersion < MEDIA_CHUNK_VERSION && resolvedRendition) {
+        throw new TypeError("rendition requires media chunk version 3");
+      }
       const fingerprint = payloadFingerprint(payloadBytes);
       const signingPayload = canonicalMediaChunkSigningPayload({
         sessionId: sessionId.trim(),
@@ -22992,11 +23102,13 @@ var require_media_chunk = __commonJS({
         layerId,
         mimeType,
         payloadFingerprint: fingerprint,
-        keyframe
+        keyframe,
+        rendition: resolvedRendition,
+        chunkVersion: envelopeVersion
       });
       const signature = nacl.sign.detached(utf8ToBytes(signingPayload), signingSecretKey);
-      return {
-        version: MEDIA_CHUNK_VERSION,
+      const chunk = {
+        version: envelopeVersion,
         sessionId: sessionId.trim(),
         broadcasterId: broadcasterId.trim(),
         sequence,
@@ -23010,6 +23122,16 @@ var require_media_chunk = __commonJS({
         keyframe: Boolean(keyframe),
         experimental: true
       };
+      if (resolvedRendition) {
+        chunk.rendition = {
+          profile: resolvedRendition.profile,
+          width: resolvedRendition.width,
+          height: resolvedRendition.height,
+          videoBitrateKbps: resolvedRendition.videoBitrateKbps,
+          audioBitrateKbps: resolvedRendition.audioBitrateKbps
+        };
+      }
+      return chunk;
     }
     function verifyMediaChunk(chunk, expectedSessionId) {
       if (!chunk || typeof chunk !== "object") {
@@ -23033,7 +23155,8 @@ var require_media_chunk = __commonJS({
         mimeType: chunk.mimeType,
         payloadFingerprint: chunk.payloadFingerprint,
         chunkVersion,
-        keyframe: chunk.keyframe
+        keyframe: chunk.keyframe,
+        rendition: chunk.rendition
       });
       const ok = nacl.sign.detached.verify(
         utf8ToBytes(signingPayload),
@@ -23045,6 +23168,12 @@ var require_media_chunk = __commonJS({
         error.code = "INVALID_MEDIA_CHUNK_SIGNATURE";
         throw error;
       }
+      if (chunkVersion >= MEDIA_CHUNK_VERSION) {
+        if (!chunk.rendition || typeof chunk.rendition !== "object") {
+          throw new Error("Media chunk version 3 requires rendition metadata");
+        }
+        assertLayerMatchesRendition(chunk.layerId, { ...chunk.rendition, layerId: chunk.layerId });
+      }
       return true;
     }
     function decodeMediaChunkPayload(chunk) {
@@ -23053,12 +23182,14 @@ var require_media_chunk = __commonJS({
     }
     module.exports = {
       MEDIA_CHUNK_VERSION,
+      MEDIA_CHUNK_VERSION_KEYFRAME,
       MEDIA_CHUNK_VERSION_LEGACY,
       DEFAULT_LAYER_ID,
       createSignedMediaChunk,
       verifyMediaChunk,
       decodeMediaChunkPayload,
-      payloadFingerprint
+      payloadFingerprint,
+      assertLayerMatchesRendition
     };
   }
 });
@@ -23169,7 +23300,10 @@ var require_public_stream_path = __commonJS({
           timestampMs: chunkMeta.timestampMs,
           layerId: chunkMeta.layerId,
           mimeType: chunkMeta.mimeType,
-          keyframe: chunkMeta.keyframe
+          keyframe: chunkMeta.keyframe,
+          profile: chunkMeta.profile,
+          rendition: chunkMeta.rendition,
+          chunkVersion: chunkMeta.chunkVersion
         });
         this.sequence += 1;
         const downstream = [...this.directViewerIds];
@@ -23654,7 +23788,10 @@ var require_private_media_chunk = __commonJS({
       timestampMs,
       layerId,
       mimeType,
-      keyframe
+      keyframe,
+      profile,
+      rendition,
+      chunkVersion
     }) {
       if (!PRIVATE_CHUNK_ACCESS_MODES.has(accessMode)) {
         throw new Error(
@@ -23713,7 +23850,10 @@ var require_private_media_chunk = __commonJS({
         timestampMs,
         layerId,
         mimeType,
-        keyframe
+        keyframe,
+        profile,
+        rendition,
+        chunkVersion
       });
       const chunk = {
         ...signed,
@@ -24294,6 +24434,237 @@ var require_media_framing = __commonJS({
   }
 });
 
+// src/streaming/receiver-report.js
+var require_receiver_report = __commonJS({
+  "src/streaming/receiver-report.js"(exports, module) {
+    function createReceiverReport(fields) {
+      if (!fields || typeof fields !== "object") {
+        throw new TypeError("fields must be an object");
+      }
+      const requiredStrings = ["sessionId", "viewerId", "layerId"];
+      for (const key of requiredStrings) {
+        if (typeof fields[key] !== "string" || fields[key].trim() === "") {
+          throw new TypeError(`${key} must be a non-empty string`);
+        }
+      }
+      const requiredNumbers = [
+        "timestampMs",
+        "intervalMs",
+        "bytesReceived",
+        "packetsReceived",
+        "packetsLost",
+        "interarrivalDelayMs"
+      ];
+      for (const key of requiredNumbers) {
+        if (typeof fields[key] !== "number" || !Number.isFinite(fields[key])) {
+          throw new TypeError(`${key} must be a finite number`);
+        }
+      }
+      if (fields.intervalMs <= 0) {
+        throw new RangeError("intervalMs must be positive");
+      }
+      if (fields.bytesReceived < 0 || fields.packetsReceived < 0 || fields.packetsLost < 0) {
+        throw new RangeError("byte and packet counts must be non-negative");
+      }
+      return Object.freeze({
+        sessionId: fields.sessionId.trim(),
+        viewerId: fields.viewerId.trim(),
+        layerId: fields.layerId.trim(),
+        timestampMs: fields.timestampMs,
+        intervalMs: fields.intervalMs,
+        bytesReceived: fields.bytesReceived,
+        packetsReceived: fields.packetsReceived,
+        packetsLost: fields.packetsLost,
+        interarrivalDelayMs: fields.interarrivalDelayMs
+      });
+    }
+    module.exports = {
+      createReceiverReport
+    };
+  }
+});
+
+// src/streaming/bandwidth-estimator.js
+var require_bandwidth_estimator = __commonJS({
+  "src/streaming/bandwidth-estimator.js"(exports, module) {
+    var LOSS_THRESHOLD = 0.02;
+    var DECREASE_FACTOR = 0.85;
+    function createBandwidthEstimator({
+      floorBps,
+      ceilingBps,
+      quietGainBps = 5e4,
+      initialEstimateBps
+    }) {
+      if (typeof floorBps !== "number" || !Number.isFinite(floorBps) || floorBps < 0) {
+        throw new TypeError("floorBps must be a non-negative finite number");
+      }
+      if (typeof ceilingBps !== "number" || !Number.isFinite(ceilingBps) || ceilingBps < floorBps) {
+        throw new TypeError("ceilingBps must be a finite number >= floorBps");
+      }
+      if (typeof quietGainBps !== "number" || !Number.isFinite(quietGainBps) || quietGainBps < 0) {
+        throw new TypeError("quietGainBps must be a non-negative finite number");
+      }
+      let estimateBps = typeof initialEstimateBps === "number" && Number.isFinite(initialEstimateBps) ? initialEstimateBps : ceilingBps;
+      estimateBps = Math.max(floorBps, Math.min(ceilingBps, estimateBps));
+      let previousTimestampMs = null;
+      let previousInterarrivalDelayMs = null;
+      function observe(report) {
+        if (!report || typeof report !== "object") {
+          throw new TypeError("report must be an object");
+        }
+        const measuredBps = Math.floor(report.bytesReceived * 8 * 1e3 / report.intervalMs);
+        const totalPackets = report.packetsReceived + report.packetsLost;
+        const lossRate = totalPackets > 0 ? report.packetsLost / totalPackets : 0;
+        let delayTrendPositive = false;
+        if (previousTimestampMs !== null && previousInterarrivalDelayMs !== null) {
+          const elapsed = report.timestampMs - previousTimestampMs;
+          if (elapsed > 0 && report.interarrivalDelayMs > previousInterarrivalDelayMs) {
+            delayTrendPositive = true;
+          }
+        }
+        previousTimestampMs = report.timestampMs;
+        previousInterarrivalDelayMs = report.interarrivalDelayMs;
+        if (lossRate > LOSS_THRESHOLD || delayTrendPositive) {
+          estimateBps = Math.floor(estimateBps * DECREASE_FACTOR);
+        } else {
+          estimateBps += quietGainBps;
+        }
+        estimateBps = Math.min(estimateBps, measuredBps, ceilingBps);
+        estimateBps = Math.max(estimateBps, floorBps);
+        return estimateBps;
+      }
+      function getEstimateBps() {
+        return estimateBps;
+      }
+      return {
+        observe,
+        getEstimateBps
+      };
+    }
+    module.exports = {
+      LOSS_THRESHOLD,
+      DECREASE_FACTOR,
+      createBandwidthEstimator
+    };
+  }
+});
+
+// src/streaming/layer-selector.js
+var require_layer_selector = __commonJS({
+  "src/streaming/layer-selector.js"(exports, module) {
+    var { resolveRendition, LAYER_IDS } = require_rendition_ladder();
+    var DEFAULT_HEADROOM_FACTOR = 1.2;
+    var DEFAULT_DOWNGRADE_HOLD_MS = 200;
+    var DEFAULT_UPGRADE_HOLD_MS = 1e3;
+    function layerRequiredBps(profile, layerId, headroomFactor) {
+      const rendition = resolveRendition(profile, layerId);
+      return (rendition.videoBitrateKbps + rendition.audioBitrateKbps) * 1e3 * headroomFactor;
+    }
+    function highestAffordableLayer(profile, estimateBps, headroomFactor) {
+      let chosen = LAYER_IDS[0];
+      for (const layerId of LAYER_IDS) {
+        if (estimateBps >= layerRequiredBps(profile, layerId, headroomFactor)) {
+          chosen = layerId;
+        }
+      }
+      return chosen;
+    }
+    function createLayerSelector({
+      profile,
+      headroomFactor = DEFAULT_HEADROOM_FACTOR,
+      downgradeHoldMs = DEFAULT_DOWNGRADE_HOLD_MS,
+      upgradeHoldMs = DEFAULT_UPGRADE_HOLD_MS,
+      initialLayerId = "L2",
+      waitForKeyframeOnUpgrade = false
+    }) {
+      if (typeof profile !== "string") {
+        throw new TypeError("profile must be a string");
+      }
+      resolveRendition(profile, initialLayerId);
+      let currentLayerId = initialLayerId;
+      let pendingTarget = null;
+      let pendingSinceMs = null;
+      const keyframeSeen = Object.fromEntries(LAYER_IDS.map((id) => [id, false]));
+      function layerIndex(layerId) {
+        return LAYER_IDS.indexOf(layerId);
+      }
+      function stepToward(current, target) {
+        const ci = layerIndex(current);
+        const ti = layerIndex(target);
+        if (ci === ti) {
+          return current;
+        }
+        if (ti > ci) {
+          return LAYER_IDS[ci + 1];
+        }
+        return LAYER_IDS[ci - 1];
+      }
+      function selectLayer({ estimateBps, nowMs, keyframeByLayer }) {
+        if (typeof estimateBps !== "number" || !Number.isFinite(estimateBps)) {
+          throw new TypeError("estimateBps must be a finite number");
+        }
+        if (typeof nowMs !== "number" || !Number.isFinite(nowMs)) {
+          throw new TypeError("nowMs must be a finite number");
+        }
+        if (keyframeByLayer && typeof keyframeByLayer === "object") {
+          for (const layerId of LAYER_IDS) {
+            if (keyframeByLayer[layerId]) {
+              keyframeSeen[layerId] = true;
+            }
+          }
+        }
+        const affordable = highestAffordableLayer(profile, estimateBps, headroomFactor);
+        if (affordable === currentLayerId) {
+          pendingTarget = null;
+          pendingSinceMs = null;
+          return currentLayerId;
+        }
+        const isDowngrade = layerIndex(affordable) < layerIndex(currentLayerId);
+        const holdMs = isDowngrade ? downgradeHoldMs : upgradeHoldMs;
+        if (pendingTarget !== affordable) {
+          pendingTarget = affordable;
+          pendingSinceMs = nowMs;
+        }
+        if (pendingSinceMs !== null && nowMs - pendingSinceMs < holdMs) {
+          return currentLayerId;
+        }
+        const next = stepToward(currentLayerId, pendingTarget);
+        if (next === currentLayerId) {
+          return currentLayerId;
+        }
+        const isUpgrade = layerIndex(next) > layerIndex(currentLayerId);
+        if (isUpgrade && waitForKeyframeOnUpgrade && !keyframeSeen[next]) {
+          return currentLayerId;
+        }
+        currentLayerId = next;
+        if (currentLayerId === pendingTarget) {
+          pendingTarget = null;
+          pendingSinceMs = null;
+        } else {
+          pendingSinceMs = nowMs;
+        }
+        return currentLayerId;
+      }
+      function getLayerId() {
+        return currentLayerId;
+      }
+      return {
+        selectLayer,
+        getLayerId,
+        highestAffordableLayer: (estimateBps) => highestAffordableLayer(profile, estimateBps, headroomFactor)
+      };
+    }
+    module.exports = {
+      DEFAULT_HEADROOM_FACTOR,
+      DEFAULT_DOWNGRADE_HOLD_MS,
+      DEFAULT_UPGRADE_HOLD_MS,
+      layerRequiredBps,
+      highestAffordableLayer,
+      createLayerSelector
+    };
+  }
+});
+
 // src/streaming/index.js
 var require_streaming = __commonJS({
   "src/streaming/index.js"(exports, module) {
@@ -24305,6 +24676,10 @@ var require_streaming = __commonJS({
     var privateMediaChunk = require_private_media_chunk();
     var privateSenderKeyEpoch = require_private_sender_key_epoch();
     var mediaFraming = require_media_framing();
+    var renditionLadder = require_rendition_ladder();
+    var receiverReport = require_receiver_report();
+    var bandwidthEstimator = require_bandwidth_estimator();
+    var layerSelector = require_layer_selector();
     module.exports = {
       ...accessModes,
       ...streamSession,
@@ -24314,6 +24689,10 @@ var require_streaming = __commonJS({
       ...publicStreamPath,
       ...webrtcSignaling,
       ...mediaFraming,
+      ...renditionLadder,
+      ...receiverReport,
+      ...bandwidthEstimator,
+      ...layerSelector,
       STREAMING_API_EXPERIMENTAL: true
     };
   }
@@ -24448,6 +24827,13 @@ var require_index = __commonJS({
       STREAMING_API_EXPERIMENTAL,
       STREAM_MESSAGE_TYPES,
       MEDIA_CHUNK_VERSION,
+      MEDIA_CHUNK_VERSION_KEYFRAME,
+      RENDITION_PROFILE_HD720,
+      RENDITION_PROFILE_FHD1080,
+      resolveRendition,
+      createReceiverReport,
+      createBandwidthEstimator,
+      createLayerSelector,
       normalizePrivateRecipients,
       validateStreamAccessConfig,
       StreamSession,
@@ -24569,6 +24955,13 @@ var require_index = __commonJS({
       STREAMING_API_EXPERIMENTAL,
       STREAM_MESSAGE_TYPES,
       MEDIA_CHUNK_VERSION,
+      MEDIA_CHUNK_VERSION_KEYFRAME,
+      RENDITION_PROFILE_HD720,
+      RENDITION_PROFILE_FHD1080,
+      resolveRendition,
+      createReceiverReport,
+      createBandwidthEstimator,
+      createLayerSelector,
       normalizePrivateRecipients,
       validateStreamAccessConfig,
       StreamSession,

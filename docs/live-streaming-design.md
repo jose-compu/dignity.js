@@ -85,6 +85,8 @@ Operationally, media chunk topics can reuse **scoped PeerGroups** (`peerGroupSco
 
 **v1.9.0 (milestone 4, framing)** adds browser-safe `parseAnnexBAccessUnits` / `parseFmp4Fragments` on the main bundle; `createFfmpegMediaIngest` defaults to fragmented MP4 or Annex-B stdout and yields frames with `timestampMs` and `keyframe`. Signed chunks use media envelope **version 2** (`keyframe` in the signature); v1.8.0 chunks still verify. Native Node WebRTC peer remains deferred; `dataChannelTransport` stays injectable.
 
+**v1.10.0 (milestone 5, partial — adaptive control plane)** adds HD/FHD **rendition ladders** (`resolveRendition`), media envelope **version 3** with signed `rendition` metadata, **receiver reports**, sender **bandwidth estimator**, and viewer **layer selector** with hysteresis. Chunks without `rendition` stay on version 2; v1 and v2 chunks still verify. Camera capture and WebCodecs encoding remain out of scope.
+
 Examples: `npm run example:node-stream` (public), `npm run example:node-private-stream`, `npm run example:node-framed-stream` (Annex-B fixture + mock ffmpeg).
 
 ### WebRTC tracks vs data-channel chunking
@@ -203,8 +205,9 @@ Feasibility argument: 10M **concurrent** viewers implies ~6 relay hops at degree
 | 2. Prototype browser origin | **Partial (v1.3.0)** — public-mode signed chunks + join handshake over injectable bus; no real A/V capture |
 | 3. Private modes + combined | **Done (v1.6.0)** — E2E sealed chunks for `private-single` / `private-list` / `combined`; sender-key epoch rotation on removal |
 | 4. Node origin | **Done (v1.9.0)** — public + private/combined on `dignity.js/node`; file ingest or ffmpeg-framed Annex-B/fMP4; native Node WebRTC peer **deferred** |
-| 5. Adaptive layer | Documented only |
-| 6. Scale simulation | Plan documented |
+| 5. Adaptive layer | **Partial (v1.10.0)** — signed rendition ladders, receiver reports, bandwidth estimator, hysteresis layer selector; no camera/WebCodecs (#152 milestone 5 of 3 releases) |
+| 6. Standard ingest adapters | Planned (1.11.0) |
+| 7. Scale simulation | Plan documented |
 
 ---
 

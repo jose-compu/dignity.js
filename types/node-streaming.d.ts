@@ -10,6 +10,9 @@ declare module 'dignity.js/node' {
     timestampMs?: number;
     layerId?: string;
     keyframe?: boolean;
+    profile?: 'hd720' | 'fhd1080';
+    rendition?: import('dignity.js').MediaChunkRendition & { layerId: string };
+    chunkVersion?: number;
   }
 
   export interface NodeMediaIngest {

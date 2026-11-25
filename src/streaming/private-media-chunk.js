@@ -70,6 +70,9 @@ function normalizeRecipientBundles(recipientPublicBundles) {
  * @param {string} [options.layerId]
  * @param {string} [options.mimeType]
  * @param {boolean} [options.keyframe]
+ * @param {string} [options.profile]
+ * @param {Object} [options.rendition]
+ * @param {number} [options.chunkVersion]
  * @returns {PrivateSignedMediaChunk}
  */
 function sealPrivateMediaChunk({
@@ -87,7 +90,10 @@ function sealPrivateMediaChunk({
   timestampMs,
   layerId,
   mimeType,
-  keyframe
+  keyframe,
+  profile,
+  rendition,
+  chunkVersion
 }) {
   if (!PRIVATE_CHUNK_ACCESS_MODES.has(accessMode)) {
     throw new Error(
@@ -151,7 +157,10 @@ function sealPrivateMediaChunk({
     timestampMs,
     layerId,
     mimeType,
-    keyframe
+    keyframe,
+    profile,
+    rendition,
+    chunkVersion
   });
 
   const chunk = {
