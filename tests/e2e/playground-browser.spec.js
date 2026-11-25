@@ -55,6 +55,10 @@ const DIGNITY_APP_DEMOS = [
   {
     hash: 'stream-simulcast-load',
     expectLines: ['published layers: L0 L1 L2', 'relay forwards: L0', 'viewer layer: L0']
+  },
+  {
+    hash: 'stream-ingest-mpegts',
+    expectLines: ['access units:', 'keyframes:', 'first timestampMs:']
   }
 ];
 

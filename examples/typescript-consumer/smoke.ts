@@ -6,6 +6,7 @@ import {
   createInMemoryStreamSignalingBus,
   createStreamSession,
   parseAnnexBAccessUnits,
+  demuxMpegTs,
   createLayerSelector,
   createBandwidthEstimator,
   createPlayoutBuffer,
@@ -17,7 +18,7 @@ import {
   type CompatibilityPolicy,
   type DignityRecord
 } from 'dignity.js';
-import { createFileMediaIngest, createNodeStreamOrigin } from 'dignity.js/node';
+import { createFileMediaIngest, createMpegTsIngest, createNodeStreamOrigin } from 'dignity.js/node';
 
 // In-memory hub + adapter: wires multiple local nodes without WebRTC (smoke / typecheck only).
 const hub = new InMemoryNetworkHub();
@@ -72,6 +73,8 @@ void privateListOrigin.rotateRecipients;
 
 const annexFrame = parseAnnexBAccessUnits(new Uint8Array([0, 0, 0, 1, 0x65]))[0];
 void annexFrame?.keyframe;
+void demuxMpegTs(new Uint8Array(188).fill(0xff)).length;
+void createMpegTsIngest({ input: __dirname + '/../../tests/fixtures/mpegts-h264.ts' });
 
 const layerSelector = createLayerSelector({ profile: RENDITION_PROFILE_HD720 });
 void layerSelector.getLayerId();

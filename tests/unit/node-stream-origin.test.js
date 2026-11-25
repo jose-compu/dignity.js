@@ -614,4 +614,58 @@ describe('node stream origin', () => {
     });
     expect(verifyMediaChunk(viewer.chunks[0])).toBe(true);
   });
+
+  test('requires mediaIngest or ingest with frames()', () => {
+    const bus = createInMemoryStreamSignalingBus();
+    const keys = testKeyPair('node-no-ingest');
+    const session = createStreamSession({
+      sessionId: 'no-ingest',
+      broadcasterId: 'origin',
+      mode: STREAM_ACCESS_MODES.PUBLIC
+    });
+    expect(() =>
+      createNodeStreamOrigin({
+        session,
+        signingSecretKey: keys.signingSecretKey,
+        signingPublicKey: keys.signingPublicKey,
+        bus
+      })
+    ).toThrow(/mediaIngest or ingest/);
+  });
+
+  test('accepts ingest adapter alias instead of mediaIngest', async () => {
+    const bus = createInMemoryStreamSignalingBus();
+    const keys = testKeyPair('node-ingest-alias');
+    const session = createStreamSession({
+      sessionId: 'node-ingest',
+      broadcasterId: 'origin',
+      mode: STREAM_ACCESS_MODES.PUBLIC
+    });
+    const collector = createChunkCollector('viewer-1', bus);
+    const ingest = {
+      kind: 'mpegts',
+      stop() {},
+      async *frames() {
+        yield {
+          payloadBytes: new Uint8Array([1, 2, 3]),
+          mimeType: 'video/h264',
+          timestampMs: 42,
+          keyframe: true
+        };
+      }
+    };
+    const origin = createNodeStreamOrigin({
+      session,
+      signingSecretKey: keys.signingSecretKey,
+      signingPublicKey: keys.signingPublicKey,
+      bus,
+      ingest,
+      directViewerIds: ['viewer-1']
+    });
+    collector.requestJoin('origin', 'node-ingest');
+    await origin.start();
+    expect(collector.chunks).toHaveLength(1);
+    expect(collector.chunks[0].timestampMs).toBe(42);
+    expect(collector.chunks[0].keyframe).toBe(true);
+  });
 });

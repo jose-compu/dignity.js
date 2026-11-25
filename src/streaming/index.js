@@ -19,6 +19,7 @@ const layerSelector = require('./layer-selector');
 const playoutBuffer = require('./playout-buffer');
 const relayLayerPolicy = require('./relay-layer-policy');
 const simulcastPublish = require('./simulcast-publish');
+const { demuxMpegTs, MpegTsDemuxer, ptsToTimestampMs } = require('./ingest/mpegts-demuxer');
 
 module.exports = {
   ...accessModes,
@@ -36,5 +37,8 @@ module.exports = {
   ...playoutBuffer,
   ...relayLayerPolicy,
   ...simulcastPublish,
+  demuxMpegTs,
+  MpegTsDemuxer,
+  ptsToTimestampMs,
   STREAMING_API_EXPERIMENTAL: true
 };

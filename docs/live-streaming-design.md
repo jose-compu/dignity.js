@@ -89,6 +89,8 @@ Operationally, media chunk topics can reuse **scoped PeerGroups** (`peerGroupSco
 
 **v1.11.0 (milestone 5, partial — relay degradation)** adds **relay layer policy** (per-child estimates and layer caps; enhancement layers drop before L0 keyframes are withheld), **playout buffer** with congestion-aware target delay and a guard before viewer step-down, and **filtered relay forwarding** on `PublicStreamRelay` (sealed private chunks forward without decrypt).
 
+**v1.13.0 (milestone 6 — standard ingest)** adds pure-JS `demuxMpegTs` on the main bundle and Node ingest adapters (`createMpegTsIngest`, HLS, RTMP/SRT via optional ffmpeg, WHIP with injectable `peerFactory`) wired through `createNodeStreamOrigin({ ingest })`. AAC in MPEG-TS may be skipped; H.264 access units carry `timestampMs` and `keyframe` like Annex-B framing.
+
 **v1.12.0 (milestone 5 — adaptive layer complete)** adds **origin simulcast publish** (`publishSimulcastTick`, per-layer sequence numbers, shared `timestampMs`), multi-layer frames on `createNodeStreamOrigin`, `normalizeSimulcastLayers`, and `runSimulcastLoadTrace` tying relay policy to the viewer layer selector. Still deferred: RFC 8888 wire format, AV1 SVC, `getUserMedia`/WebCodecs ([#159](https://github.com/jose-compu/dignity.js/issues/159)), native Node WebRTC.
 
 Examples: `npm run example:node-stream` (public), `npm run example:node-private-stream`, `npm run example:node-framed-stream` (Annex-B fixture + mock ffmpeg), `npm run example:simulcast-load`.
@@ -210,7 +212,7 @@ Feasibility argument: 10M **concurrent** viewers implies ~6 relay hops at degree
 | 3. Private modes + combined | **Done (v1.6.0)** — E2E sealed chunks for `private-single` / `private-list` / `combined`; sender-key epoch rotation on removal |
 | 4. Node origin | **Done (v1.9.0)** — public + private/combined on `dignity.js/node`; file ingest or ffmpeg-framed Annex-B/fMP4; native Node WebRTC peer **deferred** |
 | 5. Adaptive layer | **Done (v1.10.0–v1.12.0)** — rendition ladder, relay policy, playout guard, simulcast origin publish; camera/WebCodecs still deferred (#159) |
-| 6. Standard ingest adapters | Planned (milestone 6) |
+| 6. Standard ingest adapters | **Done (v1.13.0)** — MPEG-TS demuxer, HLS/RTMP/SRT/WHIP Node ingest on `dignity.js/node`; WHIP uses injectable WebRTC `peerFactory` |
 | 7. Scale simulation | Planned (milestone 7) |
 
 ---

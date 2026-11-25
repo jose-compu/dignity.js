@@ -3,6 +3,7 @@ declare module 'dignity.js/node' {
   import type { InMemoryStreamSignalingBus, SignedMediaChunk, WebRTCDataChannelTransport } from 'dignity.js';
 
   export const DEFAULT_CHUNK_BYTES: number;
+  export const INGEST_FFMPEG_NOT_FOUND: string;
 
   export interface SimulcastLayerFrame {
     layerId: string;
@@ -30,6 +31,12 @@ declare module 'dignity.js/node' {
     filePath: string;
     chunkBytes: number;
     child?: unknown;
+    stop(): void;
+    frames(): AsyncIterableIterator<MediaFrame>;
+  }
+
+  export interface NodeIngestAdapter {
+    kind: string;
     stop(): void;
     frames(): AsyncIterableIterator<MediaFrame>;
   }
@@ -66,13 +73,52 @@ declare module 'dignity.js/node' {
     spawnSync?: typeof import('child_process').spawnSync;
   }): Promise<NodeMediaIngest>;
 
+  export function createMpegTsIngest(options: {
+    input: string | NodeJS.ReadableStream | { type: 'udp'; port: number; address?: string };
+  }): NodeIngestAdapter;
+
+  export function createHlsIngest(options: {
+    playlistUrl: string;
+    fetch?: typeof fetch;
+    pollIntervalMs?: number;
+  }): NodeIngestAdapter;
+
+  export function createRtmpIngest(options: {
+    url: string;
+    ffmpegPath?: string;
+    spawn?: typeof import('child_process').spawn;
+  }): NodeIngestAdapter;
+
+  export function createSrtIngest(options: {
+    url: string;
+    ffmpegPath?: string;
+    spawn?: typeof import('child_process').spawn;
+  }): NodeIngestAdapter;
+
+  export interface WhipPeerFactoryResult {
+    answerSdp: string;
+    onFrame?: (callback: (frame: MediaFrame) => void) => void;
+    close?: () => void;
+  }
+
+  export function createWhipIngest(options: {
+    peerFactory: (offerSdp: string, ctx: { resourceId: string }) => Promise<WhipPeerFactoryResult>;
+    authorize?: (req: import('http').IncomingMessage) => boolean | Promise<boolean>;
+    mountPath?: string;
+  }): NodeIngestAdapter & {
+    mountPath: string;
+    sessions: Map<string, unknown>;
+    handleRequest(req: import('http').IncomingMessage, res: import('http').ServerResponse): Promise<void>;
+  };
+
   export class NodeStreamOrigin {
     constructor(options: {
       session: StreamSession;
       signingSecretKey: Uint8Array;
       signingPublicKey: string;
       bus: InMemoryStreamSignalingBus;
-      mediaIngest: NodeMediaIngest;
+      mediaIngest?: NodeMediaIngest;
+      ingest?: NodeIngestAdapter;
       dataChannelTransport?: WebRTCDataChannelTransport;
       dataChannelPeerIds?: string[];
       directViewerIds?: string[];

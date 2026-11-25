@@ -171,7 +171,8 @@ const {
   PublicStreamViewer,
   PublicStreamRelay,
   parseAnnexBAccessUnits,
-  parseFmp4Fragments
+  parseFmp4Fragments,
+  demuxMpegTs
 } = require('./streaming');
 
 module.exports = {
@@ -305,5 +306,6 @@ module.exports = {
   PublicStreamViewer,
   PublicStreamRelay,
   parseAnnexBAccessUnits,
-  parseFmp4Fragments
+  parseFmp4Fragments,
+  demuxMpegTs
 };

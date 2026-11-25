@@ -1,5 +1,9 @@
 # Changelog
 
+## dignity.js 1.13.0
+
+Standard ingest adapters (milestone 6, #152): pure-JS `demuxMpegTs`, Node `createMpegTsIngest`, `createHlsIngest`, `createRtmpIngest`, `createSrtIngest`, `createWhipIngest`, `ingest` option on `createNodeStreamOrigin`; playground `stream-ingest-mpegts`; `npm run example:ingest-mpegts` and `example:ingest-whip`.
+
 ## dignity.js 1.12.0
 
 Origin simulcast publish (milestone 5, #152): `publishSimulcastTick` on the public broadcaster, per-layer sequence numbers, multi-layer Node ingest frames, `normalizeSimulcastLayers`, `runSimulcastLoadTrace`, playground `stream-simulcast-load`, and `npm run example:simulcast-load`.
