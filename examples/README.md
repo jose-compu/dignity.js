@@ -111,7 +111,9 @@ Annex-B or fMP4 stdout from ffmpeg is parsed into access units with `timestampMs
 
 ### Standard ingest adapters (experimental, v1.13.0)
 
-MPEG-TS, HLS, RTMP, SRT, and WHIP map onto the Node signed-chunk path (`dignity.js/node`). ffmpeg is optional for RTMP/SRT only; WHIP needs an injected `peerFactory` (WebRTC library not bundled).
+MPEG-TS, HLS, RTMP, SRT, and WHIP map onto the Node signed-chunk path (`dignity.js/node`). ffmpeg is optional for RTMP/SRT only. WHIP and SCTP data channels accept `createNodeWebRTCPeerFactory()` when `node-datachannel` or `werift` is installed locally (optional peer dependencies — not bundled).
+
+| Native WebRTC origin | [`node-webrtc-origin.js`](./node-webrtc-origin.js) — `npm run example:node-webrtc` (prints install hint when no peer library) |
 
 | Adapter | Example |
 |---------|---------|

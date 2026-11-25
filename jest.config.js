@@ -7,7 +7,11 @@ module.exports = {
   testPathIgnorePatterns: process.env.RUN_POW_CALIBRATE === '1'
     ? []
     : ['<rootDir>/tests/unit/sloth-vdf-timing.test.js'],
-  collectCoverageFrom: ['src/**/*.js', '!src/streaming/ingest/**/*.js'],
+  collectCoverageFrom: [
+    'src/**/*.js',
+    '!src/streaming/ingest/**/*.js',
+    '!src/streaming/node-webrtc-peer.js'
+  ],
   coverageDirectory: 'coverage',
   coverageThreshold: {
     global: {
