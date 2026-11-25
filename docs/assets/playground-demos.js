@@ -1584,5 +1584,59 @@ try {
   bobAfterRemovalFailed = true;
 }
 log('bob after rotation failed:', bobAfterRemovalFailed);`
+  },
+  {
+    id: 'stream-framed-chunks',
+    group: 'v190',
+    title: 'Framed stream chunks (Annex-B / fMP4)',
+    description: 'v1.9.0 package (#152): parseAnnexBAccessUnits and parseFmp4Fragments; keyframe on signed media chunks.',
+    code: `const {
+  parseAnnexBAccessUnits,
+  parseFmp4Fragments,
+  createSignedMediaChunk,
+  verifyMediaChunk,
+  deriveKeyPairFromCredentials,
+  keyPairToPublicBundle
+} = dignity;
+
+const annexBytes = new Uint8Array([
+  0, 0, 0, 1, 0x65, 0x88, 0x84, 0x00, 0x10,
+  0, 0, 0, 1, 0x41, 0x9a, 0x24, 0x11
+]);
+const fmp4Bytes = new Uint8Array([
+  0, 0, 0, 24, 102, 116, 121, 112, 105, 115, 111, 109, 0, 0, 0, 0, 105, 115, 111, 109,
+  105, 115, 111, 50, 0, 0, 0, 52, 109, 111, 111, 118, 0, 0, 0, 44, 116, 114, 97, 107,
+  0, 0, 0, 36, 109, 100, 105, 97, 0, 0, 0, 28, 109, 100, 104, 100, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 3, 232, 0, 0, 3, 232, 0, 0, 0, 84, 109, 111, 111, 102, 0, 0,
+  0, 16, 109, 102, 104, 100, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 60, 116, 114, 97, 102,
+  0, 0, 0, 12, 116, 102, 104, 100, 0, 0, 0, 0, 0, 0, 0, 16, 116, 102, 100, 116, 0, 0,
+  0, 0, 0, 0, 11, 184, 0, 0, 0, 24, 116, 114, 117, 110, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0,
+  0, 1, 0, 0, 0, 0, 0, 0, 0, 12, 109, 100, 97, 116, 1, 2, 3, 4
+]);
+
+const annexFrames = parseAnnexBAccessUnits(annexBytes);
+log('annex frames:', annexFrames.length);
+log('first keyframe:', annexFrames[0].keyframe);
+log('first timestampMs:', annexFrames[0].timestampMs);
+
+const fmp4Frames = parseFmp4Fragments(fmp4Bytes);
+log('fmp4 init keyframe:', fmp4Frames[0].keyframe);
+log('fmp4 fragment timestampMs:', fmp4Frames[1].timestampMs);
+
+const broadcaster = await deriveKeyPairFromCredentials({ username: 'bc', password: 'demo' });
+const bundle = keyPairToPublicBundle(broadcaster);
+const signed = createSignedMediaChunk({
+  sessionId: 'framed-demo',
+  broadcasterId: 'origin',
+  payloadBytes: annexFrames[0].payloadBytes,
+  signingSecretKey: broadcaster.signing.secretKey,
+  signingPublicKey: bundle.signingPublicKey,
+  sequence: 0,
+  timestampMs: annexFrames[0].timestampMs,
+  mimeType: annexFrames[0].mimeType,
+  keyframe: annexFrames[0].keyframe
+});
+log('signed keyframe:', signed.keyframe);
+log('verify:', verifyMediaChunk(signed, 'framed-demo'));`
   }
 ];

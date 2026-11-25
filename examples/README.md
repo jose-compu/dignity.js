@@ -41,6 +41,20 @@ This directory contains standalone example scripts and consumer projects demonst
   ```
 * **Import path:** `dignity.js/node` (`createNodeStreamOrigin`, `resolveNodeMediaIngest`).
 
+### Node.js framed stream origin (experimental, v1.9.0)
+
+Annex-B or fMP4 stdout from ffmpeg is parsed into access units with `timestampMs` and `keyframe`; the example uses a mock ffmpeg child and the Annex-B fixture.
+
+* **Script:** [`node-framed-stream-origin.js`](./node-framed-stream-origin.js)
+* **Run Command:**
+  ```bash
+  npm run example:node-framed-stream
+  ```
+  or
+  ```bash
+  node examples/node-framed-stream-origin.js
+  ```
+
 ### Node.js private stream origin (experimental)
 * **File:** [`node-private-stream-origin.js`](./node-private-stream-origin.js)
 * **Description:** `private-list` console origin over a fixture file; one listed recipient opens sealed bytes (no ffmpeg).

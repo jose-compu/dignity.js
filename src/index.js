@@ -157,7 +157,9 @@ const {
   createPublicStreamRelay,
   PublicStreamBroadcaster,
   PublicStreamViewer,
-  PublicStreamRelay
+  PublicStreamRelay,
+  parseAnnexBAccessUnits,
+  parseFmp4Fragments
 } = require('./streaming');
 
 module.exports = {
@@ -277,5 +279,7 @@ module.exports = {
   createPublicStreamRelay,
   PublicStreamBroadcaster,
   PublicStreamViewer,
-  PublicStreamRelay
+  PublicStreamRelay,
+  parseAnnexBAccessUnits,
+  parseFmp4Fragments
 };

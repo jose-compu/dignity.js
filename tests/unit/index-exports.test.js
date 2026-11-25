@@ -26,6 +26,9 @@ describe('public API exports', () => {
     expect(api.STREAMING_API_EXPERIMENTAL).toBe(true);
     expect(api.createStreamSession).toBeDefined();
     expect(api.STREAM_ACCESS_MODES.PUBLIC).toBe('public');
+    expect(api.parseAnnexBAccessUnits).toBeDefined();
+    expect(api.parseFmp4Fragments).toBeDefined();
+    expect(api.MEDIA_CHUNK_VERSION).toBe(2);
   });
 
   test('package.json exposes TypeScript definitions', () => {

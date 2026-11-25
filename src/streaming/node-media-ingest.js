@@ -6,6 +6,10 @@
 
 const fs = require('fs');
 const { spawn: defaultSpawn, spawnSync: defaultSpawnSync } = require('child_process');
+const {
+  AnnexBIncrementalParser,
+  Fmp4IncrementalParser
+} = require('./media-framing');
 
 const DEFAULT_CHUNK_BYTES = 65536;
 const DEFAULT_FFMPEG_PATH = 'ffmpeg';
@@ -56,24 +60,40 @@ function createFileMediaIngest({ filePath, chunkBytes = DEFAULT_CHUNK_BYTES }) {
         const end = Math.min(offset + chunkBytes, buffer.length);
         yield {
           payloadBytes: buffer.subarray(offset, end),
-          mimeType: 'application/octet-stream'
+          mimeType: 'application/octet-stream',
+          keyframe: false
         };
       }
     }
   };
 }
 
+const DEFAULT_FFMPEG_ARGS = {
+  fmp4: ['-hide_banner', '-loglevel', 'error', '-i', null, '-f', 'mp4', '-movflags', 'frag_keyframe+empty_moov+default_base_moof', 'pipe:1'],
+  annexb: ['-hide_banner', '-loglevel', 'error', '-i', null, '-f', 'h264', 'pipe:1']
+};
+
+function buildFfmpegArgs(filePath, format, customArgs) {
+  if (customArgs) {
+    return customArgs;
+  }
+  const template = format === 'annexb' ? DEFAULT_FFMPEG_ARGS.annexb : DEFAULT_FFMPEG_ARGS.fmp4;
+  return template.map((token) => (token === null ? filePath : token));
+}
+
 /**
  * @param {Object} options
  * @param {string} options.filePath
- * @param {number} [options.chunkBytes]
+ * @param {'fmp4' | 'annexb'} [options.format]
+ * @param {number} [options.frameDurationMs]
  * @param {string} [options.ffmpegPath]
  * @param {string[]} [options.ffmpegArgs]
  * @param {typeof defaultSpawn} [options.spawn]
  */
 function createFfmpegMediaIngest({
   filePath,
-  chunkBytes = DEFAULT_CHUNK_BYTES,
+  format = 'fmp4',
+  frameDurationMs,
   ffmpegPath = DEFAULT_FFMPEG_PATH,
   ffmpegArgs,
   spawn = defaultSpawn
@@ -81,18 +101,20 @@ function createFfmpegMediaIngest({
   if (typeof filePath !== 'string' || filePath.trim() === '') {
     throw new TypeError('filePath must be a non-empty string');
   }
+  if (format !== 'fmp4' && format !== 'annexb') {
+    throw new TypeError('format must be "fmp4" or "annexb"');
+  }
 
   /** @type {import('child_process').ChildProcessWithoutNullStreams | null} */
   let child = null;
 
-  const args =
-    ffmpegArgs ||
-    ['-hide_banner', '-loglevel', 'error', '-i', filePath, '-f', 'mpegts', 'pipe:1'];
+  const args = buildFfmpegArgs(filePath, format, ffmpegArgs);
 
   return {
     kind: 'ffmpeg',
     filePath,
-    chunkBytes,
+    format,
+    frameDurationMs,
     get child() {
       return child;
     },
@@ -105,9 +127,41 @@ function createFfmpegMediaIngest({
     async *frames() {
       child = spawn(ffmpegPath, args);
 
-      const stdoutChunks = [];
+      const parser =
+        format === 'annexb'
+          ? new AnnexBIncrementalParser({ frameDurationMs })
+          : new Fmp4IncrementalParser();
+
+      const queue = [];
+      let resolveWait = null;
+      let streamEnded = false;
+      let streamError = null;
+
+      const notify = () => {
+        if (resolveWait) {
+          resolveWait();
+          resolveWait = null;
+        }
+      };
+
+      const waitForData = () =>
+        new Promise((resolve) => {
+          if (queue.length > 0 || streamEnded || streamError) {
+            resolve();
+            return;
+          }
+          resolveWait = resolve;
+        });
+
+      child.stdout.on('data', (chunk) => {
+        const pushed = parser.push(new Uint8Array(chunk));
+        for (const frame of pushed) {
+          queue.push(frame);
+        }
+        notify();
+      });
+
       await new Promise((resolve, reject) => {
-        child.stdout.on('data', (chunk) => stdoutChunks.push(chunk));
         child.stdout.on('error', reject);
         child.on('error', (err) => {
           if (isEnoentError(err)) {
@@ -120,31 +174,43 @@ function createFfmpegMediaIngest({
         });
         child.on('close', (code) => {
           if (code !== 0 && code !== null) {
-            reject(new Error(`ffmpeg exited with code ${code}`));
+            streamError = new Error(`ffmpeg exited with code ${code}`);
+            notify();
+            reject(streamError);
             return;
           }
+          const tail = parser.flush();
+          for (const frame of tail) {
+            queue.push(frame);
+          }
+          streamEnded = true;
+          notify();
           resolve();
         });
         if (child.exitCode === 0) {
+          const tail = parser.flush();
+          for (const frame of tail) {
+            queue.push(frame);
+          }
+          streamEnded = true;
+          notify();
           resolve();
         }
       });
 
-      const combined = Buffer.concat(stdoutChunks);
-      let offset = 0;
-      while (offset + chunkBytes <= combined.length) {
-        const slice = combined.subarray(offset, offset + chunkBytes);
-        yield {
-          payloadBytes: new Uint8Array(slice),
-          mimeType: 'video/mp2t'
-        };
-        offset += chunkBytes;
-      }
-      if (offset < combined.length) {
-        yield {
-          payloadBytes: new Uint8Array(combined.subarray(offset)),
-          mimeType: 'video/mp2t'
-        };
+      while (queue.length > 0 || !streamEnded) {
+        if (queue.length === 0) {
+          await waitForData();
+          if (streamError) {
+            throw streamError;
+          }
+          if (streamEnded) {
+            break;
+          }
+        }
+        while (queue.length > 0) {
+          yield queue.shift();
+        }
       }
     }
   };
@@ -155,6 +221,8 @@ function createFfmpegMediaIngest({
  * @param {Object} options
  * @param {string} options.filePath
  * @param {number} [options.chunkBytes]
+ * @param {'fmp4' | 'annexb'} [options.format]
+ * @param {number} [options.frameDurationMs]
  * @param {string} [options.ffmpegPath]
  * @param {typeof defaultSpawn} [options.spawn]
  * @param {typeof defaultSpawnSync} [options.spawnSync]

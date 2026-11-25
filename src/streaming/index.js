@@ -11,6 +11,7 @@ const publicStreamPath = require('./public-stream-path');
 const webrtcSignaling = require('./webrtc-stream-signaling');
 const privateMediaChunk = require('./private-media-chunk');
 const privateSenderKeyEpoch = require('./private-sender-key-epoch');
+const mediaFraming = require('./media-framing');
 
 module.exports = {
   ...accessModes,
@@ -20,5 +21,6 @@ module.exports = {
   ...privateSenderKeyEpoch,
   ...publicStreamPath,
   ...webrtcSignaling,
+  ...mediaFraming,
   STREAMING_API_EXPERIMENTAL: true
 };

@@ -69,6 +69,7 @@ function normalizeRecipientBundles(recipientPublicBundles) {
  * @param {number} [options.timestampMs]
  * @param {string} [options.layerId]
  * @param {string} [options.mimeType]
+ * @param {boolean} [options.keyframe]
  * @returns {PrivateSignedMediaChunk}
  */
 function sealPrivateMediaChunk({
@@ -85,7 +86,8 @@ function sealPrivateMediaChunk({
   sequence,
   timestampMs,
   layerId,
-  mimeType
+  mimeType,
+  keyframe
 }) {
   if (!PRIVATE_CHUNK_ACCESS_MODES.has(accessMode)) {
     throw new Error(
@@ -148,7 +150,8 @@ function sealPrivateMediaChunk({
     sequence,
     timestampMs,
     layerId,
-    mimeType
+    mimeType,
+    keyframe
   });
 
   const chunk = {

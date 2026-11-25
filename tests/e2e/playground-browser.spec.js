@@ -39,6 +39,10 @@ const DIGNITY_APP_DEMOS = [
   {
     hash: 'stream-combined-rotation',
     expectLine: 'bob after rotation failed: true'
+  },
+  {
+    hash: 'stream-framed-chunks',
+    expectLine: 'signed keyframe: true'
   }
 ];
 

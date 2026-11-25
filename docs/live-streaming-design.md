@@ -83,7 +83,9 @@ Operationally, media chunk topics can reuse **scoped PeerGroups** (`peerGroupSco
 - `createFileMediaIngest` / `createFfmpegMediaIngest` (injectable `spawn`; ffmpeg is **not** an npm dependency).
 - `resolveNodeMediaIngest` — ffmpeg when a probe succeeds; otherwise file bytes in fixed chunks.
 
-Examples: `npm run example:node-stream` (public), `npm run example:node-private-stream` (`examples/node-private-stream-origin.js`, fixture + sealed bytes). **Next slice (v1.9.0):** real framing (optional ffmpeg Annex-B or fMP4 with timestamps), Node data-channel peer.
+**v1.9.0 (milestone 4, framing)** adds browser-safe `parseAnnexBAccessUnits` / `parseFmp4Fragments` on the main bundle; `createFfmpegMediaIngest` defaults to fragmented MP4 or Annex-B stdout and yields frames with `timestampMs` and `keyframe`. Signed chunks use media envelope **version 2** (`keyframe` in the signature); v1.8.0 chunks still verify. Native Node WebRTC peer remains deferred; `dataChannelTransport` stays injectable.
+
+Examples: `npm run example:node-stream` (public), `npm run example:node-private-stream`, `npm run example:node-framed-stream` (Annex-B fixture + mock ffmpeg).
 
 ### WebRTC tracks vs data-channel chunking
 
@@ -200,7 +202,7 @@ Feasibility argument: 10M **concurrent** viewers implies ~6 relay hops at degree
 | 1. Research doc | **Done** (this file, v1.2.0) |
 | 2. Prototype browser origin | **Partial (v1.3.0)** — public-mode signed chunks + join handshake over injectable bus; no real A/V capture |
 | 3. Private modes + combined | **Done (v1.6.0)** — E2E sealed chunks for `private-single` / `private-list` / `combined`; sender-key epoch rotation on removal |
-| 4. Node origin | **Partial (v1.8.0)** — public + private/combined on `dignity.js/node`; file/ffmpeg ingest; next (v1.9.0): real framing, Node peer |
+| 4. Node origin | **Done (v1.9.0)** — public + private/combined on `dignity.js/node`; file ingest or ffmpeg-framed Annex-B/fMP4; native Node WebRTC peer **deferred** |
 | 5. Adaptive layer | Documented only |
 | 6. Scale simulation | Plan documented |
 

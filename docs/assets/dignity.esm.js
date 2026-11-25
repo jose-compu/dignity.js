@@ -22930,7 +22930,8 @@ var require_media_chunk = __commonJS({
     var nacl = require_nacl_fast();
     var naclUtil = require_nacl_util();
     var { stableStringify } = require_message_security_service();
-    var MEDIA_CHUNK_VERSION = 1;
+    var MEDIA_CHUNK_VERSION = 2;
+    var MEDIA_CHUNK_VERSION_LEGACY = 1;
     var DEFAULT_LAYER_ID = "L0";
     function utf8ToBytes(value) {
       return naclUtil.decodeUTF8(value);
@@ -22942,8 +22943,9 @@ var require_media_chunk = __commonJS({
       return naclUtil.encodeBase64(nacl.hash(payloadBytes));
     }
     function canonicalMediaChunkSigningPayload(fields) {
-      return stableStringify({
-        version: MEDIA_CHUNK_VERSION,
+      const version = typeof fields.chunkVersion === "number" ? fields.chunkVersion : MEDIA_CHUNK_VERSION;
+      const payload = {
+        version,
         sessionId: fields.sessionId,
         broadcasterId: fields.broadcasterId,
         sequence: fields.sequence,
@@ -22951,7 +22953,11 @@ var require_media_chunk = __commonJS({
         layerId: fields.layerId,
         mimeType: fields.mimeType,
         payloadFingerprint: fields.payloadFingerprint
-      });
+      };
+      if (version >= MEDIA_CHUNK_VERSION) {
+        payload.keyframe = Boolean(fields.keyframe);
+      }
+      return stableStringify(payload);
     }
     function createSignedMediaChunk({
       sessionId,
@@ -22962,7 +22968,8 @@ var require_media_chunk = __commonJS({
       sequence = 0,
       timestampMs = Date.now(),
       layerId = DEFAULT_LAYER_ID,
-      mimeType = "application/octet-stream"
+      mimeType = "application/octet-stream",
+      keyframe = false
     }) {
       if (typeof sessionId !== "string" || sessionId.trim() === "") {
         throw new TypeError("sessionId must be a non-empty string");
@@ -22984,7 +22991,8 @@ var require_media_chunk = __commonJS({
         timestampMs,
         layerId,
         mimeType,
-        payloadFingerprint: fingerprint
+        payloadFingerprint: fingerprint,
+        keyframe
       });
       const signature = nacl.sign.detached(utf8ToBytes(signingPayload), signingSecretKey);
       return {
@@ -22999,6 +23007,7 @@ var require_media_chunk = __commonJS({
         payloadFingerprint: fingerprint,
         signatureBase64: naclUtil.encodeBase64(signature),
         signingPublicKey: signingPublicKey.trim(),
+        keyframe: Boolean(keyframe),
         experimental: true
       };
     }
@@ -23014,6 +23023,7 @@ var require_media_chunk = __commonJS({
       if (expectedSessionId && chunk.sessionId !== expectedSessionId) {
         throw new Error("Media chunk sessionId mismatch");
       }
+      const chunkVersion = typeof chunk.version === "number" ? chunk.version : MEDIA_CHUNK_VERSION_LEGACY;
       const signingPayload = canonicalMediaChunkSigningPayload({
         sessionId: chunk.sessionId,
         broadcasterId: chunk.broadcasterId,
@@ -23021,7 +23031,9 @@ var require_media_chunk = __commonJS({
         timestampMs: chunk.timestampMs,
         layerId: chunk.layerId,
         mimeType: chunk.mimeType,
-        payloadFingerprint: chunk.payloadFingerprint
+        payloadFingerprint: chunk.payloadFingerprint,
+        chunkVersion,
+        keyframe: chunk.keyframe
       });
       const ok = nacl.sign.detached.verify(
         utf8ToBytes(signingPayload),
@@ -23041,6 +23053,7 @@ var require_media_chunk = __commonJS({
     }
     module.exports = {
       MEDIA_CHUNK_VERSION,
+      MEDIA_CHUNK_VERSION_LEGACY,
       DEFAULT_LAYER_ID,
       createSignedMediaChunk,
       verifyMediaChunk,
@@ -23155,7 +23168,8 @@ var require_public_stream_path = __commonJS({
           sequence: this.sequence,
           timestampMs: chunkMeta.timestampMs,
           layerId: chunkMeta.layerId,
-          mimeType: chunkMeta.mimeType
+          mimeType: chunkMeta.mimeType,
+          keyframe: chunkMeta.keyframe
         });
         this.sequence += 1;
         const downstream = [...this.directViewerIds];
@@ -23639,7 +23653,8 @@ var require_private_media_chunk = __commonJS({
       sequence,
       timestampMs,
       layerId,
-      mimeType
+      mimeType,
+      keyframe
     }) {
       if (!PRIVATE_CHUNK_ACCESS_MODES.has(accessMode)) {
         throw new Error(
@@ -23697,7 +23712,8 @@ var require_private_media_chunk = __commonJS({
         sequence,
         timestampMs,
         layerId,
-        mimeType
+        mimeType,
+        keyframe
       });
       const chunk = {
         ...signed,
@@ -23766,6 +23782,518 @@ var require_private_media_chunk = __commonJS({
   }
 });
 
+// src/streaming/media-framing.js
+var require_media_framing = __commonJS({
+  "src/streaming/media-framing.js"(exports, module) {
+    var DEFAULT_FRAME_DURATION_MS = 33;
+    var H264_MIME = "video/h264";
+    var FMP4_MIME = "video/mp4";
+    function concatBytes(chunks) {
+      let total = 0;
+      for (const c of chunks) {
+        total += c.length;
+      }
+      const out = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) {
+        out.set(c, offset);
+        offset += c.length;
+      }
+      return out;
+    }
+    function findAnnexBStartCodes(bytes) {
+      const positions = [];
+      for (let i = 0; i + 3 < bytes.length; i += 1) {
+        if (bytes[i] === 0 && bytes[i + 1] === 0) {
+          if (bytes[i + 2] === 1) {
+            positions.push({ index: i, length: 3 });
+            i += 2;
+          } else if (bytes[i + 2] === 0 && bytes[i + 3] === 1) {
+            positions.push({ index: i, length: 4 });
+            i += 3;
+          }
+        }
+      }
+      return positions;
+    }
+    function nalType(nalHeaderByte) {
+      return nalHeaderByte & 31;
+    }
+    function isVclNal(type) {
+      return type >= 1 && type <= 5;
+    }
+    function isAudNal(type) {
+      return type === 9;
+    }
+    function accessUnitBytesFromNals(nalSlices, includeStartCodes = true) {
+      const parts = [];
+      for (const nal of nalSlices) {
+        if (includeStartCodes) {
+          parts.push(new Uint8Array([0, 0, 0, 1]));
+        }
+        parts.push(nal.bytes);
+      }
+      return concatBytes(parts);
+    }
+    function parseAnnexBAccessUnits(bytes, { frameDurationMs = DEFAULT_FRAME_DURATION_MS } = {}) {
+      if (!(bytes instanceof Uint8Array)) {
+        throw new TypeError("bytes must be a Uint8Array");
+      }
+      if (bytes.length === 0) {
+        return [];
+      }
+      const starts = findAnnexBStartCodes(bytes);
+      if (starts.length === 0) {
+        return [];
+      }
+      const nals = [];
+      for (let s = 0; s < starts.length; s += 1) {
+        const start = starts[s].index + starts[s].length;
+        const end = s + 1 < starts.length ? starts[s + 1].index : bytes.length;
+        if (start >= end) {
+          continue;
+        }
+        const nalBytes = bytes.subarray(start, end);
+        if (nalBytes.length === 0) {
+          continue;
+        }
+        nals.push({ type: nalType(nalBytes[0]), bytes: nalBytes });
+      }
+      const hasAud = nals.some((n) => isAudNal(n.type));
+      const frames = [];
+      if (hasAud) {
+        let i = 0;
+        let auIndex2 = 0;
+        while (i < nals.length) {
+          if (!isAudNal(nals[i].type)) {
+            i += 1;
+            continue;
+          }
+          i += 1;
+          const group = [];
+          while (i < nals.length && !isAudNal(nals[i].type)) {
+            group.push(nals[i]);
+            i += 1;
+            if (group.length > 0 && isVclNal(nals[i - 1].type)) {
+              break;
+            }
+          }
+          if (group.length === 0) {
+            continue;
+          }
+          const keyframe = group.some((n) => n.type === 5);
+          frames.push({
+            payloadBytes: accessUnitBytesFromNals(group),
+            mimeType: H264_MIME,
+            timestampMs: auIndex2 * frameDurationMs,
+            keyframe
+          });
+          auIndex2 += 1;
+        }
+        return frames;
+      }
+      let pending = [];
+      let auIndex = 0;
+      for (const nal of nals) {
+        pending.push(nal);
+        if (isVclNal(nal.type)) {
+          const keyframe = nal.type === 5;
+          frames.push({
+            payloadBytes: accessUnitBytesFromNals(pending),
+            mimeType: H264_MIME,
+            timestampMs: auIndex * frameDurationMs,
+            keyframe
+          });
+          auIndex += 1;
+          pending = [];
+        }
+      }
+      if (pending.length > 0) {
+        const keyframe = pending.some((n) => n.type === 5);
+        frames.push({
+          payloadBytes: accessUnitBytesFromNals(pending),
+          mimeType: H264_MIME,
+          timestampMs: auIndex * frameDurationMs,
+          keyframe
+        });
+      }
+      return frames;
+    }
+    function readU32BE(bytes, offset) {
+      return (bytes[offset] << 24 | bytes[offset + 1] << 16 | bytes[offset + 2] << 8 | bytes[offset + 3]) >>> 0;
+    }
+    function boxType(bytes, offset) {
+      return String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+    }
+    function readBoxAt(bytes, offset) {
+      if (offset + 8 > bytes.length) {
+        return null;
+      }
+      let size = readU32BE(bytes, offset);
+      const type = boxType(bytes, offset + 4);
+      let headerSize = 8;
+      if (size === 1) {
+        if (offset + 16 > bytes.length) {
+          return null;
+        }
+        const hi = readU32BE(bytes, offset + 8);
+        const lo = readU32BE(bytes, offset + 12);
+        size = hi * 4294967296 + lo;
+        headerSize = 16;
+      }
+      if (size === 0) {
+        size = bytes.length - offset;
+      }
+      if (size < headerSize || offset + size > bytes.length) {
+        return null;
+      }
+      return {
+        type,
+        start: offset,
+        size,
+        headerSize,
+        bodyStart: offset + headerSize
+      };
+    }
+    function findBoxIn(bytes, start, end, targetType) {
+      let offset = start;
+      while (offset + 8 <= end) {
+        const box = readBoxAt(bytes, offset);
+        if (!box) {
+          break;
+        }
+        if (box.type === targetType) {
+          return box;
+        }
+        offset += box.size;
+      }
+      return null;
+    }
+    function walkBoxes(bytes, start, end, visit) {
+      let offset = start;
+      while (offset + 8 <= end) {
+        const box = readBoxAt(bytes, offset);
+        if (!box) {
+          break;
+        }
+        visit(box);
+        const bodyEnd = box.start + box.size;
+        const containerTypes = /* @__PURE__ */ new Set(["moov", "trak", "mdia", "minf", "stbl", "moof", "traf"]);
+        if (containerTypes.has(box.type)) {
+          walkBoxes(bytes, box.bodyStart, bodyEnd, visit);
+        }
+        offset += box.size;
+      }
+    }
+    function parseMdhdTimescale(bytes, mdhdBox) {
+      if (!mdhdBox || mdhdBox.bodyStart + 12 > mdhdBox.start + mdhdBox.size) {
+        return 1e3;
+      }
+      const version = bytes[mdhdBox.bodyStart];
+      if (version === 1) {
+        if (mdhdBox.bodyStart + 28 > mdhdBox.start + mdhdBox.size) {
+          return 1e3;
+        }
+        return readU32BE(bytes, mdhdBox.bodyStart + 24);
+      }
+      return readU32BE(bytes, mdhdBox.bodyStart + 12);
+    }
+    function parseTfdtDecodeTime(bytes, tfdtBox) {
+      if (!tfdtBox) {
+        return 0;
+      }
+      const version = bytes[tfdtBox.bodyStart];
+      if (version === 1) {
+        const hi = readU32BE(bytes, tfdtBox.bodyStart + 4);
+        const lo = readU32BE(bytes, tfdtBox.bodyStart + 8);
+        return hi * 4294967296 + lo;
+      }
+      return readU32BE(bytes, tfdtBox.bodyStart + 4);
+    }
+    function trunFirstSampleIsSync(bytes, trunBox) {
+      if (!trunBox || trunBox.bodyStart + 12 > trunBox.start + trunBox.size) {
+        return false;
+      }
+      const body = trunBox.bodyStart;
+      const flags = readU32BE(bytes, body + 4);
+      let offset = body + 8;
+      if (flags & 1) {
+        offset += 4;
+      }
+      if (flags & 4) {
+        if (offset + 4 > trunBox.start + trunBox.size) {
+          return false;
+        }
+        const sampleFlags = readU32BE(bytes, offset);
+        return (sampleFlags & 65536) === 0;
+      }
+      if (flags & 512) {
+        if (offset + 4 > trunBox.start + trunBox.size) {
+          return false;
+        }
+        const sampleFlags = readU32BE(bytes, offset);
+        return (sampleFlags & 65536) === 0;
+      }
+      return false;
+    }
+    function parseFmp4Fragments(bytes) {
+      if (!(bytes instanceof Uint8Array)) {
+        throw new TypeError("bytes must be a Uint8Array");
+      }
+      if (bytes.length < 8) {
+        return [];
+      }
+      let initSegment = null;
+      let timescale = 1e3;
+      const frames = [];
+      let offset = 0;
+      while (offset + 8 <= bytes.length) {
+        const box = readBoxAt(bytes, offset);
+        if (!box) {
+          break;
+        }
+        if (box.type === "ftyp") {
+          const moov = findBoxIn(bytes, offset + box.size, bytes.length, "moov");
+          if (!moov) {
+            break;
+          }
+          initSegment = bytes.subarray(offset, moov.start + moov.size);
+          let mdhd = null;
+          walkBoxes(bytes, moov.bodyStart, moov.start + moov.size, (inner) => {
+            if (inner.type === "mdhd") {
+              mdhd = inner;
+            }
+          });
+          timescale = parseMdhdTimescale(bytes, mdhd);
+          frames.push({
+            payloadBytes: initSegment,
+            mimeType: FMP4_MIME,
+            timestampMs: 0,
+            keyframe: true
+          });
+          offset = moov.start + moov.size;
+          continue;
+        }
+        if (box.type === "moof") {
+          const mdat = readBoxAt(bytes, offset + box.size);
+          if (!mdat || mdat.type !== "mdat") {
+            break;
+          }
+          let tfdt = null;
+          let trun = null;
+          walkBoxes(bytes, box.bodyStart, box.start + box.size, (inner) => {
+            if (inner.type === "tfdt") {
+              tfdt = inner;
+            }
+            if (inner.type === "trun") {
+              trun = inner;
+            }
+          });
+          const decodeTime = parseTfdtDecodeTime(bytes, tfdt);
+          const timestampMs = Math.round(decodeTime / timescale * 1e3);
+          const keyframe = trunFirstSampleIsSync(bytes, trun);
+          const payload = bytes.subarray(offset, offset + box.size + mdat.size);
+          frames.push({
+            payloadBytes: payload,
+            mimeType: FMP4_MIME,
+            timestampMs,
+            keyframe
+          });
+          offset += box.size + mdat.size;
+          continue;
+        }
+        offset += box.size;
+      }
+      return frames;
+    }
+    function trimPartialStartCodeSuffix(bytes) {
+      if (bytes.length >= 3 && bytes[bytes.length - 1] === 0 && bytes[bytes.length - 2] === 0 && bytes[bytes.length - 3] === 0) {
+        return bytes.subarray(0, bytes.length - 3);
+      }
+      if (bytes.length >= 2 && bytes[bytes.length - 1] === 0 && bytes[bytes.length - 2] === 0) {
+        return bytes.subarray(0, bytes.length - 2);
+      }
+      if (bytes.length >= 1 && bytes[bytes.length - 1] === 0) {
+        return bytes.subarray(0, bytes.length - 1);
+      }
+      return bytes;
+    }
+    function indexAfterCompleteAnnexBPrefix(bytes) {
+      const safe = trimPartialStartCodeSuffix(bytes);
+      const starts = findAnnexBStartCodes(safe);
+      if (starts.length < 2) {
+        return 0;
+      }
+      for (let s = 1; s < starts.length; s += 1) {
+        const nalStart = starts[s - 1].index + starts[s - 1].length;
+        if (nalStart >= starts[s].index) {
+          continue;
+        }
+        const type = nalType(safe[nalStart]);
+        if (isVclNal(type)) {
+          return starts[s].index;
+        }
+      }
+      return 0;
+    }
+    var AnnexBIncrementalParser = class {
+      constructor({ frameDurationMs = DEFAULT_FRAME_DURATION_MS } = {}) {
+        this.frameDurationMs = frameDurationMs;
+        this._buffer = new Uint8Array(0);
+        this._emitted = 0;
+      }
+      /**
+       * @param {Uint8Array} chunk
+       * @returns {Array<{ payloadBytes: Uint8Array, mimeType: string, timestampMs: number, keyframe: boolean }>}
+       */
+      push(chunk) {
+        if (!(chunk instanceof Uint8Array)) {
+          throw new TypeError("chunk must be a Uint8Array");
+        }
+        if (chunk.length === 0) {
+          return [];
+        }
+        this._buffer = concatBytes([this._buffer, chunk]);
+        const frames = [];
+        while (true) {
+          const cut = indexAfterCompleteAnnexBPrefix(this._buffer);
+          if (!cut) {
+            break;
+          }
+          const complete = this._buffer.subarray(0, cut);
+          const parsed = parseAnnexBAccessUnits(complete, { frameDurationMs: this.frameDurationMs });
+          for (let i = 0; i < parsed.length; i += 1) {
+            frames.push({
+              ...parsed[i],
+              timestampMs: (this._emitted + i) * this.frameDurationMs
+            });
+          }
+          this._emitted += parsed.length;
+          this._buffer = this._buffer.subarray(cut);
+        }
+        return frames;
+      }
+      flush() {
+        const frames = parseAnnexBAccessUnits(this._buffer, { frameDurationMs: this.frameDurationMs }).map(
+          (frame, i) => ({
+            ...frame,
+            timestampMs: (this._emitted + i) * this.frameDurationMs
+          })
+        );
+        this._emitted += frames.length;
+        this._buffer = new Uint8Array(0);
+        return frames;
+      }
+    };
+    var Fmp4IncrementalParser = class {
+      constructor() {
+        this._buffer = new Uint8Array(0);
+        this._initEmitted = false;
+        this.timescale = 1e3;
+      }
+      /**
+       * @param {Uint8Array} chunk
+       * @returns {Array<{ payloadBytes: Uint8Array, mimeType: string, timestampMs: number, keyframe: boolean }>}
+       */
+      push(chunk) {
+        if (!(chunk instanceof Uint8Array)) {
+          throw new TypeError("chunk must be a Uint8Array");
+        }
+        this._buffer = concatBytes([this._buffer, chunk]);
+        const frames = [];
+        let progress = true;
+        while (progress) {
+          progress = false;
+          if (!this._initEmitted) {
+            const ftyp = readBoxAt(this._buffer, 0);
+            if (!ftyp || ftyp.type !== "ftyp") {
+              continue;
+            }
+            const moov = findBoxIn(this._buffer, ftyp.start + ftyp.size, this._buffer.length, "moov");
+            if (!moov) {
+              continue;
+            }
+            const initEnd = moov.start + moov.size;
+            if (initEnd > this._buffer.length) {
+              continue;
+            }
+            let mdhd = null;
+            walkBoxes(this._buffer, moov.bodyStart, initEnd, (inner) => {
+              if (inner.type === "mdhd") {
+                mdhd = inner;
+              }
+            });
+            this.timescale = parseMdhdTimescale(this._buffer, mdhd);
+            frames.push({
+              payloadBytes: this._buffer.subarray(0, initEnd),
+              mimeType: FMP4_MIME,
+              timestampMs: 0,
+              keyframe: true
+            });
+            this._buffer = this._buffer.subarray(initEnd);
+            this._initEmitted = true;
+            progress = true;
+            continue;
+          }
+          const moof = readBoxAt(this._buffer, 0);
+          if (!moof || moof.type !== "moof") {
+            continue;
+          }
+          if (moof.start + moof.size > this._buffer.length) {
+            continue;
+          }
+          const mdat = readBoxAt(this._buffer, moof.start + moof.size);
+          if (!mdat || mdat.type !== "mdat") {
+            continue;
+          }
+          if (mdat.start + mdat.size > this._buffer.length) {
+            continue;
+          }
+          let tfdt = null;
+          let trun = null;
+          walkBoxes(this._buffer, moof.bodyStart, moof.start + moof.size, (inner) => {
+            if (inner.type === "tfdt") {
+              tfdt = inner;
+            }
+            if (inner.type === "trun") {
+              trun = inner;
+            }
+          });
+          const decodeTime = parseTfdtDecodeTime(this._buffer, tfdt);
+          const timestampMs = Math.round(decodeTime / this.timescale * 1e3);
+          const keyframe = trunFirstSampleIsSync(this._buffer, trun);
+          const end = mdat.start + mdat.size;
+          frames.push({
+            payloadBytes: this._buffer.subarray(0, end),
+            mimeType: FMP4_MIME,
+            timestampMs,
+            keyframe
+          });
+          this._buffer = this._buffer.subarray(end);
+          progress = true;
+        }
+        return frames;
+      }
+      flush() {
+        const frames = parseFmp4Fragments(this._buffer);
+        this._buffer = new Uint8Array(0);
+        return frames;
+      }
+    };
+    module.exports = {
+      DEFAULT_FRAME_DURATION_MS,
+      H264_MIME,
+      FMP4_MIME,
+      parseAnnexBAccessUnits,
+      parseFmp4Fragments,
+      AnnexBIncrementalParser,
+      Fmp4IncrementalParser,
+      findAnnexBStartCodes,
+      readBoxAt
+    };
+  }
+});
+
 // src/streaming/index.js
 var require_streaming = __commonJS({
   "src/streaming/index.js"(exports, module) {
@@ -23776,6 +24304,7 @@ var require_streaming = __commonJS({
     var webrtcSignaling = require_webrtc_stream_signaling();
     var privateMediaChunk = require_private_media_chunk();
     var privateSenderKeyEpoch = require_private_sender_key_epoch();
+    var mediaFraming = require_media_framing();
     module.exports = {
       ...accessModes,
       ...streamSession,
@@ -23784,6 +24313,7 @@ var require_streaming = __commonJS({
       ...privateSenderKeyEpoch,
       ...publicStreamPath,
       ...webrtcSignaling,
+      ...mediaFraming,
       STREAMING_API_EXPERIMENTAL: true
     };
   }
@@ -23941,7 +24471,9 @@ var require_index = __commonJS({
       createPublicStreamRelay,
       PublicStreamBroadcaster,
       PublicStreamViewer,
-      PublicStreamRelay
+      PublicStreamRelay,
+      parseAnnexBAccessUnits,
+      parseFmp4Fragments
     } = require_streaming();
     module.exports = {
       DignityP2P,
@@ -24060,7 +24592,9 @@ var require_index = __commonJS({
       createPublicStreamRelay,
       PublicStreamBroadcaster,
       PublicStreamViewer,
-      PublicStreamRelay
+      PublicStreamRelay,
+      parseAnnexBAccessUnits,
+      parseFmp4Fragments
     };
   }
 });

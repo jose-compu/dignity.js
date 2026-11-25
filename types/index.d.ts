@@ -433,6 +433,7 @@ declare module 'dignity.js' {
     payloadFingerprint: string;
     signatureBase64: string;
     signingPublicKey: string;
+    keyframe?: boolean;
   }
 
   export function createSignedMediaChunk(options: {
@@ -445,7 +446,22 @@ declare module 'dignity.js' {
     timestampMs?: number;
     layerId?: string;
     mimeType?: string;
+    keyframe?: boolean;
   }): SignedMediaChunk;
+
+  export interface ParsedMediaFrame {
+    payloadBytes: Uint8Array;
+    mimeType: string;
+    timestampMs: number;
+    keyframe: boolean;
+  }
+
+  export function parseAnnexBAccessUnits(
+    bytes: Uint8Array,
+    options?: { frameDurationMs?: number }
+  ): ParsedMediaFrame[];
+
+  export function parseFmp4Fragments(bytes: Uint8Array): ParsedMediaFrame[];
 
   export function verifyMediaChunk(chunk: SignedMediaChunk, expectedSessionId?: string): boolean;
   export function decodeMediaChunkPayload(chunk: SignedMediaChunk): Uint8Array;
@@ -503,6 +519,7 @@ declare module 'dignity.js' {
     timestampMs?: number;
     layerId?: string;
     mimeType?: string;
+    keyframe?: boolean;
   }): PrivateSignedMediaChunk;
 
   export function openPrivateMediaChunk(
@@ -551,7 +568,10 @@ declare module 'dignity.js' {
     });
     readonly session: StreamSession;
     announce(): void;
-    publishChunk(payloadBytes: Uint8Array, chunkMeta?: { timestampMs?: number; layerId?: string; mimeType?: string }): SignedMediaChunk;
+    publishChunk(
+      payloadBytes: Uint8Array,
+      chunkMeta?: { timestampMs?: number; layerId?: string; mimeType?: string; keyframe?: boolean }
+    ): SignedMediaChunk;
     close(): void;
   }
 

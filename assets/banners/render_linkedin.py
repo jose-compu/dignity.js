@@ -563,25 +563,25 @@ def assert_banner_within_card(
             raise AssertionError("Tagline extends outside the card horizontal bounds.")
 
 
-V180_BOUNDS_CHECK = {
+V190_BOUNDS_CHECK = {
     "width": DEFAULT_WIDTH,
     "height": DEFAULT_HEIGHT,
-    "version": "1.8.0",
-    "title": "Node stream origin",
+    "version": "1.9.0",
+    "title": "Framed video from Node",
     "date": "November 2026",
     "tagline": "The scalable data layer for decentralized browser apps",
     "highlights": (
-        "Sealed from a Node process",
-        "One person or a fixed list",
-        "Drop a viewer, rotate the key",
+        "Framed video from Node",
+        "Annex-B or fMP4 timing",
+        "Keyframes marked on chunks",
     ),
     "packages": (),
-    "install": "npm install dignity.js@1.8.0",
+    "install": "npm install dignity.js@1.9.0",
 }
 
 
 def run_bounds_check(logo_path: Path = DEFAULT_LOGO) -> None:
-    layout = _canvas_layout(V180_BOUNDS_CHECK["width"], V180_BOUNDS_CHECK["height"])
+    layout = _canvas_layout(V190_BOUNDS_CHECK["width"], V190_BOUNDS_CHECK["height"])
     canvas = Image.new("RGBA", (layout.width, layout.height), BG + (255,))
     draw = ImageDraw.Draw(canvas)
 
@@ -598,12 +598,12 @@ def run_bounds_check(logo_path: Path = DEFAULT_LOGO) -> None:
         layout,
         text_x=provisional_text_x,
         max_text_w=provisional_max_w,
-        version=V180_BOUNDS_CHECK["version"],
-        title=V180_BOUNDS_CHECK["title"],
-        date=V180_BOUNDS_CHECK["date"],
-        highlights=list(V180_BOUNDS_CHECK["highlights"]),
-        packages=list(V180_BOUNDS_CHECK["packages"]),
-        install_line=V180_BOUNDS_CHECK["install"],
+        version=V190_BOUNDS_CHECK["version"],
+        title=V190_BOUNDS_CHECK["title"],
+        date=V190_BOUNDS_CHECK["date"],
+        highlights=list(V190_BOUNDS_CHECK["highlights"]),
+        packages=list(V190_BOUNDS_CHECK["packages"]),
+        install_line=V190_BOUNDS_CHECK["install"],
     )
 
     block_cy = inner_top + inner_h // 2
@@ -617,17 +617,17 @@ def run_bounds_check(logo_path: Path = DEFAULT_LOGO) -> None:
         layout,
         text_x=text_x,
         max_text_w=max_text_w,
-        version=V180_BOUNDS_CHECK["version"],
-        title=V180_BOUNDS_CHECK["title"],
-        date=V180_BOUNDS_CHECK["date"],
-        highlights=list(V180_BOUNDS_CHECK["highlights"]),
-        packages=list(V180_BOUNDS_CHECK["packages"]),
-        install_line=V180_BOUNDS_CHECK["install"],
+        version=V190_BOUNDS_CHECK["version"],
+        title=V190_BOUNDS_CHECK["title"],
+        date=V190_BOUNDS_CHECK["date"],
+        highlights=list(V190_BOUNDS_CHECK["highlights"]),
+        packages=list(V190_BOUNDS_CHECK["packages"]),
+        install_line=V190_BOUNDS_CHECK["install"],
     )
 
     tagline_runs, _ = _pick_tagline_layout(
         draw,
-        V180_BOUNDS_CHECK["tagline"],
+        V190_BOUNDS_CHECK["tagline"],
         logo_x,
         logo_y,
         logo.width,
@@ -777,13 +777,13 @@ def main() -> None:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Verify the v1.8.0 highlight set fits within the card (no PNG written)",
+        help="Verify the v1.9.0 highlight set fits within the card (no PNG written)",
     )
     args = parser.parse_args()
 
     if args.check:
         run_bounds_check(logo_path=args.logo)
-        print("Banner bounds check passed (v1.8.0 highlights).")
+        print("Banner bounds check passed (v1.9.0 highlights).")
         return
 
     if args.output is None:
