@@ -568,6 +568,47 @@ declare module 'dignity.js' {
     logLines: string[];
   };
 
+  export const DEFAULT_SCALE_SIM_SEED: number;
+
+  export function runScaleSimulation(options?: {
+    seed?: number;
+    profile?: 'ci' | 'offline';
+  }): {
+    seed: number;
+    profile: 'ci' | 'offline';
+    targets: Array<{ viewers: number; degree: number; hops: number; interiorRelays: number }>;
+    interiorRelays: number;
+    repair: {
+      assumptions: Record<string, unknown>;
+      series: Array<{
+        depth: number;
+        repairMs: number;
+        withinSiblingOverlapBudget: boolean;
+        pathBreakProbability: number;
+      }>;
+    };
+    stall: {
+      relaySampleSize: number;
+      forwardChecks: number;
+      stalls: number;
+      stallRate: number;
+      peersConstructed: number;
+    };
+    origin: {
+      capBps: number;
+      simulcastStackBps: number;
+      degree: number;
+      requiredBps: number;
+      covers: boolean;
+    };
+    chunk: {
+      verified: boolean;
+      tamperedVerified: boolean;
+      forwardedByteLength: number;
+    };
+    claim: { status: 'topology' | 'qualified'; failedChecks?: string[] };
+  };
+
   export function createRelayLayerPolicy(options: {
     profile?: 'hd720' | 'fhd1080';
     headroomFactor?: number;

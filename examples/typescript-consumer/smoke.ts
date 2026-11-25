@@ -13,6 +13,7 @@ import {
   createRelayLayerPolicy,
   normalizeSimulcastLayers,
   runSimulcastLoadTrace,
+  runScaleSimulation,
   RENDITION_PROFILE_HD720,
   hashReflectiveLogic,
   type CompatibilityPolicy,
@@ -86,4 +87,6 @@ const relayPolicy = createRelayLayerPolicy({ floorBps: 400_000, ceilingBps: 4_00
 void normalizeSimulcastLayers({ layers: [{ layerId: 'L0', payloadBytes: new Uint8Array([1]) }] });
 const simulcastTrace: typeof runSimulcastLoadTrace = runSimulcastLoadTrace;
 void simulcastTrace;
+const scaleSim: typeof runScaleSimulation = runScaleSimulation;
+void scaleSim().claim.status;
 void relayPolicy.chunkLayerId;

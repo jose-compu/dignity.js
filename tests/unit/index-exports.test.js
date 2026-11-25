@@ -38,6 +38,7 @@ describe('public API exports', () => {
     expect(api.createRelayLayerPolicy).toBeDefined();
     expect(api.normalizeSimulcastLayers).toBeDefined();
     expect(api.runSimulcastLoadTrace).toBeDefined();
+    expect(api.runScaleSimulation).toBeDefined();
     expect(api.PublicStreamBroadcaster.prototype.publishSimulcastTick).toBeDefined();
   });
 

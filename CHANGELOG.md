@@ -1,5 +1,9 @@
 # Changelog
 
+## dignity.js 1.14.0
+
+Seeded scale simulation (milestone 7 partial, #152): `runScaleSimulation` with `ci` and `offline` profiles, benchmark JSON under `docs/benchmarks/`, playground `stream-scale-sim`, `npm run example:scale-sim` and `scale:offline`. PeerGroup signaling stress harness remains planned for 1.15.0.
+
 ## dignity.js 1.13.0
 
 Standard ingest adapters (milestone 6, #152): pure-JS `demuxMpegTs`, Node `createMpegTsIngest`, `createHlsIngest`, `createRtmpIngest`, `createSrtIngest`, `createWhipIngest`, `ingest` option on `createNodeStreamOrigin`; playground `stream-ingest-mpegts`; `npm run example:ingest-mpegts` and `example:ingest-whip`.

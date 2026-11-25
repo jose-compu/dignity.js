@@ -59,6 +59,10 @@ const DIGNITY_APP_DEMOS = [
   {
     hash: 'stream-ingest-mpegts',
     expectLines: ['access units:', 'keyframes:', 'first timestampMs:']
+  },
+  {
+    hash: 'stream-scale-sim',
+    expectLines: ['viewers: 10000000', 'hops: 6', 'chunk verified: true']
   }
 ];
 

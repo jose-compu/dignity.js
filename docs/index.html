@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="dignity.js v1.13.0 — The scalable data layer of the decentralized browser application ecosystem." />
+    <meta name="description" content="dignity.js v1.14.0 — The scalable data layer of the decentralized browser application ecosystem." />
     <title>dignity.js · Documentation</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.ico" sizes="32x32" />
@@ -16,7 +16,7 @@
       <a class="site-header__brand" href="#overview">
         <img src="./assets/dignity-logo.svg" alt="" width="344" height="80" />
         <!-- <span>dignity.js</span> -->
-        <span class="site-header__version">v1.13.0</span>
+        <span class="site-header__version">v1.14.0</span>
       </a>
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
@@ -157,7 +157,7 @@
             <p class="lead">
               New to P2P? Follow these lessons. The full walkthrough is in
               <a href="https://github.com/jose-compu/dignity.js/blob/main/TUTORIAL.md" target="_blank" rel="noopener noreferrer"><code>TUTORIAL.md</code></a>,
-              or try the <a href="./playground/index.html">live playground</a> — including <strong>v1.13.0 MPEG-TS ingest</strong> (<code>stream-ingest-mpegts</code>) and <a href="https://github.com/jose-compu/dignity.js/blob/main/examples/node-ingest-mpegts.js"><strong>Node ingest adapters</strong></a>, plus <strong>v0.13 verification</strong> demos.
+              or try the <a href="./playground/index.html">live playground</a> — including <strong>v1.14.0 scale simulation</strong> (<code>stream-scale-sim</code>) and <strong>v1.13.0 MPEG-TS ingest</strong> (<code>stream-ingest-mpegts</code>), plus <strong>v0.13 verification</strong> demos.
             </p>
 
             <div class="section-jump" aria-label="Jump to lessons">
@@ -807,7 +807,8 @@ replica.verifyChain();  // hash-chain consistency</code></pre>
 
             <h3>Roadmap</h3>
             <p><strong>Live P2P AV streaming (#152)</strong> — <a href="./live-streaming-design.md">live-streaming-design.md</a> documents topology and access modes; milestone 4 (Node origin) is **done in v1.9.0** (ffmpeg Annex-B/fMP4 framing, <code>keyframe</code> on signed chunks).</p>
-            <p><strong>v1.13.0 (current)</strong> — standard ingest adapters (MPEG-TS, HLS, RTMP, SRT, WHIP) on <code>dignity.js/node</code>; browser <code>demuxMpegTs</code>; playground <code>stream-ingest-mpegts</code>; <code>npm run example:ingest-mpegts</code>; milestone 6 complete.</p>
+            <p><strong>v1.14.0 (current)</strong> — <code>runScaleSimulation</code> seeded fan-out model; playground <code>stream-scale-sim</code>; <code>npm run example:scale-sim</code>; benchmark JSON; milestone 7 partial.</p>
+            <p><strong>v1.13.0</strong> — standard ingest adapters (MPEG-TS, HLS, RTMP, SRT, WHIP) on <code>dignity.js/node</code>; browser <code>demuxMpegTs</code>; playground <code>stream-ingest-mpegts</code>; <code>npm run example:ingest-mpegts</code>; milestone 6 complete.</p>
             <p><strong>v1.12.0</strong> — simulcast origin publish, per-layer sequences, multi-layer Node ingest; <code>publishSimulcastTick</code>, <code>runSimulcastLoadTrace</code>, playground <code>stream-simulcast-load</code>, <code>npm run example:simulcast-load</code>; milestone 5 complete.</p>
             <p><strong>v1.6.0</strong> — <code>combined</code> private layer, sender-key epoch rotation, playground <code>stream-combined-rotation</code>.</p>
             <p><strong>v1.5.0</strong> — <code>sealPrivateMediaChunk</code>, <code>openPrivateMediaChunk</code> for <code>private-single</code> / <code>private-list</code>, playground private-chunks demo (#152).</p>
@@ -1492,7 +1493,7 @@ npm run example:chess</code></pre>
 
           <footer class="site-footer">
             <p>
-              dignity.js v1.13.0 ·
+              dignity.js v1.14.0 ·
               <a href="https://github.com/jose-compu/dignity.js/blob/main/LICENSE">Apache 2.0</a> ·
               <a href="https://github.com/jose-compu/dignity.js">GitHub</a> ·
               <a href="https://www.npmjs.com/package/dignity.js">npm</a>
