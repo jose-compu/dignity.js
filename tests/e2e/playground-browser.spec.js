@@ -46,11 +46,7 @@ const DIGNITY_APP_DEMOS = [
   },
   {
     hash: 'stream-adaptive-layers',
-    expectLine: 'selected layer: L0'
-  },
-  {
-    hash: 'stream-adaptive-layers',
-    expectLine: 'selected layer: L1'
+    expectLines: ['selected layer: L0', 'selected layer: L1']
   }
 ];
 
@@ -82,7 +78,10 @@ test.describe('Playground browser', () => {
       await page.goto(`/playground/index.html#${demo.hash}`);
       await page.getByRole('button', { name: /Run/ }).click();
       await expect(page.locator('#run-status')).toHaveText('Done', { timeout: 20000 });
-      await expect(page.locator('#output')).toContainText(demo.expectLine);
+      const lines = demo.expectLines || (demo.expectLine ? [demo.expectLine] : []);
+      for (const line of lines) {
+        await expect(page.locator('#output')).toContainText(line);
+      }
       await expect(page.locator('#output .is-error')).toHaveCount(0);
     });
   }
