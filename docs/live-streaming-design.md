@@ -226,6 +226,19 @@ Feasibility argument: 10M **concurrent** viewers implies ~6 relay hops at degree
 
 **Still deferred:** browser `getUserMedia` / WebCodecs ([#159](https://github.com/jose-compu/dignity.js/issues/159)), native Node WebRTC peer, RFC 8888 TWCC wire format, AV1 SVC.
 
+**v1.16.0 (milestone 8 — capacity-aware relay children)** adds `assignRelayChildBudget`, `selectRelayChildren`, and `assignRelayChildren`, optional `childAssignment: 'capacity'` on `createPublicStreamRelay` (`relayUplinkBps` + `forwardLayerBps`), and `childAssignment` on `runScaleSimulation`. Benchmark: [`scale-simulation-capacity.json`](./benchmarks/scale-simulation-capacity.json) (seed `1520714`, profile `ci`). Uniform assignment reproduces v1.14.0 JSON unchanged.
+
+| Metric (seed 1520714, profile `ci`) | Uniform (v1.14.0) | Capacity (v1.16.0) |
+|------------------------------------|--------------------|---------------------|
+| Sampled relay stall share | 0.2305 | 0.2051 |
+| Analytic hops at \(N=10^7\), \(d=16\) | 6 | 6 (table) |
+| Effective hops (capacity fan-out model) | — | 8 |
+| `repairMs` at max claim depth | 1480 ms (depth 6) | 1640 ms (depth 8) |
+| 1000 Mbps origin vs degree-16 HD stack | covers | covers |
+| Claim | `qualified` (stall) | `qualified` (hops, stall) |
+
+**Claim:** capacity mode remains **`qualified`** — stall rate improves versus uniform but is still non-zero under fixed upload-cap assumptions; effective hop depth rises when mean child degree drops. **10M remains a design target.**
+
 ---
 
 ## Milestone mapping (#152)
@@ -239,6 +252,7 @@ Feasibility argument: 10M **concurrent** viewers implies ~6 relay hops at degree
 | 5. Adaptive layer | **Done (v1.10.0–v1.12.0)** — rendition ladder, relay policy, playout guard, simulcast origin publish; camera/WebCodecs still deferred (#159) |
 | 6. Standard ingest adapters | **Done (v1.13.0)** — MPEG-TS demuxer, HLS/RTMP/SRT/WHIP Node ingest on `dignity.js/node`; WHIP uses injectable WebRTC `peerFactory` |
 | 7. Scale simulation | **Done (v1.14.0 + v1.15.0)** — `runScaleSimulation` (qualified stall claim, unchanged); PeerGroup stream chunk signaling stress harness |
+| 8. Capacity-aware relays | **Done (v1.16.0)** — `assignRelayChildren`; uniform vs capacity `runScaleSimulation`; optional capacity fan-out on `createPublicStreamRelay` |
 
 ---
 

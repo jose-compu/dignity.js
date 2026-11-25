@@ -438,6 +438,25 @@ describe('public stream path (experimental)', () => {
     }
   });
 
+  test('capacity childAssignment trims downstream fan-out by uplink budget', () => {
+    const bus = createInMemoryStreamSignalingBus();
+    const keys = testKeyPair('capacity-relay');
+    const relay = createPublicStreamRelay({
+      relayId: 'cap-relay',
+      upstreamId: 'alice',
+      sessionId: 'cap-session',
+      broadcasterSigningPublicKey: keys.signingPublicKey,
+      broadcasterId: 'alice',
+      bus,
+      downstreamViewerIds: ['c1', 'c2', 'c3', 'c4'],
+      childAssignment: 'capacity',
+      relayUplinkBps: 6_000_000,
+      forwardLayerBps: 2_000_000,
+      maxRelayDegree: 16
+    });
+    expect(relay.downstreamViewerIds).toEqual(['c1', 'c2', 'c3']);
+  });
+
   test('non-public session cannot use public broadcaster helper', () => {
     const bus = createInMemoryStreamSignalingBus();
     const keys = testKeyPair('private-origin');

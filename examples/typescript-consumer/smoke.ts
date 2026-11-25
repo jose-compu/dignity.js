@@ -89,4 +89,5 @@ const simulcastTrace: typeof runSimulcastLoadTrace = runSimulcastLoadTrace;
 void simulcastTrace;
 const scaleSim: typeof runScaleSimulation = runScaleSimulation;
 void scaleSim().claim.status;
+void scaleSim({ childAssignment: 'capacity' }).fanOut?.hopsAt10M;
 void relayPolicy.chunkLayerId;

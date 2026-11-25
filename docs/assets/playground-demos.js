@@ -1973,7 +1973,7 @@ log('first timestampMs:', frames[0]?.timestampMs ?? 'none');`
     title: 'Scale simulation (10M fan-out model)',
     description: 'v1.14.0 (#152): seeded analytic hops + discrete relay stall sample; one signed chunk verify.',
     code: `const { runScaleSimulation } = dignity;
-const result = runScaleSimulation({ profile: 'ci' });
+const result = runScaleSimulation({ profile: 'ci', childAssignment: 'uniform' });
 const row10M = result.targets.find((t) => t.viewers === 10000000);
 log('viewers:', row10M.viewers);
 log('hops:', row10M.hops);
@@ -1983,5 +1983,23 @@ if (result.claim.failedChecks) {
   log('failed checks:', result.claim.failedChecks.join(', '));
 }
 log('stall rate:', result.stall.stallRate);`
+  },
+  {
+    id: 'stream-capacity-relays',
+    group: 'v116',
+    title: 'Capacity-aware relay children',
+    description: 'v1.16.0 (#152): uplink ÷ forward layer bitrate child budgets on a mixed-uplink tree.',
+    code: `const { assignRelayChildren, RENDITION_PROFILE_HD720, layerRequiredBps, DEFAULT_HEADROOM_FACTOR } = dignity;
+const forwardBps = layerRequiredBps(RENDITION_PROFILE_HD720, 'L1', DEFAULT_HEADROOM_FACTOR);
+const peers = [
+  { id: 'leaf-5m', uplinkBps: 5_000_000 },
+  { id: 'relay-20m', uplinkBps: 20_000_000 },
+  { id: 'relay-50m', uplinkBps: 50_000_000 },
+  { id: 'super-1g', uplinkBps: 1_000_000_000 }
+];
+const budgets = assignRelayChildren({ peers, forwardLayerBps: forwardBps, maxDegree: 16 });
+for (const row of budgets) {
+  log(row.peerId, 'childBudget:', row.childBudget);
+}`
   }
 ];

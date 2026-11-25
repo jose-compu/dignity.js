@@ -488,6 +488,14 @@ declare module 'dignity.js' {
     getEstimateBps(): number;
   };
 
+  export const DEFAULT_HEADROOM_FACTOR: number;
+
+  export function layerRequiredBps(
+    profile: 'hd720' | 'fhd1080',
+    layerId: 'L0' | 'L1' | 'L2',
+    headroomFactor?: number
+  ): number;
+
   export function createLayerSelector(options: {
     profile: 'hd720' | 'fhd1080';
     headroomFactor?: number;
@@ -570,12 +578,36 @@ declare module 'dignity.js' {
 
   export const DEFAULT_SCALE_SIM_SEED: number;
 
+  export function assignRelayChildBudget(options: {
+    uplinkBps: number;
+    forwardLayerBps: number;
+    maxDegree?: number;
+  }): number;
+
+  export function selectRelayChildren(childIds: string[], budget: number): string[];
+
+  export function assignRelayChildren(options: {
+    peers: Array<{ id: string; uplinkBps: number }>;
+    forwardLayerBps: number;
+    maxDegree?: number;
+  }): Array<{ peerId: string; uplinkBps: number; childBudget: number }>;
+
   export function runScaleSimulation(options?: {
     seed?: number;
     profile?: 'ci' | 'offline';
+    childAssignment?: 'uniform' | 'capacity';
   }): {
     seed: number;
     profile: 'ci' | 'offline';
+    childAssignment?: 'capacity';
+    fanOut?: {
+      childAssignment: 'capacity';
+      leafOnlyRelayCount: number;
+      forwardingRelayCount: number;
+      effectiveDegree: number;
+      hopsAt10M: number;
+      interiorRelaysAt10M: number;
+    };
     targets: Array<{ viewers: number; degree: number; hops: number; interiorRelays: number }>;
     interiorRelays: number;
     repair: {
@@ -862,6 +894,12 @@ declare module 'dignity.js' {
     broadcasterId: string;
     bus: InMemoryStreamSignalingBus;
     downstreamViewerIds: string[];
+    childAssignment?: 'uniform' | 'capacity';
+    relayUplinkBps?: number;
+    forwardLayerBps?: number;
+    maxRelayDegree?: number;
+    relayLayerPolicy?: ReturnType<typeof createRelayLayerPolicy>;
+    relayChildOptions?: Record<string, Record<string, unknown>>;
   }): PublicStreamRelay;
 
   const dignity: {

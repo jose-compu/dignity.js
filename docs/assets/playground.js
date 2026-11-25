@@ -48,6 +48,7 @@ function populateFeatureSelect() {
     v113: 'v1.13.0 ingest',
     v114: 'v1.14.0 scale sim',
     v115: 'v1.15.0 stream stress',
+    v116: 'v1.16.0 capacity relays',
     patterns: 'Browser patterns',
     apps: 'Dignity Apps'
   };

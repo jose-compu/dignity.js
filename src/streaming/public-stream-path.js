@@ -12,6 +12,7 @@ const {
   DEFAULT_LAYER_ID
 } = require('./media-chunk');
 const { normalizeSimulcastLayers, createLayerSequenceTracker } = require('./simulcast-publish');
+const { assignRelayChildBudget, selectRelayChildren } = require('./relay-child-assignment');
 
 const STREAM_MESSAGE_TYPES = Object.freeze({
   JOIN_OFFER: 'stream:join-offer',
@@ -393,9 +394,22 @@ function createPublicStreamViewer(options) {
 }
 
 function createPublicStreamRelay(options) {
-  const relay = new PublicStreamRelay(options);
-  if (options.relayLayerPolicy && Array.isArray(options.downstreamViewerIds)) {
-    for (const childId of options.downstreamViewerIds) {
+  let downstreamViewerIds = options.downstreamViewerIds;
+  if (options.childAssignment === 'capacity') {
+    const uplinkBps = options.relayUplinkBps;
+    const forwardLayerBps = options.forwardLayerBps;
+    if (Number.isFinite(uplinkBps) && Number.isFinite(forwardLayerBps)) {
+      const budget = assignRelayChildBudget({
+        uplinkBps,
+        forwardLayerBps,
+        maxDegree: options.maxRelayDegree ?? 16
+      });
+      downstreamViewerIds = selectRelayChildren(options.downstreamViewerIds ?? [], budget);
+    }
+  }
+  const relay = new PublicStreamRelay({ ...options, downstreamViewerIds });
+  if (options.relayLayerPolicy && Array.isArray(downstreamViewerIds)) {
+    for (const childId of downstreamViewerIds) {
       const perChild = options.relayChildOptions && options.relayChildOptions[childId];
       options.relayLayerPolicy.registerChild(childId, perChild || {});
     }

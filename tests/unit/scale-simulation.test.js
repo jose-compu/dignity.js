@@ -26,6 +26,33 @@ describe('runScaleSimulation', () => {
     expect(live).toEqual(committed);
   });
 
+  test('uniform childAssignment reproduces committed ci benchmark', () => {
+    const live = runScaleSimulation({
+      seed: DEFAULT_SEED,
+      profile: 'ci',
+      childAssignment: 'uniform'
+    });
+    const committed = JSON.parse(fs.readFileSync(CI_BENCHMARK, 'utf8'));
+    expect(live).toEqual(committed);
+  });
+
+  test('capacity childAssignment lowers stall rate on ci seed', () => {
+    const uniform = runScaleSimulation({ seed: DEFAULT_SEED, profile: 'ci', childAssignment: 'uniform' });
+    const capacity = runScaleSimulation({ seed: DEFAULT_SEED, profile: 'ci', childAssignment: 'capacity' });
+    expect(capacity.childAssignment).toBe('capacity');
+    expect(capacity.fanOut.hopsAt10M).toBeGreaterThan(6);
+    expect(capacity.stall.stallRate).toBeLessThan(uniform.stall.stallRate);
+    expect(capacity.claim.status).toBe('qualified');
+    expect(capacity.claim.failedChecks).toContain('stall');
+  });
+
+  test('matches committed capacity benchmark JSON', () => {
+    const CAP_BENCHMARK = path.join(__dirname, '../../docs/benchmarks/scale-simulation-capacity.json');
+    const live = runScaleSimulation({ seed: DEFAULT_SEED, profile: 'ci', childAssignment: 'capacity' });
+    const committed = JSON.parse(fs.readFileSync(CAP_BENCHMARK, 'utf8'));
+    expect(live).toEqual(committed);
+  });
+
   test('hop table matches design doc', () => {
     expect(analyticHops(10_000, 8)).toBe(5);
     expect(analyticHops(1_000_000, 12)).toBe(6);

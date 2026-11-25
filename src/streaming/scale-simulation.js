@@ -11,6 +11,7 @@ const { createSignedMediaChunk, verifyMediaChunk, decodeMediaChunkPayload } = re
 const { createReceiverReport } = require('./receiver-report');
 const { layerRequiredBps, DEFAULT_HEADROOM_FACTOR } = require('./layer-selector');
 const { createRelayLayerPolicy } = require('./relay-layer-policy');
+const { assignRelayChildBudget } = require('./relay-child-assignment');
 
 const DEFAULT_SEED = 1520714;
 const HEADROOM = DEFAULT_HEADROOM_FACTOR;
@@ -119,8 +120,10 @@ function mbpsToBps(mbps) {
 /**
  * @param {() => number} next
  * @param {number} peerCap
+ * @param {'uniform' | 'capacity'} childAssignment
+ * @param {number} [forwardLayerBps] required when childAssignment is capacity
  */
-function sampleRelays(next, peerCap) {
+function sampleRelays(next, peerCap, childAssignment = 'uniform', forwardLayerBps = 0) {
   const relayCapsMbps = UPLOAD_CAP_ASSUMPTIONS_Mbps.relay;
   const superCapsMbps = UPLOAD_CAP_ASSUMPTIONS_Mbps.superPeer;
   const relays = [];
@@ -131,15 +134,52 @@ function sampleRelays(next, peerCap) {
     const capMbps = isSuper
       ? superCapsMbps[Math.floor(next() * superCapsMbps.length)]
       : relayCapsMbps[Math.floor(next() * relayCapsMbps.length)];
-    const childCount = 1 + Math.floor(next() * SCALE_TARGET_D);
+    const capBps = mbpsToBps(capMbps);
+    let childCount;
+    if (childAssignment === 'capacity') {
+      childCount = assignRelayChildBudget({
+        uplinkBps: capBps,
+        forwardLayerBps,
+        maxDegree: SCALE_TARGET_D
+      });
+    } else {
+      childCount = 1 + Math.floor(next() * SCALE_TARGET_D);
+    }
     relays.push({
       id: `r${i}`,
-      capBps: mbpsToBps(capMbps),
+      capBps,
       childCount,
       isSuper
     });
   }
   return relays;
+}
+
+/**
+ * @param {ReturnType<typeof sampleRelays>} relays
+ * @param {'uniform' | 'capacity'} childAssignment
+ */
+function summarizeFanOut(relays, childAssignment) {
+  const forwarding = relays.filter((r) => r.childCount > 0);
+  const leafOnlyRelayCount = relays.length - forwarding.length;
+  let effectiveDegree = SCALE_TARGET_D;
+  if (childAssignment === 'capacity') {
+    if (forwarding.length === 0) {
+      effectiveDegree = 1;
+    } else {
+      const totalChildren = forwarding.reduce((sum, relay) => sum + relay.childCount, 0);
+      effectiveDegree = Math.max(1, Math.round(totalChildren / forwarding.length));
+    }
+  }
+  const hopsAt10M = analyticHops(SCALE_TARGET_N, effectiveDegree);
+  return {
+    childAssignment,
+    leafOnlyRelayCount,
+    forwardingRelayCount: forwarding.length,
+    effectiveDegree,
+    hopsAt10M,
+    interiorRelaysAt10M: interiorRelays(SCALE_TARGET_N, effectiveDegree)
+  };
 }
 
 /**
@@ -157,6 +197,9 @@ function simulateStalls(next, relays) {
   let virtualNowMs = VIRTUAL_TICK_MS;
 
   for (const relay of relays) {
+    if (relay.childCount <= 0) {
+      continue;
+    }
     const policy = createRelayLayerPolicy({
       profile,
       floorBps: l0,
@@ -305,14 +348,24 @@ function runChunkVerifyCheck() {
  * @param {Object} [options]
  * @param {number} [options.seed]
  * @param {'ci' | 'offline'} [options.profile]
+ * @param {'uniform' | 'capacity'} [options.childAssignment] capacity default for scale sim only; public relay API stays uniform unless set
  */
-function runScaleSimulation({ seed = DEFAULT_SEED, profile: simProfile = 'ci' } = {}) {
+function runScaleSimulation({
+  seed = DEFAULT_SEED,
+  profile: simProfile = 'ci',
+  childAssignment = 'uniform'
+} = {}) {
   if (!Object.prototype.hasOwnProperty.call(PEER_CAP, simProfile)) {
     throw new TypeError(`profile must be "ci" or "offline", got ${simProfile}`);
+  }
+  if (childAssignment !== 'uniform' && childAssignment !== 'capacity') {
+    throw new TypeError(`childAssignment must be "uniform" or "capacity", got ${childAssignment}`);
   }
 
   const next = createPrng(seed >>> 0);
   const peerCap = PEER_CAP[simProfile];
+  const renditionProfile = RENDITION_PROFILE_HD720;
+  const typicalForwardBps = layerRequiredBps(renditionProfile, 'L1', HEADROOM);
 
   const targets = buildAnalyticTargets();
   const repair = {
@@ -325,20 +378,30 @@ function runScaleSimulation({ seed = DEFAULT_SEED, profile: simProfile = 'ci' } 
     series: buildRepairSeries()
   };
 
-  const relays = sampleRelays(next, peerCap);
+  const relays = sampleRelays(next, peerCap, childAssignment, typicalForwardBps);
   const stall = simulateStalls(next, relays);
+  const fanOut = summarizeFanOut(relays, childAssignment);
   const origin = evaluateOriginCoverage(SCALE_TARGET_D);
   const chunk = runChunkVerifyCheck();
 
   const scaleRow = targets.find((t) => t.viewers === SCALE_TARGET_N && t.degree === SCALE_TARGET_D);
-  const hopsAt10M = scaleRow ? scaleRow.hops : analyticHops(SCALE_TARGET_N, SCALE_TARGET_D);
-  const repairAt6 = repairMs(6);
+  const hopsAt10M =
+    childAssignment === 'capacity'
+      ? fanOut.hopsAt10M
+      : scaleRow
+        ? scaleRow.hops
+        : analyticHops(SCALE_TARGET_N, SCALE_TARGET_D);
+  const repairAtMaxDepth = repairMs(hopsAt10M);
   const failedChecks = [];
 
-  if (hopsAt10M !== 6) {
+  if (childAssignment === 'uniform') {
+    if (hopsAt10M !== 6) {
+      failedChecks.push('hops');
+    }
+  } else if (childAssignment === 'capacity' && hopsAt10M > 6) {
     failedChecks.push('hops');
   }
-  if (repairAt6 > SIBLING_OVERLAP_BUDGET_MS) {
+  if (repairAtMaxDepth > SIBLING_OVERLAP_BUDGET_MS) {
     failedChecks.push('repair');
   }
   if (!origin.covers) {
@@ -354,7 +417,8 @@ function runScaleSimulation({ seed = DEFAULT_SEED, profile: simProfile = 'ci' } 
       ? { status: 'topology' }
       : { status: 'qualified', failedChecks };
 
-  return {
+  /** @type {Record<string, unknown>} */
+  const result = {
     seed,
     profile: simProfile,
     targets,
@@ -365,6 +429,11 @@ function runScaleSimulation({ seed = DEFAULT_SEED, profile: simProfile = 'ci' } 
     chunk,
     claim
   };
+  if (childAssignment !== 'uniform') {
+    result.childAssignment = childAssignment;
+    result.fanOut = fanOut;
+  }
+  return result;
 }
 
 module.exports = {
@@ -373,6 +442,8 @@ module.exports = {
   PEER_CAP,
   UPLOAD_CAP_ASSUMPTIONS_Mbps,
   runScaleSimulation,
+  sampleRelays,
+  summarizeFanOut,
   analyticHops,
   interiorRelays,
   repairMs,

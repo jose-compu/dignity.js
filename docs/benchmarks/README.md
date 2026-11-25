@@ -39,6 +39,12 @@ Seeded fan-out model (`runScaleSimulation`) — not a WebRTC load test.
 | [`scale-simulation.json`](./scale-simulation.json) | `ci` (committed from seed `1520714`) | `npm run example:scale-sim` |
 | [`scale-simulation-offline.json`](./scale-simulation-offline.json) | `offline` (local generate) | `npm run scale:offline` with `SCALE_SIM_JSON=1` redirected to this file |
 
+## Scale simulation capacity (v1.16.0)
+
+| File | `childAssignment` | Command |
+| --- | --- | --- |
+| [`scale-simulation-capacity.json`](./scale-simulation-capacity.json) | `capacity` (seed `1520714`, profile `ci`) | `node -e "require('./src').runScaleSimulation({childAssignment:'capacity'})"` or playground `stream-capacity-relays` |
+
 ## Stream signaling stress (v1.15.0)
 
 Synthetic chunk metadata over PeerGroup gossip (`InMemoryNetworkAdapter`), not media bytes.
