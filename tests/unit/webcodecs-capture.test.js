@@ -152,6 +152,31 @@ describe('webcodecs support', () => {
   test('mimeTypeToDecoderCodec maps avc mime strings', () => {
     expect(mimeTypeToDecoderCodec('video/mp4;codecs=avc1.42E01E')).toBe('avc1.42E01E');
     expect(mimeTypeToDecoderCodec('video/webm;codecs=vp8')).toBe('vp8');
+    expect(mimeTypeToDecoderCodec('video/webm;codecs=vp9')).toBe('vp9');
+    expect(mimeTypeToDecoderCodec('')).toBe('vp8');
+  });
+
+  test('selectVideoEncoderConfig falls back to VP8 when H.264 unsupported', async () => {
+    class Vp8OnlyEncoder {
+      static async isConfigSupported(config) {
+        return { supported: config.codec === 'vp8' };
+      }
+    }
+    const support = { VideoEncoder: Vp8OnlyEncoder, missing: [], supported: true };
+    const config = await selectVideoEncoderConfig(support, { width: 640, height: 360 });
+    expect(config.codec).toBe('vp8');
+  });
+
+  test('selectVideoEncoderConfig throws when no codec is supported', async () => {
+    class NoEncoder {
+      static async isConfigSupported() {
+        return { supported: false };
+      }
+    }
+    const support = { VideoEncoder: NoEncoder, missing: [], supported: true };
+    await expect(selectVideoEncoderConfig(support, { width: 640, height: 360 })).rejects.toThrow(
+      /No supported WebCodecs/
+    );
   });
 });
 
@@ -230,6 +255,24 @@ describe('createBrowserCaptureSource', () => {
     expect(source.chunks[0].timestampMs).toBe(source.chunks[1].timestampMs);
     source.stop();
   });
+
+  test('requires canvas fallback dependencies when track processor is missing', async () => {
+    const VideoEncoder = createFakeVideoEncoder();
+    const support = { VideoEncoder, missing: [], supported: true };
+    const keys = signingKeys();
+
+    const source = await createBrowserCaptureSource({
+      mediaStream: fakeMediaStream(),
+      sessionId: 'canvas-fallback',
+      broadcasterId: 'bc',
+      ...keys,
+      maxFrames: 1,
+      VideoEncoder,
+      support
+    });
+
+    await expect(source.start()).rejects.toThrow(/MediaStreamTrackProcessor is unavailable/);
+  });
 });
 
 describe('createWebCodecsDecoder', () => {
@@ -302,6 +345,34 @@ describe('createWebCodecsDecoder', () => {
     });
     decoder.feedChunk(keyL1, { sessionId: 'dec' });
     expect(decoded.length).toBe(2);
+    decoder.close();
+  });
+
+  test('rejects chunks that fail signature verification', () => {
+    const keys = signingKeys();
+    const other = signingKeys();
+    const VideoDecoder = createFakeVideoDecoder();
+
+    const decoder = createWebCodecsDecoder({
+      onFrame: () => {},
+      VideoDecoder,
+      EncodedVideoChunk: FakeEncodedVideoChunk,
+      support: { VideoDecoder, missing: [], supported: true }
+    });
+
+    const bad = createSignedMediaChunk({
+      sessionId: 'dec',
+      broadcasterId: 'bc',
+      signingSecretKey: keys.signingSecretKey,
+      signingPublicKey: other.signingPublicKey,
+      layerId: 'L0',
+      keyframe: true,
+      timestampMs: 1,
+      mimeType: 'video/webm;codecs=vp8',
+      payloadBytes: new Uint8Array([9])
+    });
+
+    expect(() => decoder.feedChunk(bad, { sessionId: 'dec' })).toThrow(/Invalid media chunk signature/);
     decoder.close();
   });
 });
