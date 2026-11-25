@@ -37965,6 +37965,57 @@ var require_simulcast_publish = __commonJS({
   }
 });
 
+// src/streaming/relay-child-assignment.js
+var require_relay_child_assignment = __commonJS({
+  "src/streaming/relay-child-assignment.js"(exports, module) {
+    function assignRelayChildBudget({ uplinkBps, forwardLayerBps, maxDegree = 16 }) {
+      if (!Number.isFinite(uplinkBps) || uplinkBps <= 0) {
+        return 0;
+      }
+      if (!Number.isFinite(forwardLayerBps) || forwardLayerBps <= 0) {
+        return 0;
+      }
+      const max = Math.max(0, Math.floor(maxDegree));
+      if (max === 0) {
+        return 0;
+      }
+      const raw = Math.floor(uplinkBps / forwardLayerBps);
+      return Math.min(max, Math.max(0, raw));
+    }
+    function selectRelayChildren(childIds, budget) {
+      if (!Array.isArray(childIds)) {
+        throw new TypeError("childIds must be an array");
+      }
+      if (!Number.isFinite(budget) || budget <= 0) {
+        return [];
+      }
+      const n = Math.min(childIds.length, Math.floor(budget));
+      return childIds.slice(0, n);
+    }
+    function assignRelayChildren({ peers, forwardLayerBps, maxDegree = 16 }) {
+      if (!Array.isArray(peers)) {
+        throw new TypeError("peers must be an array");
+      }
+      return peers.map((peer) => {
+        if (!peer || typeof peer.id !== "string") {
+          throw new TypeError("each peer needs a string id");
+        }
+        const uplinkBps = Number(peer.uplinkBps);
+        return {
+          peerId: peer.id,
+          uplinkBps,
+          childBudget: assignRelayChildBudget({ uplinkBps, forwardLayerBps, maxDegree })
+        };
+      });
+    }
+    module.exports = {
+      assignRelayChildBudget,
+      selectRelayChildren,
+      assignRelayChildren
+    };
+  }
+});
+
 // src/streaming/public-stream-path.js
 var require_public_stream_path = __commonJS({
   "src/streaming/public-stream-path.js"(exports, module) {
@@ -37976,6 +38027,7 @@ var require_public_stream_path = __commonJS({
       DEFAULT_LAYER_ID
     } = require_media_chunk();
     var { normalizeSimulcastLayers, createLayerSequenceTracker } = require_simulcast_publish();
+    var { assignRelayChildBudget, selectRelayChildren } = require_relay_child_assignment();
     var STREAM_MESSAGE_TYPES = Object.freeze({
       JOIN_OFFER: "stream:join-offer",
       JOIN_REQUEST: "stream:join-request",
@@ -38307,9 +38359,22 @@ var require_public_stream_path = __commonJS({
       return new PublicStreamViewer(options);
     }
     function createPublicStreamRelay(options) {
-      const relay = new PublicStreamRelay(options);
-      if (options.relayLayerPolicy && Array.isArray(options.downstreamViewerIds)) {
-        for (const childId of options.downstreamViewerIds) {
+      let downstreamViewerIds = options.downstreamViewerIds;
+      if (options.childAssignment === "capacity") {
+        const uplinkBps = options.relayUplinkBps;
+        const forwardLayerBps = options.forwardLayerBps;
+        if (Number.isFinite(uplinkBps) && Number.isFinite(forwardLayerBps)) {
+          const budget = assignRelayChildBudget({
+            uplinkBps,
+            forwardLayerBps,
+            maxDegree: options.maxRelayDegree ?? 16
+          });
+          downstreamViewerIds = selectRelayChildren(options.downstreamViewerIds ?? [], budget);
+        }
+      }
+      const relay = new PublicStreamRelay({ ...options, downstreamViewerIds });
+      if (options.relayLayerPolicy && Array.isArray(downstreamViewerIds)) {
+        for (const childId of downstreamViewerIds) {
           const perChild = options.relayChildOptions && options.relayChildOptions[childId];
           options.relayLayerPolicy.registerChild(childId, perChild || {});
         }
@@ -39681,6 +39746,7 @@ var require_scale_simulation = __commonJS({
     var { createReceiverReport } = require_receiver_report();
     var { layerRequiredBps, DEFAULT_HEADROOM_FACTOR } = require_layer_selector();
     var { createRelayLayerPolicy } = require_relay_layer_policy();
+    var { assignRelayChildBudget } = require_relay_child_assignment();
     var DEFAULT_SEED = 1520714;
     var HEADROOM = DEFAULT_HEADROOM_FACTOR;
     var SCALE_TARGET_N = 1e7;
@@ -39746,7 +39812,7 @@ var require_scale_simulation = __commonJS({
     function mbpsToBps(mbps) {
       return Math.round(mbps * 1e6);
     }
-    function sampleRelays(next, peerCap) {
+    function sampleRelays(next, peerCap, childAssignment = "uniform", forwardLayerBps = 0) {
       const relayCapsMbps = UPLOAD_CAP_ASSUMPTIONS_Mbps.relay;
       const superCapsMbps = UPLOAD_CAP_ASSUMPTIONS_Mbps.superPeer;
       const relays = [];
@@ -39754,15 +39820,47 @@ var require_scale_simulation = __commonJS({
       for (let i = 0; i < relaySample; i += 1) {
         const isSuper = next() < 0.08;
         const capMbps = isSuper ? superCapsMbps[Math.floor(next() * superCapsMbps.length)] : relayCapsMbps[Math.floor(next() * relayCapsMbps.length)];
-        const childCount = 1 + Math.floor(next() * SCALE_TARGET_D);
+        const capBps = mbpsToBps(capMbps);
+        let childCount;
+        if (childAssignment === "capacity") {
+          childCount = assignRelayChildBudget({
+            uplinkBps: capBps,
+            forwardLayerBps,
+            maxDegree: SCALE_TARGET_D
+          });
+        } else {
+          childCount = 1 + Math.floor(next() * SCALE_TARGET_D);
+        }
         relays.push({
           id: `r${i}`,
-          capBps: mbpsToBps(capMbps),
+          capBps,
           childCount,
           isSuper
         });
       }
       return relays;
+    }
+    function summarizeFanOut(relays, childAssignment) {
+      const forwarding = relays.filter((r) => r.childCount > 0);
+      const leafOnlyRelayCount = relays.length - forwarding.length;
+      let effectiveDegree = SCALE_TARGET_D;
+      if (childAssignment === "capacity") {
+        if (forwarding.length === 0) {
+          effectiveDegree = 1;
+        } else {
+          const totalChildren = forwarding.reduce((sum, relay) => sum + relay.childCount, 0);
+          effectiveDegree = Math.max(1, Math.round(totalChildren / forwarding.length));
+        }
+      }
+      const hopsAt10M = analyticHops(SCALE_TARGET_N, effectiveDegree);
+      return {
+        childAssignment,
+        leafOnlyRelayCount,
+        forwardingRelayCount: forwarding.length,
+        effectiveDegree,
+        hopsAt10M,
+        interiorRelaysAt10M: interiorRelays(SCALE_TARGET_N, effectiveDegree)
+      };
     }
     function simulateStalls(next, relays) {
       const profile = RENDITION_PROFILE_HD720;
@@ -39773,6 +39871,9 @@ var require_scale_simulation = __commonJS({
       let stalls = 0;
       let virtualNowMs = VIRTUAL_TICK_MS;
       for (const relay of relays) {
+        if (relay.childCount <= 0) {
+          continue;
+        }
         const policy = createRelayLayerPolicy({
           profile,
           floorBps: l0,
@@ -39901,12 +40002,21 @@ var require_scale_simulation = __commonJS({
         forwardedByteLength: forwarded.byteLength
       };
     }
-    function runScaleSimulation({ seed = DEFAULT_SEED, profile: simProfile = "ci" } = {}) {
+    function runScaleSimulation({
+      seed = DEFAULT_SEED,
+      profile: simProfile = "ci",
+      childAssignment = "uniform"
+    } = {}) {
       if (!Object.prototype.hasOwnProperty.call(PEER_CAP, simProfile)) {
         throw new TypeError(`profile must be "ci" or "offline", got ${simProfile}`);
       }
+      if (childAssignment !== "uniform" && childAssignment !== "capacity") {
+        throw new TypeError(`childAssignment must be "uniform" or "capacity", got ${childAssignment}`);
+      }
       const next = createPrng(seed >>> 0);
       const peerCap = PEER_CAP[simProfile];
+      const renditionProfile = RENDITION_PROFILE_HD720;
+      const typicalForwardBps = layerRequiredBps(renditionProfile, "L1", HEADROOM);
       const targets = buildAnalyticTargets();
       const repair = {
         assumptions: {
@@ -39917,18 +40027,23 @@ var require_scale_simulation = __commonJS({
         },
         series: buildRepairSeries()
       };
-      const relays = sampleRelays(next, peerCap);
+      const relays = sampleRelays(next, peerCap, childAssignment, typicalForwardBps);
       const stall = simulateStalls(next, relays);
+      const fanOut = summarizeFanOut(relays, childAssignment);
       const origin = evaluateOriginCoverage(SCALE_TARGET_D);
       const chunk = runChunkVerifyCheck();
       const scaleRow = targets.find((t) => t.viewers === SCALE_TARGET_N && t.degree === SCALE_TARGET_D);
-      const hopsAt10M = scaleRow ? scaleRow.hops : analyticHops(SCALE_TARGET_N, SCALE_TARGET_D);
-      const repairAt6 = repairMs(6);
+      const hopsAt10M = childAssignment === "capacity" ? fanOut.hopsAt10M : scaleRow ? scaleRow.hops : analyticHops(SCALE_TARGET_N, SCALE_TARGET_D);
+      const repairAtMaxDepth = repairMs(hopsAt10M);
       const failedChecks = [];
-      if (hopsAt10M !== 6) {
+      if (childAssignment === "uniform") {
+        if (hopsAt10M !== 6) {
+          failedChecks.push("hops");
+        }
+      } else if (childAssignment === "capacity" && hopsAt10M > 6) {
         failedChecks.push("hops");
       }
-      if (repairAt6 > SIBLING_OVERLAP_BUDGET_MS) {
+      if (repairAtMaxDepth > SIBLING_OVERLAP_BUDGET_MS) {
         failedChecks.push("repair");
       }
       if (!origin.covers) {
@@ -39938,7 +40053,7 @@ var require_scale_simulation = __commonJS({
         failedChecks.push("stall");
       }
       const claim = failedChecks.length === 0 ? { status: "topology" } : { status: "qualified", failedChecks };
-      return {
+      const result = {
         seed,
         profile: simProfile,
         targets,
@@ -39949,6 +40064,11 @@ var require_scale_simulation = __commonJS({
         chunk,
         claim
       };
+      if (childAssignment !== "uniform") {
+        result.childAssignment = childAssignment;
+        result.fanOut = fanOut;
+      }
+      return result;
     }
     module.exports = {
       DEFAULT_SEED,
@@ -39956,6 +40076,8 @@ var require_scale_simulation = __commonJS({
       PEER_CAP,
       UPLOAD_CAP_ASSUMPTIONS_Mbps,
       runScaleSimulation,
+      sampleRelays,
+      summarizeFanOut,
       analyticHops,
       interiorRelays,
       repairMs,
@@ -40306,6 +40428,7 @@ var require_streaming = __commonJS({
     var relayLayerPolicy = require_relay_layer_policy();
     var simulcastPublish = require_simulcast_publish();
     var scaleSimulation = require_scale_simulation();
+    var relayChildAssignment = require_relay_child_assignment();
     var { demuxMpegTs, MpegTsDemuxer, ptsToTimestampMs } = require_mpegts_demuxer();
     module.exports = {
       ...accessModes,
@@ -40324,6 +40447,7 @@ var require_streaming = __commonJS({
       ...relayLayerPolicy,
       ...simulcastPublish,
       ...scaleSimulation,
+      ...relayChildAssignment,
       demuxMpegTs,
       MpegTsDemuxer,
       ptsToTimestampMs,
@@ -40468,12 +40592,17 @@ var require_src = __commonJS({
       createReceiverReport,
       createBandwidthEstimator,
       createLayerSelector,
+      layerRequiredBps,
+      DEFAULT_HEADROOM_FACTOR,
       createPlayoutBuffer,
       createRelayLayerPolicy,
       normalizeSimulcastLayers,
       createLayerSequenceTracker,
       runSimulcastLoadTrace,
       runScaleSimulation,
+      assignRelayChildBudget,
+      selectRelayChildren,
+      assignRelayChildren,
       normalizePrivateRecipients,
       validateStreamAccessConfig,
       StreamSession,
@@ -40603,12 +40732,17 @@ var require_src = __commonJS({
       createReceiverReport,
       createBandwidthEstimator,
       createLayerSelector,
+      layerRequiredBps,
+      DEFAULT_HEADROOM_FACTOR,
       createPlayoutBuffer,
       createRelayLayerPolicy,
       normalizeSimulcastLayers,
       createLayerSequenceTracker,
       runSimulcastLoadTrace,
       runScaleSimulation,
+      assignRelayChildBudget,
+      selectRelayChildren,
+      assignRelayChildren,
       normalizePrivateRecipients,
       validateStreamAccessConfig,
       StreamSession,
@@ -41898,7 +42032,7 @@ function Lobby({
       emptyText: "No finished games yet.",
       onOpen: handleOpenGame
     }
-  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.15.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
+  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.16.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
       id: usernameInputId,
