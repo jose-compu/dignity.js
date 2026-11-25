@@ -37,3 +37,4 @@ Thumbs.db
 
 # npm pack output
 *.tgz
+test-results/

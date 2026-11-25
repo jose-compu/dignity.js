@@ -37954,6 +37954,7 @@ var require_public_stream_path = __commonJS({
        * @param {string} options.broadcasterId
        * @param {InMemoryStreamSignalingBus} options.bus
        * @param {string[]} options.downstreamViewerIds
+       * @param {import('./relay-layer-policy').createRelayLayerPolicy extends Function ? ReturnType<import('./relay-layer-policy').createRelayLayerPolicy> : object} [options.relayLayerPolicy]
        */
       constructor({
         relayId,
@@ -37962,7 +37963,8 @@ var require_public_stream_path = __commonJS({
         broadcasterSigningPublicKey,
         broadcasterId,
         bus,
-        downstreamViewerIds
+        downstreamViewerIds,
+        relayLayerPolicy = null
       }) {
         this.relayId = relayId;
         this.upstreamId = upstreamId;
@@ -37971,8 +37973,26 @@ var require_public_stream_path = __commonJS({
         this.broadcasterId = broadcasterId;
         this.bus = bus;
         this.downstreamViewerIds = [...downstreamViewerIds];
+        this.relayLayerPolicy = relayLayerPolicy;
         this._onBusMessage = this._onBusMessage.bind(this);
         this.bus.subscribe(relayId, this._onBusMessage);
+      }
+      /**
+       * @param {string} childId
+       * @param {import('./receiver-report').ReceiverReport} report
+       */
+      observeChildReport(childId, report) {
+        if (!this.relayLayerPolicy) {
+          throw new Error("PublicStreamRelay has no relayLayerPolicy");
+        }
+        return this.relayLayerPolicy.observeChildReport(childId, report);
+      }
+      /**
+       * @param {string} childId
+       * @returns {string | null}
+       */
+      getChildLayer(childId) {
+        return this.relayLayerPolicy ? this.relayLayerPolicy.getChildLayer(childId) : null;
       }
       _onBusMessage(envelope) {
         if (envelope.messageType !== STREAM_MESSAGE_TYPES.MEDIA_CHUNK || !envelope.chunk) {
@@ -37983,10 +38003,21 @@ var require_public_stream_path = __commonJS({
           return;
         }
         verifyMediaChunk(chunk, this.sessionId);
-        this.bus.fanout(this.relayId, this.downstreamViewerIds, {
-          messageType: STREAM_MESSAGE_TYPES.MEDIA_CHUNK,
-          chunk
-        });
+        if (!this.relayLayerPolicy) {
+          this.bus.fanout(this.relayId, this.downstreamViewerIds, {
+            messageType: STREAM_MESSAGE_TYPES.MEDIA_CHUNK,
+            chunk
+          });
+          return;
+        }
+        for (const childId of this.downstreamViewerIds) {
+          if (this.relayLayerPolicy.shouldForwardToChild(childId, chunk)) {
+            this.bus.send(this.relayId, childId, {
+              messageType: STREAM_MESSAGE_TYPES.MEDIA_CHUNK,
+              chunk
+            });
+          }
+        }
       }
     };
     function createPublicStreamBroadcaster(options) {
@@ -38007,7 +38038,14 @@ var require_public_stream_path = __commonJS({
       return new PublicStreamViewer(options);
     }
     function createPublicStreamRelay(options) {
-      return new PublicStreamRelay(options);
+      const relay = new PublicStreamRelay(options);
+      if (options.relayLayerPolicy && Array.isArray(options.downstreamViewerIds)) {
+        for (const childId of options.downstreamViewerIds) {
+          const perChild = options.relayChildOptions && options.relayChildOptions[childId];
+          options.relayLayerPolicy.registerChild(childId, perChild || {});
+        }
+      }
+      return relay;
     }
     function createInMemoryStreamSignalingBus() {
       return new InMemoryStreamSignalingBus();
@@ -39201,6 +39239,219 @@ var require_layer_selector = __commonJS({
   }
 });
 
+// src/streaming/playout-buffer.js
+var require_playout_buffer = __commonJS({
+  "src/streaming/playout-buffer.js"(exports, module) {
+    var { LOSS_THRESHOLD } = require_bandwidth_estimator();
+    var { LAYER_IDS } = require_rendition_ladder();
+    var DEFAULT_INITIAL_TARGET_DELAY_MS = 80;
+    var DEFAULT_MAX_TARGET_DELAY_MS = 2e3;
+    var DEFAULT_RAISE_STEP_MS = 60;
+    function createPlayoutBuffer(options = {}) {
+      const initialTargetDelayMs = options.initialTargetDelayMs ?? DEFAULT_INITIAL_TARGET_DELAY_MS;
+      const maxTargetDelayMs = options.maxTargetDelayMs ?? DEFAULT_MAX_TARGET_DELAY_MS;
+      const raiseStepMs = options.raiseStepMs ?? DEFAULT_RAISE_STEP_MS;
+      let targetDelayMs = initialTargetDelayMs;
+      let stepDownPermitted = true;
+      const pending = [];
+      let previousReportTimestampMs = null;
+      let previousInterarrivalDelayMs = null;
+      function observeReport(report) {
+        if (!report || typeof report !== "object") {
+          throw new TypeError("report must be an object");
+        }
+        const totalPackets = report.packetsReceived + report.packetsLost;
+        const lossRate = totalPackets > 0 ? report.packetsLost / totalPackets : 0;
+        let delayTrendPositive = false;
+        if (previousReportTimestampMs !== null && previousInterarrivalDelayMs !== null) {
+          const elapsed = report.timestampMs - previousReportTimestampMs;
+          if (elapsed > 0 && report.interarrivalDelayMs > previousInterarrivalDelayMs) {
+            delayTrendPositive = true;
+          }
+        }
+        previousReportTimestampMs = report.timestampMs;
+        previousInterarrivalDelayMs = report.interarrivalDelayMs;
+        if (lossRate > LOSS_THRESHOLD || delayTrendPositive) {
+          targetDelayMs = Math.min(maxTargetDelayMs, targetDelayMs + raiseStepMs);
+          stepDownPermitted = true;
+        }
+        return targetDelayMs;
+      }
+      function mayStepDownLayer() {
+        return stepDownPermitted;
+      }
+      function notifyLayerStepDown() {
+        stepDownPermitted = false;
+      }
+      function getTargetDelayMs() {
+        return targetDelayMs;
+      }
+      function push(chunk) {
+        if (!chunk || typeof chunk !== "object") {
+          throw new TypeError("chunk must be an object");
+        }
+        pending.push({
+          chunk,
+          timestampMs: typeof chunk.timestampMs === "number" ? chunk.timestampMs : 0,
+          sequence: typeof chunk.sequence === "number" ? chunk.sequence : 0
+        });
+        pending.sort((a, b) => a.timestampMs - b.timestampMs || a.sequence - b.sequence);
+      }
+      function drainReady(playoutNowMs) {
+        if (typeof playoutNowMs !== "number" || !Number.isFinite(playoutNowMs)) {
+          throw new TypeError("playoutNowMs must be a finite number");
+        }
+        const cutoff = playoutNowMs - targetDelayMs;
+        const ready = [];
+        while (pending.length > 0 && pending[0].timestampMs <= cutoff) {
+          ready.push(pending.shift().chunk);
+        }
+        return ready;
+      }
+      function layerIndex(layerId) {
+        const i = LAYER_IDS.indexOf(layerId);
+        return i >= 0 ? i : 0;
+      }
+      function selectLayerWithBufferGuard(selector, input) {
+        const current = selector.getLayerId();
+        const affordable = selector.highestAffordableLayer(input.estimateBps);
+        const isDowngrade = layerIndex(affordable) < layerIndex(current);
+        if (isDowngrade && !mayStepDownLayer()) {
+          return current;
+        }
+        const next = selector.selectLayer(input);
+        if (layerIndex(next) < layerIndex(current)) {
+          notifyLayerStepDown();
+        }
+        return next;
+      }
+      return {
+        observeReport,
+        mayStepDownLayer,
+        notifyLayerStepDown,
+        getTargetDelayMs,
+        push,
+        drainReady,
+        selectLayerWithBufferGuard
+      };
+    }
+    module.exports = {
+      DEFAULT_INITIAL_TARGET_DELAY_MS,
+      DEFAULT_MAX_TARGET_DELAY_MS,
+      DEFAULT_RAISE_STEP_MS,
+      createPlayoutBuffer
+    };
+  }
+});
+
+// src/streaming/relay-layer-policy.js
+var require_relay_layer_policy = __commonJS({
+  "src/streaming/relay-layer-policy.js"(exports, module) {
+    var { createBandwidthEstimator } = require_bandwidth_estimator();
+    var { createLayerSelector, DEFAULT_HEADROOM_FACTOR } = require_layer_selector();
+    var { LAYER_IDS, RENDITION_PROFILE_HD720 } = require_rendition_ladder();
+    function chunkLayerId(chunk) {
+      if (chunk && typeof chunk.layerId === "string" && chunk.layerId.trim() !== "") {
+        return (
+          /** @type {'L0' | 'L1' | 'L2'} */
+          chunk.layerId.trim()
+        );
+      }
+      if (chunk && chunk.rendition && typeof chunk.rendition.layerId === "string") {
+        return (
+          /** @type {'L0' | 'L1' | 'L2'} */
+          chunk.rendition.layerId.trim()
+        );
+      }
+      return "L0";
+    }
+    function layerIndex(layerId) {
+      const i = LAYER_IDS.indexOf(layerId);
+      return i >= 0 ? i : 0;
+    }
+    function createRelayLayerPolicy({
+      profile = RENDITION_PROFILE_HD720,
+      headroomFactor = DEFAULT_HEADROOM_FACTOR,
+      floorBps,
+      ceilingBps,
+      quietGainBps,
+      initialEstimateBps,
+      downgradeHoldMs,
+      upgradeHoldMs,
+      initialLayerId = "L2"
+    }) {
+      if (typeof floorBps !== "number" || !Number.isFinite(floorBps)) {
+        throw new TypeError("floorBps must be a finite number");
+      }
+      if (typeof ceilingBps !== "number" || !Number.isFinite(ceilingBps)) {
+        throw new TypeError("ceilingBps must be a finite number");
+      }
+      const children = /* @__PURE__ */ new Map();
+      function registerChild(childId, childOptions = {}) {
+        if (typeof childId !== "string" || childId.trim() === "") {
+          throw new TypeError("childId must be a non-empty string");
+        }
+        const floor = childOptions.floorBps ?? floorBps;
+        const ceiling = childOptions.ceilingBps ?? ceilingBps;
+        const estimator = createBandwidthEstimator({
+          floorBps: floor,
+          ceilingBps: ceiling,
+          quietGainBps: childOptions.quietGainBps ?? quietGainBps,
+          initialEstimateBps: childOptions.initialEstimateBps ?? initialEstimateBps ?? ceiling
+        });
+        const selector = createLayerSelector({
+          profile,
+          headroomFactor,
+          downgradeHoldMs,
+          upgradeHoldMs,
+          initialLayerId: childOptions.initialLayerId ?? initialLayerId
+        });
+        children.set(childId.trim(), { estimator, selector });
+        return selector.getLayerId();
+      }
+      function observeChildReport(childId, report) {
+        const state = children.get(childId);
+        if (!state) {
+          throw new Error(`Unknown relay child: ${childId}`);
+        }
+        const estimateBps = state.estimator.observe(report);
+        const layerId = state.selector.selectLayer({
+          estimateBps,
+          nowMs: report.timestampMs
+        });
+        return { estimateBps, layerId };
+      }
+      function getChildLayer(childId) {
+        const state = children.get(childId);
+        return state ? state.selector.getLayerId() : null;
+      }
+      function shouldForwardToChild(childId, chunk) {
+        const state = children.get(childId);
+        if (!state) {
+          return true;
+        }
+        const targetLayer = state.selector.getLayerId();
+        const layer = chunkLayerId(chunk);
+        if (layer === "L0" && chunk.keyframe === true) {
+          return true;
+        }
+        return layerIndex(layer) <= layerIndex(targetLayer);
+      }
+      return {
+        registerChild,
+        observeChildReport,
+        getChildLayer,
+        shouldForwardToChild,
+        chunkLayerId
+      };
+    }
+    module.exports = {
+      createRelayLayerPolicy,
+      chunkLayerId
+    };
+  }
+});
+
 // src/streaming/index.js
 var require_streaming = __commonJS({
   "src/streaming/index.js"(exports, module) {
@@ -39216,6 +39467,8 @@ var require_streaming = __commonJS({
     var receiverReport = require_receiver_report();
     var bandwidthEstimator = require_bandwidth_estimator();
     var layerSelector = require_layer_selector();
+    var playoutBuffer = require_playout_buffer();
+    var relayLayerPolicy = require_relay_layer_policy();
     module.exports = {
       ...accessModes,
       ...streamSession,
@@ -39229,6 +39482,8 @@ var require_streaming = __commonJS({
       ...receiverReport,
       ...bandwidthEstimator,
       ...layerSelector,
+      ...playoutBuffer,
+      ...relayLayerPolicy,
       STREAMING_API_EXPERIMENTAL: true
     };
   }
@@ -39370,6 +39625,8 @@ var require_src = __commonJS({
       createReceiverReport,
       createBandwidthEstimator,
       createLayerSelector,
+      createPlayoutBuffer,
+      createRelayLayerPolicy,
       normalizePrivateRecipients,
       validateStreamAccessConfig,
       StreamSession,
@@ -39498,6 +39755,8 @@ var require_src = __commonJS({
       createReceiverReport,
       createBandwidthEstimator,
       createLayerSelector,
+      createPlayoutBuffer,
+      createRelayLayerPolicy,
       normalizePrivateRecipients,
       validateStreamAccessConfig,
       StreamSession,
@@ -40786,7 +41045,7 @@ function Lobby({
       emptyText: "No finished games yet.",
       onOpen: handleOpenGame
     }
-  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.10.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
+  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.11.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
       id: usernameInputId,

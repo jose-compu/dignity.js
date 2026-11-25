@@ -1720,5 +1720,132 @@ for (const step of steps) {
   const layer = selector.selectLayer({ estimateBps, nowMs: step.ts });
   log('selected layer:', layer, 'at', step.ts);
 }`
+  },
+  {
+    id: 'stream-relay-degrade',
+    group: 'v111',
+    title: 'Relay per-child layers + playout buffer',
+    description: 'v1.11.0 (#152): relay layer policy, enhancement drops first, playout buffer before step-down.',
+    code: `const {
+  RENDITION_PROFILE_HD720,
+  resolveRendition,
+  createInMemoryStreamSignalingBus,
+  createPublicStreamBroadcaster,
+  createPublicStreamViewer,
+  createPublicStreamRelay,
+  createRelayLayerPolicy,
+  createReceiverReport,
+  createPlayoutBuffer,
+  createBandwidthEstimator,
+  createLayerSelector,
+  deriveKeyPairFromCredentials,
+  keyPairToPublicBundle
+} = dignity;
+
+function layerBps(layerId) {
+  const row = resolveRendition(RENDITION_PROFILE_HD720, layerId);
+  return (row.videoBitrateKbps + row.audioBitrateKbps) * 1000 * 1.2;
+}
+
+const bus = createInMemoryStreamSignalingBus();
+const broadcasterCreds = await deriveKeyPairFromCredentials({ username: 'relay-bc', password: 'demo' });
+const bundle = keyPairToPublicBundle(broadcasterCreds);
+
+const l0Bps = layerBps('L0');
+const l1Bps = layerBps('L1');
+const l2Bps = layerBps('L2');
+const policy = createRelayLayerPolicy({
+  profile: RENDITION_PROFILE_HD720,
+  floorBps: l0Bps,
+  ceilingBps: l2Bps,
+  quietGainBps: 80000,
+  initialEstimateBps: l2Bps
+});
+
+const broadcaster = createPublicStreamBroadcaster({
+  sessionId: 'relay-degrade-demo',
+  broadcasterId: 'origin',
+  signingSecretKey: broadcasterCreds.signing.secretKey,
+  signingPublicKey: bundle.signingPublicKey,
+  bus,
+  initialViewerIds: ['relay-1']
+});
+
+const relay = createPublicStreamRelay({
+  relayId: 'relay-1',
+  upstreamId: 'origin',
+  sessionId: 'relay-degrade-demo',
+  broadcasterSigningPublicKey: bundle.signingPublicKey,
+  broadcasterId: 'origin',
+  bus,
+  downstreamViewerIds: ['child-a', 'child-b'],
+  relayLayerPolicy: policy,
+  relayChildOptions: {
+    'child-a': { initialEstimateBps: l2Bps },
+    'child-b': { initialEstimateBps: l2Bps }
+  }
+});
+
+createPublicStreamViewer({
+  viewerId: 'child-a',
+  sessionId: 'relay-degrade-demo',
+  broadcasterId: 'origin',
+  broadcasterSigningPublicKey: bundle.signingPublicKey,
+  bus
+});
+createPublicStreamViewer({
+  viewerId: 'child-b',
+  sessionId: 'relay-degrade-demo',
+  broadcasterId: 'origin',
+  broadcasterSigningPublicKey: bundle.signingPublicKey,
+  bus
+});
+
+void relay;
+
+const playout = createPlayoutBuffer({ raiseStepMs: 50 });
+const estimator = createBandwidthEstimator({ floorBps: l0Bps, ceilingBps: l2Bps, initialEstimateBps: l2Bps });
+const selector = createLayerSelector({ profile: RENDITION_PROFILE_HD720 });
+
+const steps = [
+  { ts: 0, bytes: Math.floor(l2Bps / 8), loss: 0, delay: 0 },
+  { ts: 1000, bytes: Math.floor(l1Bps / 8) - 1000, loss: 0, delay: 0 },
+  { ts: 1200, bytes: Math.floor(l0Bps / 8) - 5000, loss: 0, delay: 6 },
+  { ts: 1500, bytes: Math.floor(l0Bps / 8) - 8000, loss: 50, delay: 12 }
+];
+
+let prev = steps[0].ts;
+for (const step of steps) {
+  const intervalMs = step.ts - prev || 1000;
+  prev = step.ts;
+  relay.observeChildReport('child-b', createReceiverReport({
+    sessionId: 'relay-degrade-demo',
+    viewerId: 'child-b',
+    layerId: policy.getChildLayer('child-b') || 'L2',
+    timestampMs: step.ts,
+    intervalMs,
+    bytesReceived: step.bytes,
+    packetsReceived: 1000,
+    packetsLost: step.loss,
+    interarrivalDelayMs: step.delay
+  }));
+  const viewerReport = createReceiverReport({
+    sessionId: 'relay-degrade-demo',
+    viewerId: 'viewer-b',
+    layerId: selector.getLayerId(),
+    timestampMs: step.ts,
+    intervalMs,
+    bytesReceived: step.bytes,
+    packetsReceived: 1000,
+    packetsLost: step.loss,
+    interarrivalDelayMs: step.delay
+  });
+  const target = playout.observeReport(viewerReport);
+  const estimateBps = estimator.observe(viewerReport);
+  playout.selectLayerWithBufferGuard(selector, { estimateBps, nowMs: step.ts });
+  log('child A layer:', relay.getChildLayer('child-a'));
+  log('child B layer:', relay.getChildLayer('child-b'));
+  log('buffer target:', target, 'ms');
+}`
   }
 ];

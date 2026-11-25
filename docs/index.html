@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="dignity.js v1.10.0 — The scalable data layer of the decentralized browser application ecosystem." />
+    <meta name="description" content="dignity.js v1.11.0 — The scalable data layer of the decentralized browser application ecosystem." />
     <title>dignity.js · Documentation</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.ico" sizes="32x32" />
@@ -16,7 +16,7 @@
       <a class="site-header__brand" href="#overview">
         <img src="./assets/dignity-logo.svg" alt="" width="344" height="80" />
         <!-- <span>dignity.js</span> -->
-        <span class="site-header__version">v1.10.0</span>
+        <span class="site-header__version">v1.11.0</span>
       </a>
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
@@ -157,7 +157,7 @@
             <p class="lead">
               New to P2P? Follow these lessons. The full walkthrough is in
               <a href="https://github.com/jose-compu/dignity.js/blob/main/TUTORIAL.md" target="_blank" rel="noopener noreferrer"><code>TUTORIAL.md</code></a>,
-              or try the <a href="./playground/index.html">live playground</a> — including <strong>v1.10.0 adaptive streaming</strong> (browser) and <a href="https://github.com/jose-compu/dignity.js/blob/main/examples/adaptive-layer-sim.js"><strong>Node adaptive-layer sim</strong></a>, plus <strong>v0.13 verification</strong> demos.
+              or try the <a href="./playground/index.html">live playground</a> — including <strong>v1.11.0 adaptive streaming</strong> (browser) and <a href="https://github.com/jose-compu/dignity.js/blob/main/examples/adaptive-layer-sim.js"><strong>Node adaptive-layer sim</strong></a>, plus <strong>v0.13 verification</strong> demos.
             </p>
 
             <div class="section-jump" aria-label="Jump to lessons">
@@ -807,7 +807,7 @@ replica.verifyChain();  // hash-chain consistency</code></pre>
 
             <h3>Roadmap</h3>
             <p><strong>Live P2P AV streaming (#152)</strong> — <a href="./live-streaming-design.md">live-streaming-design.md</a> documents topology and access modes; milestone 4 (Node origin) is **done in v1.9.0** (ffmpeg Annex-B/fMP4 framing, <code>keyframe</code> on signed chunks).</p>
-            <p><strong>v1.10.0 (current)</strong> — signed HD/FHD <code>rendition</code> ladders (chunk v3), <code>createBandwidthEstimator</code>, <code>createLayerSelector</code>, playground <code>stream-adaptive-layers</code>, <code>npm run example:adaptive-layer</code>; milestone 5 partial (relay degradation in 1.11).</p>
+            <p><strong>v1.11.0 (current)</strong> — relay layer policy, playout buffer guard, per-child relay forwarding; <code>createPlayoutBuffer</code>, <code>createRelayLayerPolicy</code>, playground <code>stream-relay-degrade</code>, <code>npm run example:relay-degrade</code>; milestone 5 partial (simulcast in 1.12).</p>
             <p><strong>v1.6.0</strong> — <code>combined</code> private layer, sender-key epoch rotation, playground <code>stream-combined-rotation</code>.</p>
             <p><strong>v1.5.0</strong> — <code>sealPrivateMediaChunk</code>, <code>openPrivateMediaChunk</code> for <code>private-single</code> / <code>private-list</code>, playground private-chunks demo (#152).</p>
             <p><strong>v1.2.0</strong> — Live streaming research doc, experimental access-mode API, <code>examples/README.md</code> index (#132).</p>
@@ -1491,7 +1491,7 @@ npm run example:chess</code></pre>
 
           <footer class="site-footer">
             <p>
-              dignity.js v1.10.0 ·
+              dignity.js v1.11.0 ·
               <a href="https://github.com/jose-compu/dignity.js/blob/main/LICENSE">Apache 2.0</a> ·
               <a href="https://github.com/jose-compu/dignity.js">GitHub</a> ·
               <a href="https://www.npmjs.com/package/dignity.js">npm</a>

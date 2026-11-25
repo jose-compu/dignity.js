@@ -41,6 +41,20 @@ This directory contains standalone example scripts and consumer projects demonst
   ```
 * **Import path:** `dignity.js/node` (`createNodeStreamOrigin`, `resolveNodeMediaIngest`).
 
+### Relay layer degradation simulation (experimental, v1.11.0)
+
+One relay, two downstream children on scripted receiver reports: per-child layer policy, playout buffer guard, forwarded chunks still verify (no ffmpeg).
+
+* **Script:** [`relay-degrade-sim.js`](./relay-degrade-sim.js)
+* **Run Command:**
+  ```bash
+  npm run example:relay-degrade
+  ```
+  or
+  ```bash
+  node examples/relay-degrade-sim.js
+  ```
+
 ### Adaptive layer simulation (experimental, v1.10.0)
 
 Signed HD ladder chunks, scripted receiver reports, bandwidth estimator, and hysteresis layer selector (no ffmpeg).

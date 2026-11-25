@@ -250,6 +250,7 @@ class PublicStreamRelay {
    * @param {string} options.broadcasterId
    * @param {InMemoryStreamSignalingBus} options.bus
    * @param {string[]} options.downstreamViewerIds
+   * @param {import('./relay-layer-policy').createRelayLayerPolicy extends Function ? ReturnType<import('./relay-layer-policy').createRelayLayerPolicy> : object} [options.relayLayerPolicy]
    */
   constructor({
     relayId,
@@ -258,7 +259,8 @@ class PublicStreamRelay {
     broadcasterSigningPublicKey,
     broadcasterId,
     bus,
-    downstreamViewerIds
+    downstreamViewerIds,
+    relayLayerPolicy = null
   }) {
     this.relayId = relayId;
     this.upstreamId = upstreamId;
@@ -267,9 +269,29 @@ class PublicStreamRelay {
     this.broadcasterId = broadcasterId;
     this.bus = bus;
     this.downstreamViewerIds = [...downstreamViewerIds];
+    this.relayLayerPolicy = relayLayerPolicy;
 
     this._onBusMessage = this._onBusMessage.bind(this);
     this.bus.subscribe(relayId, this._onBusMessage);
+  }
+
+  /**
+   * @param {string} childId
+   * @param {import('./receiver-report').ReceiverReport} report
+   */
+  observeChildReport(childId, report) {
+    if (!this.relayLayerPolicy) {
+      throw new Error('PublicStreamRelay has no relayLayerPolicy');
+    }
+    return this.relayLayerPolicy.observeChildReport(childId, report);
+  }
+
+  /**
+   * @param {string} childId
+   * @returns {string | null}
+   */
+  getChildLayer(childId) {
+    return this.relayLayerPolicy ? this.relayLayerPolicy.getChildLayer(childId) : null;
   }
 
   _onBusMessage(envelope) {
@@ -281,10 +303,21 @@ class PublicStreamRelay {
       return;
     }
     verifyMediaChunk(chunk, this.sessionId);
-    this.bus.fanout(this.relayId, this.downstreamViewerIds, {
-      messageType: STREAM_MESSAGE_TYPES.MEDIA_CHUNK,
-      chunk
-    });
+    if (!this.relayLayerPolicy) {
+      this.bus.fanout(this.relayId, this.downstreamViewerIds, {
+        messageType: STREAM_MESSAGE_TYPES.MEDIA_CHUNK,
+        chunk
+      });
+      return;
+    }
+    for (const childId of this.downstreamViewerIds) {
+      if (this.relayLayerPolicy.shouldForwardToChild(childId, chunk)) {
+        this.bus.send(this.relayId, childId, {
+          messageType: STREAM_MESSAGE_TYPES.MEDIA_CHUNK,
+          chunk
+        });
+      }
+    }
   }
 }
 
@@ -317,7 +350,14 @@ function createPublicStreamViewer(options) {
 }
 
 function createPublicStreamRelay(options) {
-  return new PublicStreamRelay(options);
+  const relay = new PublicStreamRelay(options);
+  if (options.relayLayerPolicy && Array.isArray(options.downstreamViewerIds)) {
+    for (const childId of options.downstreamViewerIds) {
+      const perChild = options.relayChildOptions && options.relayChildOptions[childId];
+      options.relayLayerPolicy.registerChild(childId, perChild || {});
+    }
+  }
+  return relay;
 }
 
 function createInMemoryStreamSignalingBus() {

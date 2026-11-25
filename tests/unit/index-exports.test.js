@@ -33,6 +33,8 @@ describe('public API exports', () => {
     expect(api.createBandwidthEstimator).toBeDefined();
     expect(api.createLayerSelector).toBeDefined();
     expect(api.createReceiverReport).toBeDefined();
+    expect(api.createPlayoutBuffer).toBeDefined();
+    expect(api.createRelayLayerPolicy).toBeDefined();
   });
 
   test('package.json exposes TypeScript definitions', () => {

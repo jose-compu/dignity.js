@@ -8,6 +8,8 @@ import {
   parseAnnexBAccessUnits,
   createLayerSelector,
   createBandwidthEstimator,
+  createPlayoutBuffer,
+  createRelayLayerPolicy,
   RENDITION_PROFILE_HD720,
   hashReflectiveLogic,
   type CompatibilityPolicy,
@@ -72,4 +74,8 @@ void annexFrame?.keyframe;
 const layerSelector = createLayerSelector({ profile: RENDITION_PROFILE_HD720 });
 void layerSelector.getLayerId();
 const bwEst = createBandwidthEstimator({ floorBps: 400_000, ceilingBps: 4_000_000 });
-void bwEst.getEstimateBps;
+void bwEst.getEstimateBps();
+const playoutBuf = createPlayoutBuffer();
+void playoutBuf.getTargetDelayMs();
+const relayPolicy = createRelayLayerPolicy({ floorBps: 400_000, ceilingBps: 4_000_000 });
+void relayPolicy.chunkLayerId;

@@ -16,6 +16,8 @@ const renditionLadder = require('./rendition-ladder');
 const receiverReport = require('./receiver-report');
 const bandwidthEstimator = require('./bandwidth-estimator');
 const layerSelector = require('./layer-selector');
+const playoutBuffer = require('./playout-buffer');
+const relayLayerPolicy = require('./relay-layer-policy');
 
 module.exports = {
   ...accessModes,
@@ -30,5 +32,7 @@ module.exports = {
   ...receiverReport,
   ...bandwidthEstimator,
   ...layerSelector,
+  ...playoutBuffer,
+  ...relayLayerPolicy,
   STREAMING_API_EXPERIMENTAL: true
 };

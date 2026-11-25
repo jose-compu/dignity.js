@@ -502,6 +502,54 @@ declare module 'dignity.js' {
       keyframeByLayer?: Partial<Record<'L0' | 'L1' | 'L2', boolean>>;
     }): string;
     getLayerId(): string;
+    highestAffordableLayer(estimateBps: number): string;
+  };
+
+  export function createPlayoutBuffer(options?: {
+    initialTargetDelayMs?: number;
+    maxTargetDelayMs?: number;
+    raiseStepMs?: number;
+  }): {
+    observeReport(report: ReceiverReport): number;
+    mayStepDownLayer(): boolean;
+    notifyLayerStepDown(): void;
+    getTargetDelayMs(): number;
+    push(chunk: SignedMediaChunk | object): void;
+    drainReady(playoutNowMs: number): object[];
+    selectLayerWithBufferGuard(
+      selector: ReturnType<typeof createLayerSelector>,
+      input: { estimateBps: number; nowMs: number; keyframeByLayer?: Partial<Record<'L0' | 'L1' | 'L2', boolean>> }
+    ): string;
+  };
+
+  export function createRelayLayerPolicy(options: {
+    profile?: 'hd720' | 'fhd1080';
+    headroomFactor?: number;
+    floorBps: number;
+    ceilingBps: number;
+    quietGainBps?: number;
+    initialEstimateBps?: number;
+    downgradeHoldMs?: number;
+    upgradeHoldMs?: number;
+    initialLayerId?: 'L0' | 'L1' | 'L2';
+  }): {
+    registerChild(
+      childId: string,
+      childOptions?: {
+        floorBps?: number;
+        ceilingBps?: number;
+        quietGainBps?: number;
+        initialEstimateBps?: number;
+        initialLayerId?: 'L0' | 'L1' | 'L2';
+      }
+    ): string;
+    observeChildReport(
+      childId: string,
+      report: ReceiverReport
+    ): { estimateBps: number; layerId: string };
+    getChildLayer(childId: string): string | null;
+    shouldForwardToChild(childId: string, chunk: SignedMediaChunk | object): boolean;
+    chunkLayerId(chunk: object): 'L0' | 'L1' | 'L2';
   };
 
   export function createSignedMediaChunk(options: {

@@ -47,6 +47,10 @@ const DIGNITY_APP_DEMOS = [
   {
     hash: 'stream-adaptive-layers',
     expectLines: ['selected layer: L0', 'selected layer: L1']
+  },
+  {
+    hash: 'stream-relay-degrade',
+    expectLines: ['child A layer: L2', 'child B layer: L0', 'buffer target:']
   }
 ];
 
