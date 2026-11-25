@@ -75,6 +75,16 @@ describe('runScaleSimulation', () => {
     expect(result.stall.peersConstructed).toBeLessThanOrEqual(PEER_CAP.ci);
   });
 
+  test('rejects unknown profile', () => {
+    expect(() => runScaleSimulation({ profile: 'prod' })).toThrow(/profile must be/);
+  });
+
+  test('analytic edge cases for hops and path break', () => {
+    expect(analyticHops(1, 16)).toBe(0);
+    expect(pathBreakProbability(0)).toBe(0);
+    expect(repairMs(0)).toBe(1000);
+  });
+
   test('output JSON shape has no timestamp fields at top level', () => {
     const result = runScaleSimulation();
     expect(result).toEqual(
