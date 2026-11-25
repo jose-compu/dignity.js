@@ -20,6 +20,11 @@ declare module 'dignity.js/node' {
     frames(): AsyncIterableIterator<MediaFrame>;
   }
 
+  export interface RecipientPublicBundle {
+    signingPublicKey: string;
+    encryptionPublicKey: string;
+  }
+
   export function isFfmpegAvailable(ffmpegPath?: string, spawnSync?: typeof import('child_process').spawnSync): boolean;
 
   export function createFileMediaIngest(options: {
@@ -53,9 +58,13 @@ declare module 'dignity.js/node' {
       dataChannelTransport?: WebRTCDataChannelTransport;
       dataChannelPeerIds?: string[];
       directViewerIds?: string[];
+      broadcasterEncryptionSecretKey?: Uint8Array;
+      broadcasterEncryptionPublicKey?: string;
+      recipientPublicBundles?: RecipientPublicBundle[];
     });
     start(): Promise<void>;
     stop(): void;
+    rotateRecipients(removeRecipientSigningPublicKey: string): void;
   }
 
   export function createNodeStreamOrigin(

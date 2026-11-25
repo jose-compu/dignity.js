@@ -2,10 +2,14 @@ import {
   DignityP2P,
   InMemoryNetworkAdapter,
   InMemoryNetworkHub,
+  STREAM_ACCESS_MODES,
+  createInMemoryStreamSignalingBus,
+  createStreamSession,
   hashReflectiveLogic,
   type CompatibilityPolicy,
   type DignityRecord
 } from 'dignity.js';
+import { createFileMediaIngest, createNodeStreamOrigin } from 'dignity.js/node';
 
 // In-memory hub + adapter: wires multiple local nodes without WebRTC (smoke / typecheck only).
 const hub = new InMemoryNetworkHub();
@@ -37,3 +41,23 @@ const hashPrefix: string = reflective.hash.slice(0, 7);
 
 void node;
 void hashPrefix;
+
+const privateListSession = createStreamSession({
+  sessionId: 'ts-private-list',
+  broadcasterId: 'origin',
+  mode: STREAM_ACCESS_MODES.PRIVATE_LIST,
+  privateRecipients: ['recipient-signing-key']
+});
+const privateListOrigin = createNodeStreamOrigin({
+  session: privateListSession,
+  signingSecretKey: new Uint8Array(64),
+  signingPublicKey: 'broadcaster-signing',
+  broadcasterEncryptionSecretKey: new Uint8Array(32),
+  broadcasterEncryptionPublicKey: 'broadcaster-encryption',
+  recipientPublicBundles: [
+    { signingPublicKey: 'recipient-signing-key', encryptionPublicKey: 'recipient-encryption' }
+  ],
+  bus: createInMemoryStreamSignalingBus(),
+  mediaIngest: createFileMediaIngest({ filePath: __dirname + '/../../tests/fixtures/stream-origin-chunks.bin' })
+});
+void privateListOrigin.rotateRecipients;

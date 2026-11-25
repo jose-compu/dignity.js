@@ -41,6 +41,18 @@ This directory contains standalone example scripts and consumer projects demonst
   ```
 * **Import path:** `dignity.js/node` (`createNodeStreamOrigin`, `resolveNodeMediaIngest`).
 
+### Node.js private stream origin (experimental)
+* **File:** [`node-private-stream-origin.js`](./node-private-stream-origin.js)
+* **Description:** `private-list` console origin over a fixture file; one listed recipient opens sealed bytes (no ffmpeg).
+* **Run Command:**
+  ```bash
+  npm run example:node-private-stream
+  ```
+  or
+  ```bash
+  node examples/node-private-stream-origin.js
+  ```
+
 ### TypeScript Consumer Project
 * **Directory:** [`typescript-consumer/`](./typescript-consumer/)
 * **Description:** Sample TypeScript project demonstrating type definitions, type safety, and verification rules compile-time checking.

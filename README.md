@@ -65,10 +65,10 @@ The Scalable Data Layer of the Decentralized Browser Application Ecosystem.
 - Auto `connectToPeers` on create/update/delete replication (owner + collaborators)
 - Optional IndexedDB persistence for browser reload survival
 - Optional React hooks via `dignity.js/react`
-- **Live P2P AV streaming (v1.7.0)** — WebRTC signaling + data channel transport; public signed chunks plus `sealPrivateMediaChunk` / `openPrivateMediaChunk` for `private-single`, `private-list`, and `combined`; sender-key epoch rotation; **Node.js public origin** via `dignity.js/node` ([#152](https://github.com/jose-compu/dignity.js/issues/152)). Browser examples in the [playground](https://dignity.js.org/playground/); Node: `npm run example:node-stream`.
+- **Live P2P AV streaming (v1.8.0)** — WebRTC signaling + data channel transport; public signed chunks plus `sealPrivateMediaChunk` / `openPrivateMediaChunk` for `private-single`, `private-list`, and `combined`; sender-key epoch rotation; **Node.js stream origin** (public, private, combined) via `dignity.js/node` ([#152](https://github.com/jose-compu/dignity.js/issues/152)). Browser examples in the [playground](https://dignity.js.org/playground/); Node: `npm run example:node-stream`, `npm run example:node-private-stream`.
 - **PeerGroup gossip** — scalable PubSub for high-fanout feeds (spectators, timelines); default `maxHops: 64`
 - **CQRS tiers (v0.8+)** — live core (5k cap) + bulk tail per publisher; signed domain events on every write
-- **v1.7.0** — `dignity.js/node` public stream origin (`createNodeStreamOrigin`, file/ffmpeg ingest without npm ffmpeg), example `node-stream-origin.js` (#152 milestone 4 partial; next: private/combined Node modes, real framing/camera/RTMP, Node data-channel peer)
+- **v1.8.0** — `dignity.js/node` private/combined stream origin (`createNodeStreamOrigin` + `rotateRecipients`, sealed bus fan-out), examples `node-stream-origin.js` and `node-private-stream-origin.js` (#152 milestone 4; next slice 1.9.0: real framing, optional ffmpeg Annex-B/fMP4 timestamps)
 - **v1.6.0** — Combined public/private stream chunks, sender-key epoch rotation on recipient removal, playground `stream-combined-rotation` (#152 milestone 3)
 - **v1.5.0** — Sealed private stream chunks (`private-single`, `private-list`), playground browser CI fix, runbook streaming update (#152)
 - **v1.4.1** — WebRTC signaling + data channel transport for live streaming, playground stream examples, milestone 2 complete (#152)

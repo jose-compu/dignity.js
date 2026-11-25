@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="dignity.js v1.7.0 — The scalable data layer of the decentralized browser application ecosystem." />
+    <meta name="description" content="dignity.js v1.8.0 — The scalable data layer of the decentralized browser application ecosystem." />
     <title>dignity.js · Documentation</title>
     <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="./favicon.ico" sizes="32x32" />
@@ -16,7 +16,7 @@
       <a class="site-header__brand" href="#overview">
         <img src="./assets/dignity-logo.svg" alt="" width="344" height="80" />
         <!-- <span>dignity.js</span> -->
-        <span class="site-header__version">v1.7.0</span>
+        <span class="site-header__version">v1.8.0</span>
       </a>
       <div class="site-header__links">
         <a href="https://www.npmjs.com/package/dignity.js" target="_blank" rel="noopener noreferrer">npm</a>
@@ -157,7 +157,7 @@
             <p class="lead">
               New to P2P? Follow these lessons. The full walkthrough is in
               <a href="https://github.com/jose-compu/dignity.js/blob/main/TUTORIAL.md" target="_blank" rel="noopener noreferrer"><code>TUTORIAL.md</code></a>,
-              or try the <a href="./playground/index.html">live playground</a> — including <strong>v1.7.0 streaming</strong> (browser) and <a href="https://github.com/jose-compu/dignity.js/blob/main/examples/node-stream-origin.js"><strong>Node public origin</strong></a>, plus <strong>v0.13 verification</strong> demos.
+              or try the <a href="./playground/index.html">live playground</a> — including <strong>v1.8.0 streaming</strong> (browser) and <a href="https://github.com/jose-compu/dignity.js/blob/main/examples/node-private-stream-origin.js"><strong>Node private origin</strong></a>, plus <strong>v0.13 verification</strong> demos.
             </p>
 
             <div class="section-jump" aria-label="Jump to lessons">
@@ -806,8 +806,8 @@ replica.verifyChain();  // hash-chain consistency</code></pre>
             </div>
 
             <h3>Roadmap</h3>
-            <p><strong>Live P2P AV streaming (#152)</strong> — <a href="./live-streaming-design.md">live-streaming-design.md</a> documents topology and access modes; milestone 4 (Node origin) started in v1.7.0 with <code>dignity.js/node</code>.</p>
-            <p><strong>v1.7.0 (current)</strong> — Node public stream origin (<code>createNodeStreamOrigin</code>, <code>resolveNodeMediaIngest</code>), <code>npm run example:node-stream</code> (#152).</p>
+            <p><strong>Live P2P AV streaming (#152)</strong> — <a href="./live-streaming-design.md">live-streaming-design.md</a> documents topology and access modes; milestone 4 (Node origin) continues in v1.8.0 with sealed private/combined modes on <code>dignity.js/node</code>.</p>
+            <p><strong>v1.8.0 (current)</strong> — Node stream origin for public, private, and combined sessions (<code>createNodeStreamOrigin</code>, <code>rotateRecipients</code>), <code>npm run example:node-private-stream</code> (#152).</p>
             <p><strong>v1.6.0</strong> — <code>combined</code> private layer, sender-key epoch rotation, playground <code>stream-combined-rotation</code>.</p>
             <p><strong>v1.5.0</strong> — <code>sealPrivateMediaChunk</code>, <code>openPrivateMediaChunk</code> for <code>private-single</code> / <code>private-list</code>, playground private-chunks demo (#152).</p>
             <p><strong>v1.2.0</strong> — Live streaming research doc, experimental access-mode API, <code>examples/README.md</code> index (#132).</p>
@@ -1491,7 +1491,7 @@ npm run example:chess</code></pre>
 
           <footer class="site-footer">
             <p>
-              dignity.js v1.7.0 ·
+              dignity.js v1.8.0 ·
               <a href="https://github.com/jose-compu/dignity.js/blob/main/LICENSE">Apache 2.0</a> ·
               <a href="https://github.com/jose-compu/dignity.js">GitHub</a> ·
               <a href="https://www.npmjs.com/package/dignity.js">npm</a>
