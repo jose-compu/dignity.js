@@ -434,7 +434,9 @@ function createFfmpegMpegTsPipeIngest({ kind, url, ffmpegPath, spawn, inputArgs 
  * @param {(req: import('http').IncomingMessage) => boolean | Promise<boolean>} [options.authorize]
  * @param {string} [options.mountPath]
  */
-function createWhipIngest({ peerFactory, authorize, mountPath = '/whip' }) {
+const { createWhipRtpFrameAssembler } = require('../rtp-depacketizer');
+
+function createWhipIngest({ peerFactory, authorize, mountPath = '/whip', rtpPayloadTypes }) {
   if (typeof peerFactory !== 'function') {
     throw new TypeError('peerFactory is required');
   }
@@ -493,8 +495,26 @@ function createWhipIngest({ peerFactory, authorize, mountPath = '/whip' }) {
       const peer = await peerFactory(body.toString('utf8'), { resourceId });
       const location = `${normalizedMount}/${resourceId}`;
       sessions.set(resourceId, { queue: [], notify: null, closed: false });
+      const pushFrame = (frame) => enqueue(resourceId, frame);
       if (peer.onFrame) {
-        peer.onFrame((frame) => enqueue(resourceId, frame));
+        peer.onFrame(pushFrame);
+      }
+      if (typeof peer.onRtpPacket === 'function' || peer.rtp === true) {
+        const assembler = createWhipRtpFrameAssembler({
+          ...(rtpPayloadTypes && typeof rtpPayloadTypes === 'object' ? rtpPayloadTypes : {}),
+          onFrame: pushFrame
+        });
+        if (typeof peer.onRtpPacket === 'function') {
+          peer.onRtpPacket((rtp) => {
+            const bytes = rtp instanceof Uint8Array ? rtp : new Uint8Array(rtp);
+            assembler.feedRtpPacket(bytes);
+          });
+        } else if (typeof peer.onRtp === 'function') {
+          peer.onRtp((rtp) => {
+            const bytes = rtp instanceof Uint8Array ? rtp : new Uint8Array(rtp);
+            assembler.feedRtpPacket(bytes);
+          });
+        }
       }
       if (peer.close) {
         const session = sessions.get(resourceId);

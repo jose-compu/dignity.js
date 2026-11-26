@@ -25,6 +25,10 @@ const { demuxMpegTs, MpegTsDemuxer, ptsToTimestampMs } = require('./ingest/mpegt
 const webcodecsSupport = require('./webcodecs-support');
 const browserCaptureSource = require('./browser-capture-source');
 const webcodecsDecoder = require('./webcodecs-decoder');
+const webcodecsAudioDecoder = require('./webcodecs-audio-decoder');
+const msePlayer = require('./mse-player');
+const rtcpRfc8888 = require('./rtcp-rfc8888');
+const rtpDepacketizer = require('./rtp-depacketizer');
 
 module.exports = {
   ...accessModes,
@@ -47,6 +51,10 @@ module.exports = {
   ...webcodecsSupport,
   ...browserCaptureSource,
   ...webcodecsDecoder,
+  ...webcodecsAudioDecoder,
+  ...msePlayer,
+  ...rtcpRfc8888,
+  ...rtpDepacketizer,
   demuxMpegTs,
   MpegTsDemuxer,
   ptsToTimestampMs,

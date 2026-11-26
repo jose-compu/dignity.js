@@ -3,7 +3,7 @@
  * @experimental
  */
 
-const { resolveRendition } = require('./rendition-ladder');
+const { resolveRendition, mapSvcLayersToLayerId } = require('./rendition-ladder');
 
 class WebCodecsNotSupportedError extends Error {
   /**
@@ -25,6 +25,7 @@ class WebCodecsNotSupportedError extends Error {
  *   VideoDecoder?: typeof VideoDecoder,
  *   MediaStreamTrackProcessor?: typeof MediaStreamTrackProcessor,
  *   AudioEncoder?: typeof AudioEncoder,
+ *   AudioDecoder?: typeof AudioDecoder,
  * }}
  */
 function detectWebCodecsSupport(deps = {}) {
@@ -33,6 +34,7 @@ function detectWebCodecsSupport(deps = {}) {
   const VideoDecoder = deps.VideoDecoder ?? root.VideoDecoder;
   const MediaStreamTrackProcessor = deps.MediaStreamTrackProcessor ?? root.MediaStreamTrackProcessor;
   const AudioEncoder = deps.AudioEncoder ?? root.AudioEncoder;
+  const AudioDecoder = deps.AudioDecoder ?? root.AudioDecoder;
 
   /** @type {string[]} */
   const missing = [];
@@ -61,7 +63,44 @@ function detectWebCodecsSupport(deps = {}) {
   if (typeof AudioEncoder === 'function' && typeof AudioEncoder.isConfigSupported === 'function') {
     result.AudioEncoder = AudioEncoder;
   }
+  if (typeof AudioDecoder === 'function') {
+    result.AudioDecoder = AudioDecoder;
+  }
   return result;
+}
+
+/**
+ * @param {Object} support
+ * @param {number} [bitrate]
+ * @param {Object} [deps]
+ */
+async function selectAudioEncoderConfig(support, bitrate = 64_000, deps = {}) {
+  if (!support.AudioEncoder || typeof support.AudioEncoder.isConfigSupported !== 'function') {
+    throw new WebCodecsNotSupportedError(['AudioEncoder']);
+  }
+  const AudioEncoder = support.AudioEncoder;
+  const config = {
+    codec: 'opus',
+    sampleRate: 48000,
+    numberOfChannels: 2,
+    bitrate
+  };
+  const isConfigSupported =
+    deps.isConfigSupported ?? ((candidate) => AudioEncoder.isConfigSupported(candidate));
+  let supported;
+  try {
+    supported = await isConfigSupported(config);
+  } catch {
+    supported = { supported: false };
+  }
+  const ok = supported && (supported.supported === true || supported === true);
+  if (!ok) {
+    throw new Error('Opus AudioEncoder configuration is not supported');
+  }
+  return {
+    ...config,
+    mimeType: 'audio/webm;codecs=opus'
+  };
 }
 
 /**
@@ -82,11 +121,26 @@ async function selectVideoEncoderConfig(support, dimensions, deps = {}) {
   const bitrate = dimensions.bitrate != null ? dimensions.bitrate : 1_500_000;
   const framerate = dimensions.framerate != null ? dimensions.framerate : 30;
 
-  /** @type {{ codec: string, mimeType: string }[]} */
-  const candidates = [
+  /** @type {{ codec: string, mimeType: string, scalabilityMode?: string, svc?: boolean }[]} */
+  const candidates = [];
+  if (deps.preferSvc !== false) {
+    candidates.push({
+      codec: 'av01.0.08M.08',
+      mimeType: 'video/mp4;codecs=av01.0.08M.08',
+      scalabilityMode: 'L3T3',
+      svc: true
+    });
+    candidates.push({
+      codec: 'av01.0.05M.08',
+      mimeType: 'video/mp4;codecs=av01.0.05M.08',
+      scalabilityMode: 'L1T3',
+      svc: true
+    });
+  }
+  candidates.push(
     { codec: 'avc1.42E01E', mimeType: 'video/mp4;codecs=avc1.42E01E' },
     { codec: 'vp8', mimeType: 'video/webm;codecs=vp8' }
-  ];
+  );
 
   const isConfigSupported =
     deps.isConfigSupported ?? ((config) => VideoEncoder.isConfigSupported(config));
@@ -100,6 +154,9 @@ async function selectVideoEncoderConfig(support, dimensions, deps = {}) {
       framerate,
       latencyMode: 'realtime'
     };
+    if (row.scalabilityMode) {
+      config.scalabilityMode = row.scalabilityMode;
+    }
     let supported;
     try {
       supported = await isConfigSupported(config);
@@ -110,12 +167,32 @@ async function selectVideoEncoderConfig(support, dimensions, deps = {}) {
     if (ok) {
       return {
         ...config,
-        mimeType: row.mimeType
+        mimeType: row.mimeType,
+        svc: Boolean(row.svc)
       };
     }
   }
 
-  throw new Error('No supported WebCodecs video encoder configuration (tried H.264 and VP8)');
+  throw new Error('No supported WebCodecs video encoder configuration (tried AV1 SVC, H.264, and VP8)');
+}
+
+/**
+ * @param {object} encodedChunkMetadata
+ * @param {boolean} useSvc
+ * @param {string} [fallbackLayerId]
+ * @returns {string}
+ */
+function resolveEncodedChunkLayerId(encodedChunkMetadata, useSvc, fallbackLayerId = 'L0') {
+  if (!useSvc || !encodedChunkMetadata || typeof encodedChunkMetadata !== 'object') {
+    return fallbackLayerId;
+  }
+  const spatial =
+    encodedChunkMetadata.spatialLayerId ??
+    encodedChunkMetadata.spatialLayer ??
+    encodedChunkMetadata.layerIndex ??
+    0;
+  const temporal = encodedChunkMetadata.temporalLayerId ?? encodedChunkMetadata.temporalLayer ?? 0;
+  return mapSvcLayersToLayerId(spatial, temporal);
 }
 
 /**
@@ -162,6 +239,8 @@ module.exports = {
   WebCodecsNotSupportedError,
   detectWebCodecsSupport,
   selectVideoEncoderConfig,
+  selectAudioEncoderConfig,
   mimeTypeToDecoderCodec,
+  resolveEncodedChunkLayerId,
   renditionEncoderDimensions
 };

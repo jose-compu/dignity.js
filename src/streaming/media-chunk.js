@@ -6,7 +6,7 @@
 const nacl = require('tweetnacl');
 const naclUtil = require('tweetnacl-util');
 const { stableStringify } = require('../security/message-security-service');
-const { resolveRendition, renditionMatchesLadder } = require('./rendition-ladder');
+const { resolveRendition, renditionMatchesLadder, AUDIO_LAYER_ID, resolveAudioRendition } = require('./rendition-ladder');
 
 const MEDIA_CHUNK_VERSION = 3;
 const MEDIA_CHUNK_VERSION_KEYFRAME = 2;
@@ -60,6 +60,20 @@ function canonicalMediaChunkSigningPayload(fields) {
  * @param {{ profile: string, layerId: string, width: number, height: number, videoBitrateKbps: number, audioBitrateKbps: number }} rendition
  */
 function assertLayerMatchesRendition(layerId, rendition) {
+  if (layerId === AUDIO_LAYER_ID) {
+    try {
+      const expected = resolveAudioRendition(rendition.profile);
+      if (
+        expected.layerId !== rendition.layerId ||
+        expected.audioBitrateKbps !== rendition.audioBitrateKbps
+      ) {
+        throw new Error('audio rendition mismatch');
+      }
+    } catch {
+      throw new Error('rendition does not match audio track metadata');
+    }
+    return;
+  }
   if (!renditionMatchesLadder(rendition)) {
     throw new Error('rendition does not match a known ladder row');
   }
@@ -77,6 +91,9 @@ function normalizeRenditionOption(rendition, profile, layerId) {
     return rendition;
   }
   if (typeof profile === 'string' && profile.trim() !== '') {
+    if (layerId === AUDIO_LAYER_ID) {
+      return resolveAudioRendition(profile);
+    }
     const resolved = resolveRendition(profile, layerId);
     return resolved;
   }

@@ -49,7 +49,7 @@ function populateFeatureSelect() {
     v114: 'v1.14.0 scale sim',
     v115: 'v1.15.0 stream stress',
     v116: 'v1.16.0 capacity relays',
-    v117: 'v1.18.0 webcodecs capture',
+    v117: 'v1.19.0 webcodecs capture',
     patterns: 'Browser patterns',
     apps: 'Dignity Apps'
   };

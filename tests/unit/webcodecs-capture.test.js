@@ -12,8 +12,14 @@ const {
   renditionEncoderDimensions,
   createBrowserCaptureSource,
   createWebCodecsDecoder,
+  createWebCodecsAudioDecoder,
   createSignedMediaChunk,
-  verifyMediaChunk
+  verifyMediaChunk,
+  selectAudioEncoderConfig,
+  resolveEncodedChunkLayerId,
+  mapSvcLayersToLayerId,
+  AUDIO_LAYER_ID,
+  resolveAudioRendition
 } = require('../../src');
 
 function signingKeys() {
@@ -714,6 +720,80 @@ describe('createWebCodecsDecoder', () => {
     });
     decoder.feedChunk(chunk, { sessionId: 'dec' });
     expect(configuredDescriptionLength).toBe(4);
+    decoder.close();
+  });
+});
+
+describe('v1.19 streaming helpers', () => {
+  test('mapSvcLayersToLayerId maps spatial/temporal to L0-L2', () => {
+    expect(mapSvcLayersToLayerId(0, 0)).toBe('L0');
+    expect(mapSvcLayersToLayerId(1, 0)).toBe('L1');
+    expect(mapSvcLayersToLayerId(2, 1)).toBe('L2');
+  });
+
+  test('resolveEncodedChunkLayerId uses SVC metadata when enabled', () => {
+    expect(resolveEncodedChunkLayerId({ spatialLayerId: 2, temporalLayerId: 0 }, true, 'L0')).toBe('L2');
+    expect(resolveEncodedChunkLayerId(null, false, 'L1')).toBe('L1');
+  });
+
+  test('selectAudioEncoderConfig returns opus mime type', async () => {
+    class AudioEnc {
+      static async isConfigSupported() {
+        return { supported: true };
+      }
+    }
+    const support = { AudioEncoder: AudioEnc, missing: [], supported: true };
+    const cfg = await selectAudioEncoderConfig(support, 48_000);
+    expect(cfg.codec).toBe('opus');
+    expect(cfg.mimeType).toContain('opus');
+  });
+
+  test('selectVideoEncoderConfig chooses AV1 SVC when supported', async () => {
+    class Av1SvcEncoder {
+      static async isConfigSupported(config) {
+        return { supported: Boolean(config.scalabilityMode) };
+      }
+    }
+    const support = { VideoEncoder: Av1SvcEncoder, missing: [], supported: true };
+    const cfg = await selectVideoEncoderConfig(support, { width: 640, height: 360 });
+    expect(cfg.svc).toBe(true);
+    expect(cfg.codec).toMatch(/^av01/);
+  });
+
+  test('createWebCodecsAudioDecoder verifies and decodes key chunk', () => {
+    const keys = signingKeys();
+    let outputs = 0;
+    class FakeAudioDecoder {
+      constructor(handlers) {
+        this.handlers = handlers;
+      }
+      configure() {}
+      decode() {
+        outputs += 1;
+        this.handlers.output({ close() {} });
+      }
+      close() {}
+    }
+    const decoder = createWebCodecsAudioDecoder({
+      onAudioData: () => {},
+      AudioDecoder: FakeAudioDecoder,
+      EncodedAudioChunk: FakeEncodedVideoChunk,
+      support: { AudioDecoder: FakeAudioDecoder, missing: [], supported: true }
+    });
+    const chunk = createSignedMediaChunk({
+      sessionId: 'aud',
+      broadcasterId: 'bc',
+      ...keys,
+      layerId: AUDIO_LAYER_ID,
+      profile: 'hd720',
+      keyframe: true,
+      timestampMs: 5,
+      mimeType: 'audio/webm;codecs=opus',
+      payloadBytes: new Uint8Array([1, 2]),
+      rendition: resolveAudioRendition('hd720')
+    });
+    decoder.feedChunk(chunk, { sessionId: 'aud' });
+    expect(outputs).toBe(1);
     decoder.close();
   });
 });

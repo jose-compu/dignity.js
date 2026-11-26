@@ -1,5 +1,9 @@
 # Changelog
 
+## dignity.js 1.19.0
+
+Live browser AV pipeline (#159, #152): `AudioEncoder` Opus in `createBrowserCaptureSource` (`A0` track), `createWebCodecsAudioDecoder`, `createMsePlayer` (fMP4 append with `QuotaExceededError` trim), transport-backed playground capture over `WebRTCDataChannelTransport` + in-page peers. **RFC 8888** RTCP congestion feedback encode/decode and `rfc8888MetricsToReceiverReports`; **AV1 SVC** when `VideoEncoder.isConfigSupported` accepts `av01` with `scalabilityMode` (else simulcast); **WHIP RTP** H.264/Opus depacketization via `createWhipRtpFrameAssembler` wired into `createWhipIngest`.
+
 ## dignity.js 1.18.0
 
 Optional native WebRTC peer for Node.js (milestone 10, #152): `createNodeWebRTCPeerFactory` on `dignity.js/node` with runtime `import()` of **node-datachannel** (MPL-2.0, preferred) or **werift** (MIT); optional `peerDependencies` only — `npm install dignity.js` does not install a WebRTC stack. `NodeWebRTCNetworkAdapter` matches `WebRTCDataChannelTransport` / WHIP `peerFactory` shapes; `createNodeStreamOrigin({ webrtc: 'auto' | { factory, peerIds } })` mirrors signed (and sealed) chunks over SCTP data channels. Example `npm run example:node-webrtc`; integration test gated by `RUN_NODE_WEBRTC_TESTS=1`. **Still deferred:** RFC 8888 TWCC on the wire, AV1 SVC, Opus/AudioEncoder and MSE from #159, WHIP RTP depacketization to frames without an app-side bridge.
