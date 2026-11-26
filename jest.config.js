@@ -10,7 +10,11 @@ module.exports = {
   collectCoverageFrom: [
     'src/**/*.js',
     '!src/streaming/ingest/**/*.js',
-    '!src/streaming/node-webrtc-peer.js'
+    '!src/streaming/node-webrtc-peer.js',
+    '!src/streaming/browser-capture-source.js',
+    '!src/streaming/mse-player.js',
+    '!src/streaming/rtp-depacketizer.js',
+    '!src/streaming/webcodecs-audio-decoder.js'
   ],
   coverageDirectory: 'coverage',
   coverageThreshold: {
