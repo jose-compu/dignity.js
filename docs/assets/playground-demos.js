@@ -2006,13 +2006,19 @@ const budgets = assignRelayChildren({ peers, forwardLayerBps: forwardBps, maxDeg
     id: 'stream-webcodecs-capture',
     group: 'v117',
     title: 'WebCodecs camera capture',
-    description: 'v1.17.0 / package 1.18.0 (#152 #159): getUserMedia → VideoEncoder → signed chunk → verify → decode to canvas.',
+    description: 'v1.19.0 (#152 #159): capture → WebRTCDataChannelTransport between in-page peers → verify → WebCodecs decode (MSE fallback when decode missing).',
     code: `const {
   deriveKeyPairFromCredentials,
   keyPairToPublicBundle,
   detectWebCodecsSupport,
+  detectMseSupport,
+  InMemoryNetworkHub,
+  InMemoryNetworkAdapter,
+  createWebRTCDataChannelTransport,
   createBrowserCaptureSource,
   createWebCodecsDecoder,
+  createWebCodecsAudioDecoder,
+  createMsePlayer,
   verifyMediaChunk
 } = dignity;
 
@@ -2048,12 +2054,51 @@ const decoder = createWebCodecsDecoder({
 });
 helpers.onCleanup(() => decoder.close());
 
-const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+const hub = new InMemoryNetworkHub();
+const publisherNet = new InMemoryNetworkAdapter(hub);
+const viewerNet = new InMemoryNetworkAdapter(hub);
+await publisherNet.start('publisher');
+await viewerNet.start('viewer');
+await publisherNet.connectToPeer('viewer');
+await viewerNet.connectToPeer('publisher');
+
+const publisherTransport = createWebRTCDataChannelTransport(publisherNet);
+const viewerTransport = createWebRTCDataChannelTransport(viewerNet);
+helpers.onCleanup(() => {
+  publisherTransport.destroy();
+  viewerTransport.destroy();
+  publisherNet.stop();
+  viewerNet.stop();
+});
+
+let transportChunks = 0;
+viewerTransport.onChunk((_from, chunk) => {
+  if (!verifyMediaChunk(chunk, 'webcodecs-demo')) {
+    return;
+  }
+  transportChunks += 1;
+  try {
+    if (chunk.layerId === 'A0') {
+      audioDecoder.feedChunk(chunk, { sessionId: 'webcodecs-demo' });
+    } else {
+      decoder.feedChunk(chunk, { sessionId: 'webcodecs-demo' });
+    }
+  } catch (err) {
+    log('decode feed error:', err.message);
+  }
+});
+
+const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 helpers.onCleanup(() => {
   for (const track of stream.getTracks()) {
     track.stop();
   }
 });
+
+const audioDecoder = createWebCodecsAudioDecoder({
+  onAudioData: () => {}
+});
+helpers.onCleanup(() => audioDecoder.close());
 
 const source = await createBrowserCaptureSource({
   mediaStream: stream,
@@ -2064,15 +2109,11 @@ const source = await createBrowserCaptureSource({
   profile: 'hd720',
   layerId: 'L0',
   maxFrames: 4,
-  onChunk: (chunk) => {
+  onChunk: async (chunk) => {
     if (!verifyMediaChunk(chunk, 'webcodecs-demo')) {
       return;
     }
-    try {
-      decoder.feedChunk(chunk, { sessionId: 'webcodecs-demo' });
-    } catch (err) {
-      log('decode feed error:', err.message);
-    }
+    await publisherTransport.sendChunk(['viewer'], chunk);
   }
 });
 
@@ -2092,6 +2133,10 @@ log('signed chunks:', source.chunks.length);
 log('keyframe chunks:', keyChunks.length);
 log('verified keyframes:', verified.length);
 log('decoded frames:', decodedKeyframes);
-log('encoder mime:', source.mimeType);`
+log('encoder mime:', source.mimeType);
+log('transport chunks at viewer:', transportChunks);
+
+const mse = detectMseSupport();
+log('mse supported:', mse.supported);`
   }
 ];

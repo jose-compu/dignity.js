@@ -37478,6 +37478,7 @@ var require_rendition_ladder = __commonJS({
       })
     });
     var LAYER_IDS = Object.freeze(["L0", "L1", "L2"]);
+    var AUDIO_LAYER_ID = "A0";
     function resolveRendition(profile, layerId) {
       if (typeof profile !== "string" || profile.trim() === "") {
         throw new TypeError("profile must be a non-empty string");
@@ -37509,13 +37510,39 @@ var require_rendition_ladder = __commonJS({
       const expected = resolveRendition(rendition.profile, rendition.layerId);
       return expected.width === rendition.width && expected.height === rendition.height && expected.videoBitrateKbps === rendition.videoBitrateKbps && expected.audioBitrateKbps === rendition.audioBitrateKbps && expected.layerId === rendition.layerId && expected.profile === rendition.profile;
     }
+    function resolveAudioRendition(profile) {
+      const base = resolveRendition(profile, "L0");
+      return {
+        profile: base.profile,
+        layerId: AUDIO_LAYER_ID,
+        width: 0,
+        height: 0,
+        videoBitrateKbps: 0,
+        audioBitrateKbps: base.audioBitrateKbps
+      };
+    }
+    function mapSvcLayersToLayerId(spatialLayerId, temporalLayerId = 0) {
+      const spatial = Number.isFinite(spatialLayerId) ? Math.max(0, Math.floor(spatialLayerId)) : 0;
+      const temporal = Number.isFinite(temporalLayerId) ? Math.max(0, Math.floor(temporalLayerId)) : 0;
+      const combined = spatial * 2 + Math.min(temporal, 1);
+      if (combined >= 2) {
+        return "L2";
+      }
+      if (combined >= 1) {
+        return "L1";
+      }
+      return "L0";
+    }
     module.exports = {
       RENDITION_PROFILE_HD720,
       RENDITION_PROFILE_FHD1080,
       RENDITION_LADDERS,
       LAYER_IDS,
+      AUDIO_LAYER_ID,
       resolveRendition,
-      renditionMatchesLadder
+      resolveAudioRendition,
+      renditionMatchesLadder,
+      mapSvcLayersToLayerId
     };
   }
 });
@@ -37526,7 +37553,7 @@ var require_media_chunk = __commonJS({
     var nacl3 = require_nacl_fast();
     var naclUtil3 = require_nacl_util();
     var { stableStringify: stableStringify2 } = require_message_security_service();
-    var { resolveRendition, renditionMatchesLadder } = require_rendition_ladder();
+    var { resolveRendition, renditionMatchesLadder, AUDIO_LAYER_ID, resolveAudioRendition } = require_rendition_ladder();
     var MEDIA_CHUNK_VERSION = 3;
     var MEDIA_CHUNK_VERSION_KEYFRAME = 2;
     var MEDIA_CHUNK_VERSION_LEGACY = 1;
@@ -37570,6 +37597,17 @@ var require_media_chunk = __commonJS({
       return stableStringify2(payload);
     }
     function assertLayerMatchesRendition(layerId, rendition) {
+      if (layerId === AUDIO_LAYER_ID) {
+        try {
+          const expected = resolveAudioRendition(rendition.profile);
+          if (expected.layerId !== rendition.layerId || expected.audioBitrateKbps !== rendition.audioBitrateKbps) {
+            throw new Error("audio rendition mismatch");
+          }
+        } catch {
+          throw new Error("rendition does not match audio track metadata");
+        }
+        return;
+      }
       if (!renditionMatchesLadder(rendition)) {
         throw new Error("rendition does not match a known ladder row");
       }
@@ -37586,6 +37624,9 @@ var require_media_chunk = __commonJS({
         return rendition;
       }
       if (typeof profile === "string" && profile.trim() !== "") {
+        if (layerId === AUDIO_LAYER_ID) {
+          return resolveAudioRendition(profile);
+        }
         const resolved = resolveRendition(profile, layerId);
         return resolved;
       }
@@ -40412,7 +40453,7 @@ var require_mpegts_demuxer = __commonJS({
 // src/streaming/webcodecs-support.js
 var require_webcodecs_support = __commonJS({
   "src/streaming/webcodecs-support.js"(exports, module) {
-    var { resolveRendition } = require_rendition_ladder();
+    var { resolveRendition, mapSvcLayersToLayerId } = require_rendition_ladder();
     var WebCodecsNotSupportedError = class extends Error {
       /**
        * @param {string[]} missing
@@ -40429,6 +40470,7 @@ var require_webcodecs_support = __commonJS({
       const VideoDecoder = deps.VideoDecoder ?? root.VideoDecoder;
       const MediaStreamTrackProcessor = deps.MediaStreamTrackProcessor ?? root.MediaStreamTrackProcessor;
       const AudioEncoder = deps.AudioEncoder ?? root.AudioEncoder;
+      const AudioDecoder = deps.AudioDecoder ?? root.AudioDecoder;
       const missing = [];
       if (typeof VideoEncoder !== "function") {
         missing.push("VideoEncoder");
@@ -40454,7 +40496,37 @@ var require_webcodecs_support = __commonJS({
       if (typeof AudioEncoder === "function" && typeof AudioEncoder.isConfigSupported === "function") {
         result.AudioEncoder = AudioEncoder;
       }
+      if (typeof AudioDecoder === "function") {
+        result.AudioDecoder = AudioDecoder;
+      }
       return result;
+    }
+    async function selectAudioEncoderConfig(support, bitrate = 64e3, deps = {}) {
+      if (!support.AudioEncoder || typeof support.AudioEncoder.isConfigSupported !== "function") {
+        throw new WebCodecsNotSupportedError(["AudioEncoder"]);
+      }
+      const AudioEncoder = support.AudioEncoder;
+      const config = {
+        codec: "opus",
+        sampleRate: 48e3,
+        numberOfChannels: 2,
+        bitrate
+      };
+      const isConfigSupported = deps.isConfigSupported ?? ((candidate) => AudioEncoder.isConfigSupported(candidate));
+      let supported;
+      try {
+        supported = await isConfigSupported(config);
+      } catch {
+        supported = { supported: false };
+      }
+      const ok = supported && (supported.supported === true || supported === true);
+      if (!ok) {
+        throw new Error("Opus AudioEncoder configuration is not supported");
+      }
+      return {
+        ...config,
+        mimeType: "audio/webm;codecs=opus"
+      };
     }
     async function selectVideoEncoderConfig(support, dimensions, deps = {}) {
       if (!support.VideoEncoder || typeof support.VideoEncoder.isConfigSupported !== "function") {
@@ -40467,10 +40539,25 @@ var require_webcodecs_support = __commonJS({
       const height = Math.max(2, Math.floor(dimensions.height));
       const bitrate = dimensions.bitrate != null ? dimensions.bitrate : 15e5;
       const framerate = dimensions.framerate != null ? dimensions.framerate : 30;
-      const candidates = [
+      const candidates = [];
+      if (deps.preferSvc !== false) {
+        candidates.push({
+          codec: "av01.0.08M.08",
+          mimeType: "video/mp4;codecs=av01.0.08M.08",
+          scalabilityMode: "L3T3",
+          svc: true
+        });
+        candidates.push({
+          codec: "av01.0.05M.08",
+          mimeType: "video/mp4;codecs=av01.0.05M.08",
+          scalabilityMode: "L1T3",
+          svc: true
+        });
+      }
+      candidates.push(
         { codec: "avc1.42E01E", mimeType: "video/mp4;codecs=avc1.42E01E" },
         { codec: "vp8", mimeType: "video/webm;codecs=vp8" }
-      ];
+      );
       const isConfigSupported = deps.isConfigSupported ?? ((config) => VideoEncoder.isConfigSupported(config));
       for (const row of candidates) {
         const config = {
@@ -40481,6 +40568,9 @@ var require_webcodecs_support = __commonJS({
           framerate,
           latencyMode: "realtime"
         };
+        if (row.scalabilityMode) {
+          config.scalabilityMode = row.scalabilityMode;
+        }
         let supported;
         try {
           supported = await isConfigSupported(config);
@@ -40491,11 +40581,20 @@ var require_webcodecs_support = __commonJS({
         if (ok) {
           return {
             ...config,
-            mimeType: row.mimeType
+            mimeType: row.mimeType,
+            svc: Boolean(row.svc)
           };
         }
       }
-      throw new Error("No supported WebCodecs video encoder configuration (tried H.264 and VP8)");
+      throw new Error("No supported WebCodecs video encoder configuration (tried AV1 SVC, H.264, and VP8)");
+    }
+    function resolveEncodedChunkLayerId(encodedChunkMetadata, useSvc, fallbackLayerId = "L0") {
+      if (!useSvc || !encodedChunkMetadata || typeof encodedChunkMetadata !== "object") {
+        return fallbackLayerId;
+      }
+      const spatial = encodedChunkMetadata.spatialLayerId ?? encodedChunkMetadata.spatialLayer ?? encodedChunkMetadata.layerIndex ?? 0;
+      const temporal = encodedChunkMetadata.temporalLayerId ?? encodedChunkMetadata.temporalLayer ?? 0;
+      return mapSvcLayersToLayerId(spatial, temporal);
     }
     function mimeTypeToDecoderCodec(mimeType) {
       if (typeof mimeType !== "string" || mimeType.trim() === "") {
@@ -40529,7 +40628,9 @@ var require_webcodecs_support = __commonJS({
       WebCodecsNotSupportedError,
       detectWebCodecsSupport,
       selectVideoEncoderConfig,
+      selectAudioEncoderConfig,
       mimeTypeToDecoderCodec,
+      resolveEncodedChunkLayerId,
       renditionEncoderDimensions
     };
   }
@@ -40540,13 +40641,25 @@ var require_browser_capture_source = __commonJS({
   "src/streaming/browser-capture-source.js"(exports, module) {
     var naclUtil3 = require_nacl_util();
     var { createSignedMediaChunk, DEFAULT_LAYER_ID } = require_media_chunk();
-    var { LAYER_IDS, resolveRendition } = require_rendition_ladder();
+    var { LAYER_IDS, AUDIO_LAYER_ID, resolveRendition, resolveAudioRendition } = require_rendition_ladder();
     var { createLayerSequenceTracker } = require_simulcast_publish();
     var {
       detectWebCodecsSupport,
       WebCodecsNotSupportedError,
-      selectVideoEncoderConfig
+      selectVideoEncoderConfig,
+      selectAudioEncoderConfig,
+      resolveEncodedChunkLayerId
     } = require_webcodecs_support();
+    function pickAudioTrack(mediaStream, audioTrack) {
+      if (audioTrack) {
+        return audioTrack;
+      }
+      if (!mediaStream || typeof mediaStream.getAudioTracks !== "function") {
+        return null;
+      }
+      const tracks = mediaStream.getAudioTracks();
+      return tracks.length ? tracks[0] : null;
+    }
     function pickVideoTrack(mediaStream, videoTrack) {
       if (videoTrack) {
         return videoTrack;
@@ -40588,12 +40701,15 @@ var require_browser_capture_source = __commonJS({
       const VideoEncoder = options.VideoEncoder ?? support.VideoEncoder;
       const VideoFrame2 = options.VideoFrame ?? (typeof globalThis !== "undefined" ? globalThis.VideoFrame : void 0);
       const track = pickVideoTrack(mediaStream, options.videoTrack);
-      const layerIds = Array.isArray(simulcastLayerIds) && simulcastLayerIds.length > 0 ? simulcastLayerIds.map((id) => String(id)) : [layerId];
+      const audioTrack = pickAudioTrack(mediaStream, options.audioTrack);
+      const enableAudio = options.enableAudio !== false && audioTrack != null;
+      let layerIds = Array.isArray(simulcastLayerIds) && simulcastLayerIds.length > 0 ? simulcastLayerIds.map((id) => String(id)) : [layerId];
       for (const id of layerIds) {
         if (!LAYER_IDS.includes(id)) {
           throw new Error(`Unknown simulcast layerId: ${id}`);
         }
       }
+      let useSvc = false;
       const sequences = createLayerSequenceTracker();
       const chunks = [];
       let framesEncoded = 0;
@@ -40604,7 +40720,7 @@ var require_browser_capture_source = __commonJS({
       let rvfHandle = null;
       let videoEl = null;
       let canvas = null;
-      function emitChunk(encodedChunk, meta, encoderMeta = {}) {
+      function emitChunk(encodedChunk, meta, encoderMeta = {}, layerOverride = null) {
         let payloadBytes;
         if (encodedChunk instanceof Uint8Array) {
           payloadBytes = encodedChunk;
@@ -40620,19 +40736,21 @@ var require_browser_capture_source = __commonJS({
         }
         const keyframe = encodedChunk.type === "key";
         const timestampMs = Math.round((encodedChunk.timestamp != null ? encodedChunk.timestamp : 0) / 1e3);
+        const resolvedLayerId = layerOverride != null ? layerOverride : resolveEncodedChunkLayerId(encoderMeta, useSvc && !meta.audio, meta.layerId);
+        const rendition = meta.audio ? resolveAudioRendition(profile) : resolveRendition(profile, resolvedLayerId);
         const chunk = createSignedMediaChunk({
           sessionId,
           broadcasterId,
           payloadBytes,
           signingSecretKey,
           signingPublicKey,
-          sequence: sequences.next(meta.layerId),
+          sequence: sequences.next(resolvedLayerId),
           timestampMs,
-          layerId: meta.layerId,
+          layerId: meta.audio ? AUDIO_LAYER_ID : resolvedLayerId,
           mimeType: meta.mimeType,
           keyframe,
           profile,
-          rendition: resolveRendition(profile, meta.layerId)
+          rendition
         });
         const description = encoderMeta?.decoderConfig?.description;
         if (description && description.byteLength > 0) {
@@ -40661,6 +40779,27 @@ var require_browser_capture_source = __commonJS({
           }
         }
         encoders.clear();
+        if (audioEncoder) {
+          try {
+            audioEncoder.close();
+          } catch {
+          }
+          audioEncoder = null;
+        }
+        if (audioReader) {
+          try {
+            audioReader.cancel();
+          } catch {
+          }
+          audioReader = null;
+        }
+        if (audioProcessor && typeof audioProcessor.readable?.cancel === "function") {
+          try {
+            audioProcessor.readable.cancel();
+          } catch {
+          }
+        }
+        audioProcessor = null;
         if (reader) {
           try {
             reader.cancel();
@@ -40689,18 +40828,20 @@ var require_browser_capture_source = __commonJS({
           }
         }
       }
-      for (const lid of layerIds) {
-        const rendition = resolveRendition(profile, lid);
-        const config = await selectVideoEncoderConfig(
-          support,
-          {
-            width: rendition.width,
-            height: rendition.height,
-            bitrate: rendition.videoBitrateKbps * 1e3
-          },
-          options
-        );
-        const meta = { layerId: lid, mimeType: config.mimeType };
+      const primaryRendition = resolveRendition(profile, layerIds[0]);
+      const primaryConfigAttempt = await selectVideoEncoderConfig(
+        support,
+        {
+          width: primaryRendition.width,
+          height: primaryRendition.height,
+          bitrate: primaryRendition.videoBitrateKbps * 1e3
+        },
+        options
+      );
+      if (primaryConfigAttempt.svc) {
+        useSvc = true;
+        layerIds = [layerId];
+        const meta = { layerId, mimeType: primaryConfigAttempt.mimeType };
         const encoder = new VideoEncoder({
           output: (chunk, metadata) => emitChunk(chunk, meta, metadata),
           error: (err) => {
@@ -40708,16 +40849,108 @@ var require_browser_capture_source = __commonJS({
           }
         });
         encoder.configure({
-          codec: config.codec,
-          width: config.width,
-          height: config.height,
-          bitrate: config.bitrate,
-          framerate: config.framerate,
-          latencyMode: "realtime"
+          codec: primaryConfigAttempt.codec,
+          width: primaryConfigAttempt.width,
+          height: primaryConfigAttempt.height,
+          bitrate: primaryConfigAttempt.bitrate,
+          framerate: primaryConfigAttempt.framerate,
+          latencyMode: "realtime",
+          scalabilityMode: primaryConfigAttempt.scalabilityMode
         });
-        encoders.set(lid, { encoder, config });
+        encoders.set(layerId, { encoder, config: primaryConfigAttempt });
+      } else {
+        for (const lid of layerIds) {
+          const rendition = resolveRendition(profile, lid);
+          const config = await selectVideoEncoderConfig(
+            support,
+            {
+              width: rendition.width,
+              height: rendition.height,
+              bitrate: rendition.videoBitrateKbps * 1e3
+            },
+            { ...options, preferSvc: false }
+          );
+          const meta = { layerId: lid, mimeType: config.mimeType };
+          const encoder = new VideoEncoder({
+            output: (chunk, metadata) => emitChunk(chunk, meta, metadata),
+            error: (err) => {
+              throw err;
+            }
+          });
+          encoder.configure({
+            codec: config.codec,
+            width: config.width,
+            height: config.height,
+            bitrate: config.bitrate,
+            framerate: config.framerate,
+            latencyMode: "realtime"
+          });
+          encoders.set(lid, { encoder, config });
+        }
+      }
+      let audioEncoder = null;
+      let audioConfig = null;
+      let audioProcessor = null;
+      let audioReader = null;
+      if (enableAudio && support.AudioEncoder) {
+        try {
+          audioConfig = await selectAudioEncoderConfig(
+            support,
+            resolveAudioRendition(profile).audioBitrateKbps * 1e3,
+            options
+          );
+          const AudioEncoder = options.AudioEncoder ?? support.AudioEncoder;
+          audioEncoder = new AudioEncoder({
+            output: (chunk, metadata) => {
+              emitChunk(chunk, { layerId: AUDIO_LAYER_ID, mimeType: audioConfig.mimeType, audio: true }, metadata);
+            },
+            error: (err) => {
+              throw err;
+            }
+          });
+          audioEncoder.configure({
+            codec: audioConfig.codec,
+            sampleRate: audioConfig.sampleRate,
+            numberOfChannels: audioConfig.numberOfChannels,
+            bitrate: audioConfig.bitrate
+          });
+        } catch {
+          audioEncoder = null;
+        }
       }
       const primary = encoders.get(layerIds[0]);
+      async function readLoopAudioProcessor() {
+        if (!audioEncoder || !audioTrack) {
+          return;
+        }
+        const MediaStreamTrackProcessor = options.MediaStreamTrackProcessor ?? support.MediaStreamTrackProcessor;
+        if (!MediaStreamTrackProcessor) {
+          return;
+        }
+        audioProcessor = new MediaStreamTrackProcessor({ track: audioTrack });
+        audioReader = audioProcessor.readable.getReader();
+        let first = true;
+        while (!stopped) {
+          let readResult;
+          try {
+            readResult = await audioReader.read();
+          } catch {
+            break;
+          }
+          const { value, done } = readResult;
+          if (done || !value || stopped) {
+            break;
+          }
+          try {
+            audioEncoder.encode(value, { keyFrame: first });
+            first = false;
+          } finally {
+            if (typeof value.close === "function") {
+              value.close();
+            }
+          }
+        }
+      }
       async function readLoopTrackProcessor() {
         const MediaStreamTrackProcessor = options.MediaStreamTrackProcessor ?? support.MediaStreamTrackProcessor;
         if (!MediaStreamTrackProcessor) {
@@ -40813,10 +41046,15 @@ var require_browser_capture_source = __commonJS({
           if (stopped) {
             throw new Error("capture source already stopped");
           }
-          const usedProcessor = await readLoopTrackProcessor();
-          if (!usedProcessor) {
-            await readLoopCanvasFallback();
-          }
+          await Promise.all([
+            readLoopAudioProcessor(),
+            (async () => {
+              const usedProcessor = await readLoopTrackProcessor();
+              if (!usedProcessor) {
+                await readLoopCanvasFallback();
+              }
+            })()
+          ]);
         },
         stop
       };
@@ -40970,6 +41208,613 @@ var require_webcodecs_decoder = __commonJS({
   }
 });
 
+// src/streaming/webcodecs-audio-decoder.js
+var require_webcodecs_audio_decoder = __commonJS({
+  "src/streaming/webcodecs-audio-decoder.js"(exports, module) {
+    var naclUtil3 = require_nacl_util();
+    var { decodeMediaChunkPayload, verifyMediaChunk } = require_media_chunk();
+    var { detectWebCodecsSupport, WebCodecsNotSupportedError } = require_webcodecs_support();
+    function mimeTypeToAudioDecoderCodec(mimeType) {
+      if (typeof mimeType !== "string") {
+        return "opus";
+      }
+      const lower = mimeType.toLowerCase();
+      if (lower.includes("opus")) {
+        return "opus";
+      }
+      if (lower.includes("mp4a")) {
+        const match = mimeType.match(/codecs=([^;,\s]+)/i);
+        return match ? match[1] : "mp4a.40.2";
+      }
+      return "opus";
+    }
+    function createWebCodecsAudioDecoder(options) {
+      if (!options || typeof options.onAudioData !== "function") {
+        throw new TypeError("createWebCodecsAudioDecoder requires onAudioData");
+      }
+      const support = options.support ?? detectWebCodecsSupport({ AudioDecoder: options.AudioDecoder });
+      const AudioDecoder = options.AudioDecoder ?? support.AudioDecoder;
+      if (!AudioDecoder) {
+        throw new WebCodecsNotSupportedError(["AudioDecoder"]);
+      }
+      let decoder = null;
+      let configuredCodec = null;
+      let waitingForKeyframe = true;
+      function ensureDecoder(codec, description) {
+        if (decoder && configuredCodec === codec) {
+          return;
+        }
+        if (decoder) {
+          try {
+            decoder.close();
+          } catch {
+          }
+        }
+        decoder = new AudioDecoder({
+          output: (data) => {
+            options.onAudioData(data);
+            if (typeof data?.close === "function") {
+              data.close();
+            }
+          },
+          error: () => {
+            waitingForKeyframe = true;
+          }
+        });
+        const config = { codec, sampleRate: 48e3, numberOfChannels: 2 };
+        if (description && description.byteLength > 0) {
+          config.description = description;
+        }
+        decoder.configure(config);
+        configuredCodec = codec;
+        waitingForKeyframe = true;
+      }
+      return {
+        get waitingForKeyframe() {
+          return waitingForKeyframe;
+        },
+        feedChunk(chunk, feedOptions = {}) {
+          if (!chunk || typeof chunk !== "object") {
+            throw new TypeError("chunk is required");
+          }
+          const sessionId = feedOptions.sessionId;
+          if (!verifyMediaChunk(chunk, sessionId)) {
+            throw new Error("media chunk signature verification failed");
+          }
+          const isKeyframe = Boolean(chunk.keyframe);
+          if (waitingForKeyframe && !isKeyframe) {
+            return;
+          }
+          const mimeType = typeof chunk.mimeType === "string" ? chunk.mimeType : "audio/webm;codecs=opus";
+          const codec = mimeTypeToAudioDecoderCodec(mimeType);
+          let description = null;
+          if (typeof chunk.codecDescriptionBase64 === "string" && chunk.codecDescriptionBase64.trim() !== "") {
+            description = naclUtil3.decodeBase64(chunk.codecDescriptionBase64.trim());
+          }
+          ensureDecoder(codec, description);
+          const payload = decodeMediaChunkPayload(chunk);
+          const timestampUs = Math.round((chunk.timestampMs != null ? chunk.timestampMs : 0) * 1e3);
+          const EncodedAudioChunk = options.EncodedAudioChunk ?? (typeof globalThis !== "undefined" ? globalThis.EncodedAudioChunk : void 0);
+          if (typeof EncodedAudioChunk !== "function") {
+            throw new WebCodecsNotSupportedError(["EncodedAudioChunk"]);
+          }
+          const encoded = new EncodedAudioChunk({
+            type: isKeyframe ? "key" : "delta",
+            timestamp: timestampUs,
+            data: payload
+          });
+          decoder.decode(encoded);
+          if (isKeyframe) {
+            waitingForKeyframe = false;
+          }
+        },
+        close() {
+          if (decoder) {
+            try {
+              decoder.close();
+            } catch {
+            }
+            decoder = null;
+          }
+          configuredCodec = null;
+          waitingForKeyframe = true;
+        }
+      };
+    }
+    module.exports = {
+      mimeTypeToAudioDecoderCodec,
+      createWebCodecsAudioDecoder
+    };
+  }
+});
+
+// src/streaming/mse-player.js
+var require_mse_player = __commonJS({
+  "src/streaming/mse-player.js"(exports, module) {
+    var { parseFmp4Fragments } = require_media_framing();
+    var MseNotSupportedError = class extends Error {
+      constructor(missing) {
+        super(`MSE is not available: missing ${missing.join(", ")}`);
+        this.name = "MseNotSupportedError";
+        this.missing = missing;
+      }
+    };
+    function detectMseSupport(deps = {}) {
+      const root = typeof globalThis !== "undefined" ? globalThis : {};
+      const MediaSource = deps.MediaSource ?? root.MediaSource;
+      const missing = [];
+      if (typeof MediaSource !== "function") {
+        missing.push("MediaSource");
+      } else if (typeof MediaSource.isTypeSupported !== "function") {
+        missing.push("MediaSource.isTypeSupported");
+      }
+      return {
+        supported: missing.length === 0,
+        missing,
+        MediaSource
+      };
+    }
+    function createMsePlayer(options) {
+      if (!options || typeof options !== "object") {
+        throw new TypeError("options object is required");
+      }
+      const support = detectMseSupport({ MediaSource: options.MediaSource });
+      if (!support.supported) {
+        throw new MseNotSupportedError(support.missing);
+      }
+      const MediaSource = options.MediaSource ?? support.MediaSource;
+      const video = options.videoElement;
+      if (!video || typeof video !== "object") {
+        throw new TypeError("videoElement is required");
+      }
+      const mimeType = typeof options.mimeType === "string" && options.mimeType.trim() !== "" ? options.mimeType.trim() : 'video/mp4; codecs="avc1.42E01E"';
+      if (!MediaSource.isTypeSupported(mimeType)) {
+        throw new Error(`MIME type not supported by MSE: ${mimeType}`);
+      }
+      const mediaSource = new MediaSource();
+      const createObjectURL = options.createObjectURL ?? (typeof URL !== "undefined" && typeof URL.createObjectURL === "function" ? (obj) => URL.createObjectURL(obj) : null);
+      if (!createObjectURL) {
+        throw new MseNotSupportedError(["URL.createObjectURL"]);
+      }
+      video.src = createObjectURL(mediaSource);
+      video.muted = true;
+      video.playsInline = true;
+      let sourceBuffer = null;
+      const queue = [];
+      let appending = false;
+      let waitingForKeyframe = true;
+      let closed = false;
+      const openPromise = new Promise((resolve, reject) => {
+        mediaSource.addEventListener(
+          "sourceopen",
+          () => {
+            try {
+              sourceBuffer = mediaSource.addSourceBuffer(mimeType);
+              sourceBuffer.mode = "segments";
+              sourceBuffer.addEventListener("updateend", drainQueue);
+              resolve();
+            } catch (err) {
+              reject(err);
+            }
+          },
+          { once: true }
+        );
+      });
+      function trimBufferOnQuota() {
+        if (!sourceBuffer || sourceBuffer.updating) {
+          return;
+        }
+        const start = sourceBuffer.buffered.length > 0 ? sourceBuffer.buffered.start(0) : 0;
+        const end = sourceBuffer.buffered.length > 0 ? sourceBuffer.buffered.end(0) : 0;
+        const trimEnd = start + (end - start) * 0.25;
+        if (trimEnd > start + 0.5) {
+          try {
+            sourceBuffer.remove(start, trimEnd);
+          } catch {
+          }
+        }
+      }
+      function drainQueue() {
+        if (!sourceBuffer || sourceBuffer.updating || !queue.length || closed) {
+          appending = false;
+          return;
+        }
+        const chunk = queue.shift();
+        if (!chunk) {
+          appending = false;
+          return;
+        }
+        appending = true;
+        try {
+          sourceBuffer.appendBuffer(chunk);
+        } catch (err) {
+          appending = false;
+          if (err && err.name === "QuotaExceededError") {
+            trimBufferOnQuota();
+            queue.unshift(chunk);
+            if (!sourceBuffer.updating) {
+              drainQueue();
+            }
+            return;
+          }
+          throw err;
+        }
+      }
+      async function appendFragment(bytes) {
+        if (closed) {
+          throw new Error("MSE player is closed");
+        }
+        if (!(bytes instanceof Uint8Array)) {
+          throw new TypeError("bytes must be Uint8Array");
+        }
+        await openPromise;
+        const frames = parseFmp4Fragments(bytes);
+        if (!frames.length) {
+          return;
+        }
+        for (const frame of frames) {
+          if (waitingForKeyframe && !frame.keyframe) {
+            continue;
+          }
+          if (frame.keyframe) {
+            waitingForKeyframe = false;
+          }
+          const payload = frame.payloadBytes;
+          queue.push(payload instanceof Uint8Array ? payload : new Uint8Array(payload));
+        }
+        if (!appending) {
+          drainQueue();
+        }
+        if (typeof video.play === "function") {
+          try {
+            await video.play();
+          } catch {
+          }
+        }
+      }
+      function close() {
+        closed = true;
+        queue.length = 0;
+        if (sourceBuffer) {
+          try {
+            if (!sourceBuffer.updating && mediaSource.readyState === "open") {
+              mediaSource.endOfStream();
+            }
+          } catch {
+          }
+        }
+        if (video.src && video.src.startsWith("blob:")) {
+          URL.revokeObjectURL(video.src);
+        }
+        video.removeAttribute("src");
+      }
+      return {
+        get waitingForKeyframe() {
+          return waitingForKeyframe;
+        },
+        appendFragment,
+        close
+      };
+    }
+    module.exports = {
+      MseNotSupportedError,
+      detectMseSupport,
+      createMsePlayer
+    };
+  }
+});
+
+// src/streaming/rtcp-rfc8888.js
+var require_rtcp_rfc8888 = __commonJS({
+  "src/streaming/rtcp-rfc8888.js"(exports, module) {
+    var RTCP_PT_PSFB = 205;
+    var RTCP_FMT_CCFB = 11;
+    var { createReceiverReport } = require_receiver_report();
+    function readU16BE(bytes, offset) {
+      return bytes[offset] << 8 | bytes[offset + 1];
+    }
+    function readU32BE(bytes, offset) {
+      return (bytes[offset] << 24 | bytes[offset + 1] << 16 | bytes[offset + 2] << 8 | bytes[offset + 3]) >>> 0;
+    }
+    function writeU16BE(bytes, offset, value) {
+      bytes[offset] = value >> 8 & 255;
+      bytes[offset + 1] = value & 255;
+    }
+    function writeU32BE(bytes, offset, value) {
+      bytes[offset] = value >>> 24 & 255;
+      bytes[offset + 1] = value >>> 16 & 255;
+      bytes[offset + 2] = value >>> 8 & 255;
+      bytes[offset + 3] = value & 255;
+    }
+    function encodeRtcpCongestionFeedback(packet) {
+      if (!packet || typeof packet !== "object") {
+        throw new TypeError("packet must be an object");
+      }
+      const metrics = Array.isArray(packet.metrics) ? packet.metrics : [];
+      const words = 2 + metrics.length * 2;
+      const byteLen = (1 + words) * 4;
+      const out = new Uint8Array(byteLen);
+      const v = 2;
+      const p = 0;
+      const first = v << 6 | p << 5 | RTCP_FMT_CCFB & 31;
+      out[0] = first;
+      out[1] = RTCP_PT_PSFB;
+      writeU16BE(out, 2, words);
+      writeU32BE(out, 4, packet.senderSsrc >>> 0);
+      writeU32BE(out, 8, packet.sourceSsrc >>> 0);
+      let offset = 12;
+      for (const row of metrics) {
+        writeU32BE(out, offset, row.ssrc >>> 0);
+        offset += 4;
+        const m = row.received ? 1 : 0;
+        const f = 0;
+        const ecn = row.ecn != null ? row.ecn & 3 : 0;
+        const ato = row.arrivalTimeOffset24 != null ? row.arrivalTimeOffset24 & 16777215 : 0;
+        const word = (m & 1) << 31 | (f & 1) << 30 | (ecn & 3) << 28 | ato & 268435455;
+        writeU32BE(out, offset, word >>> 0);
+        offset += 4;
+      }
+      return out;
+    }
+    function decodeRtcpCongestionFeedback(bytes) {
+      if (!(bytes instanceof Uint8Array) || bytes.length < 12) {
+        return null;
+      }
+      const v = bytes[0] >> 6;
+      if (v !== 2) {
+        return null;
+      }
+      const fmt = bytes[0] & 31;
+      if (bytes[1] !== RTCP_PT_PSFB || fmt !== RTCP_FMT_CCFB) {
+        return null;
+      }
+      const lengthWords = readU16BE(bytes, 2);
+      const expectedLen = (1 + lengthWords) * 4;
+      if (bytes.length < expectedLen) {
+        return null;
+      }
+      const senderSsrc = readU32BE(bytes, 4);
+      const sourceSsrc = readU32BE(bytes, 8);
+      const metrics = [];
+      let offset = 12;
+      while (offset + 8 <= expectedLen) {
+        const ssrc = readU32BE(bytes, offset);
+        offset += 4;
+        const flags = readU32BE(bytes, offset);
+        offset += 4;
+        const received = (flags >>> 31 & 1) === 1;
+        const ecn = flags >>> 28 & 3;
+        const arrivalTimeOffset24 = flags & 268435455;
+        metrics.push({ ssrc, received, ecn, arrivalTimeOffset24 });
+      }
+      return { senderSsrc, sourceSsrc, metrics };
+    }
+    function rfc8888MetricsToReceiverReports(options) {
+      if (!options || typeof options !== "object") {
+        throw new TypeError("options must be an object");
+      }
+      const metrics = Array.isArray(options.metrics) ? options.metrics : [];
+      const bytesEach = options.bytesPerReceivedPacket != null ? options.bytesPerReceivedPacket : 1200;
+      let received = 0;
+      let lost = 0;
+      let delaySum = 0;
+      for (const row of metrics) {
+        if (row.received) {
+          received += 1;
+          delaySum += row.arrivalTimeOffset24 & 65535;
+        } else {
+          lost += 1;
+        }
+      }
+      const total = received + lost;
+      const interarrivalDelayMs = total > 0 ? Math.round(delaySum / total / 4) : 0;
+      return [
+        createReceiverReport({
+          sessionId: options.sessionId,
+          viewerId: options.viewerId,
+          layerId: options.layerId,
+          timestampMs: options.timestampMs,
+          intervalMs: options.intervalMs,
+          bytesReceived: received * bytesEach,
+          packetsReceived: received,
+          packetsLost: lost,
+          interarrivalDelayMs
+        })
+      ];
+    }
+    module.exports = {
+      RTCP_PT_PSFB,
+      RTCP_FMT_CCFB,
+      encodeRtcpCongestionFeedback,
+      decodeRtcpCongestionFeedback,
+      rfc8888MetricsToReceiverReports
+    };
+  }
+});
+
+// src/streaming/rtp-depacketizer.js
+var require_rtp_depacketizer = __commonJS({
+  "src/streaming/rtp-depacketizer.js"(exports, module) {
+    function readU16BE(bytes, offset) {
+      return bytes[offset] << 8 | bytes[offset + 1];
+    }
+    function readU32BE(bytes, offset) {
+      return (bytes[offset] << 24 | bytes[offset + 1] << 16 | bytes[offset + 2] << 8 | bytes[offset + 3]) >>> 0;
+    }
+    function parseRtpHeader(packet) {
+      if (!(packet instanceof Uint8Array) || packet.length < 12) {
+        return null;
+      }
+      const v = packet[0] >> 6;
+      if (v !== 2) {
+        return null;
+      }
+      const cc = packet[0] & 15;
+      const extension = packet[0] >> 4 & 1;
+      const marker = packet[1] >> 7 & 1;
+      const payloadType = packet[1] & 127;
+      const sequenceNumber = readU16BE(packet, 2);
+      const timestamp = readU32BE(packet, 4);
+      let offset = 12 + cc * 4;
+      if (extension) {
+        if (offset + 4 > packet.length) {
+          return null;
+        }
+        const extLen = readU16BE(packet, offset + 2);
+        offset += 4 + extLen * 4;
+      }
+      if (offset >= packet.length) {
+        return null;
+      }
+      return {
+        payload: packet.subarray(offset),
+        payloadType,
+        sequenceNumber,
+        timestamp,
+        marker: marker === 1
+      };
+    }
+    var H264_NAL_TYPE_MASK = 31;
+    function depacketizeH264Rtp(rtpPayload, fuBuffer) {
+      if (!(rtpPayload instanceof Uint8Array) || rtpPayload.length === 0) {
+        return null;
+      }
+      const nalHeader = rtpPayload[0];
+      const nalType = nalHeader & H264_NAL_TYPE_MASK;
+      if (nalType >= 1 && nalType <= 23) {
+        const start = new Uint8Array([0, 0, 0, 1]);
+        const body = new Uint8Array(start.length + rtpPayload.length);
+        body.set(start, 0);
+        body.set(rtpPayload, start.length);
+        const keyframe = nalType === 5;
+        return { accessUnit: body, keyframe };
+      }
+      if (nalType === 24) {
+        let offset = 1;
+        const parts = [];
+        while (offset + 2 <= rtpPayload.length) {
+          const size = readU16BE(rtpPayload, offset);
+          offset += 2;
+          if (offset + size > rtpPayload.length) {
+            break;
+          }
+          const nal = rtpPayload.subarray(offset, offset + size);
+          offset += size;
+          const start = new Uint8Array([0, 0, 0, 1]);
+          const chunk = new Uint8Array(start.length + nal.length);
+          chunk.set(start, 0);
+          chunk.set(nal, start.length);
+          parts.push(chunk);
+        }
+        if (!parts.length) {
+          return null;
+        }
+        const total = parts.reduce((n, p) => n + p.length, 0);
+        const au = new Uint8Array(total);
+        let pos = 0;
+        for (const p of parts) {
+          au.set(p, pos);
+          pos += p.length;
+        }
+        const keyframe = parts.some((p) => p.length > 4 && (p[4] & H264_NAL_TYPE_MASK) === 5);
+        return { accessUnit: au, keyframe };
+      }
+      if (nalType === 28) {
+        if (rtpPayload.length < 2) {
+          return null;
+        }
+        const fuHeader = rtpPayload[1];
+        const start = (fuHeader & 128) !== 0;
+        const end = (fuHeader & 64) !== 0;
+        const fragment2 = rtpPayload.subarray(2);
+        if (start) {
+          const reconstructedNalType = nalHeader & 224;
+          const rebuilt = new Uint8Array(2 + fragment2.length);
+          rebuilt[0] = reconstructedNalType | fuHeader & 31;
+          rebuilt[1] = fragment2[0];
+          rebuilt.set(fragment2.subarray(1), 2);
+          if (!fuBuffer) {
+            return null;
+          }
+          fuBuffer.length = 0;
+          fuBuffer.push(rebuilt);
+        } else if (fuBuffer && fuBuffer.length) {
+          const prev = fuBuffer[fuBuffer.length - 1];
+          const merged = new Uint8Array(prev.length + fragment2.length);
+          merged.set(prev, 0);
+          merged.set(fragment2, prev.length);
+          fuBuffer[fuBuffer.length - 1] = merged;
+        }
+        if (end && fuBuffer && fuBuffer.length) {
+          const nal = fuBuffer[fuBuffer.length - 1];
+          const startCode = new Uint8Array([0, 0, 0, 1]);
+          const au = new Uint8Array(startCode.length + nal.length);
+          au.set(startCode, 0);
+          au.set(nal, startCode.length);
+          fuBuffer.length = 0;
+          const keyframe = (nal[0] & H264_NAL_TYPE_MASK) === 5;
+          return { accessUnit: au, keyframe };
+        }
+        return null;
+      }
+      return null;
+    }
+    function depacketizeOpusRtp(rtpPayload) {
+      if (!(rtpPayload instanceof Uint8Array) || rtpPayload.length === 0) {
+        return null;
+      }
+      return new Uint8Array(rtpPayload);
+    }
+    function createWhipRtpFrameAssembler(options = {}) {
+      const h264Fu = [];
+      const videoPt = options.videoPayloadType != null ? options.videoPayloadType : 96;
+      const audioPt = options.audioPayloadType != null ? options.audioPayloadType : 111;
+      const videoClock = options.videoClockRate != null ? options.videoClockRate : 9e4;
+      const audioClock = options.audioClockRate != null ? options.audioClockRate : 48e3;
+      function feedRtpPacket(packet) {
+        const header = parseRtpHeader(packet);
+        if (!header) {
+          return;
+        }
+        if (header.payloadType === audioPt) {
+          const opus = depacketizeOpusRtp(header.payload);
+          if (opus && typeof options.onFrame === "function") {
+            const timestampMs = Math.round(header.timestamp / audioClock * 1e3);
+            options.onFrame({
+              payloadBytes: opus,
+              mimeType: "audio/opus",
+              timestampMs,
+              keyframe: true,
+              track: "audio"
+            });
+          }
+          return;
+        }
+        if (header.payloadType === videoPt) {
+          const h264 = depacketizeH264Rtp(header.payload, h264Fu);
+          if (h264 && typeof options.onFrame === "function") {
+            const timestampMs = Math.round(header.timestamp / videoClock * 1e3);
+            options.onFrame({
+              payloadBytes: h264.accessUnit,
+              mimeType: "video/h264",
+              timestampMs,
+              keyframe: h264.keyframe,
+              track: "video"
+            });
+          }
+        }
+      }
+      return { feedRtpPacket, parseRtpHeader };
+    }
+    module.exports = {
+      parseRtpHeader,
+      depacketizeH264Rtp,
+      depacketizeOpusRtp,
+      createWhipRtpFrameAssembler
+    };
+  }
+});
+
 // src/streaming/index.js
 var require_streaming = __commonJS({
   "src/streaming/index.js"(exports, module) {
@@ -40994,6 +41839,10 @@ var require_streaming = __commonJS({
     var webcodecsSupport = require_webcodecs_support();
     var browserCaptureSource = require_browser_capture_source();
     var webcodecsDecoder = require_webcodecs_decoder();
+    var webcodecsAudioDecoder = require_webcodecs_audio_decoder();
+    var msePlayer = require_mse_player();
+    var rtcpRfc8888 = require_rtcp_rfc8888();
+    var rtpDepacketizer = require_rtp_depacketizer();
     module.exports = {
       ...accessModes,
       ...streamSession,
@@ -41015,6 +41864,10 @@ var require_streaming = __commonJS({
       ...webcodecsSupport,
       ...browserCaptureSource,
       ...webcodecsDecoder,
+      ...webcodecsAudioDecoder,
+      ...msePlayer,
+      ...rtcpRfc8888,
+      ...rtpDepacketizer,
       demuxMpegTs,
       MpegTsDemuxer,
       ptsToTimestampMs,
@@ -41200,10 +42053,27 @@ var require_src = __commonJS({
       detectWebCodecsSupport,
       WebCodecsNotSupportedError,
       selectVideoEncoderConfig,
+      selectAudioEncoderConfig,
       mimeTypeToDecoderCodec,
+      resolveEncodedChunkLayerId,
       renditionEncoderDimensions,
+      AUDIO_LAYER_ID,
+      resolveAudioRendition,
+      mapSvcLayersToLayerId,
       createBrowserCaptureSource,
-      createWebCodecsDecoder
+      createWebCodecsDecoder,
+      createWebCodecsAudioDecoder,
+      mimeTypeToAudioDecoderCodec,
+      detectMseSupport,
+      MseNotSupportedError,
+      createMsePlayer,
+      encodeRtcpCongestionFeedback,
+      decodeRtcpCongestionFeedback,
+      rfc8888MetricsToReceiverReports,
+      parseRtpHeader,
+      depacketizeH264Rtp,
+      depacketizeOpusRtp,
+      createWhipRtpFrameAssembler
     } = require_streaming();
     module.exports = {
       DignityP2P: DignityP2P2,
@@ -41347,10 +42217,27 @@ var require_src = __commonJS({
       detectWebCodecsSupport,
       WebCodecsNotSupportedError,
       selectVideoEncoderConfig,
+      selectAudioEncoderConfig,
       mimeTypeToDecoderCodec,
+      resolveEncodedChunkLayerId,
       renditionEncoderDimensions,
+      AUDIO_LAYER_ID,
+      resolveAudioRendition,
+      mapSvcLayersToLayerId,
       createBrowserCaptureSource,
-      createWebCodecsDecoder
+      createWebCodecsDecoder,
+      createWebCodecsAudioDecoder,
+      mimeTypeToAudioDecoderCodec,
+      detectMseSupport,
+      MseNotSupportedError,
+      createMsePlayer,
+      encodeRtcpCongestionFeedback,
+      decodeRtcpCongestionFeedback,
+      rfc8888MetricsToReceiverReports,
+      parseRtpHeader,
+      depacketizeH264Rtp,
+      depacketizeOpusRtp,
+      createWhipRtpFrameAssembler
     };
   }
 });
@@ -42613,7 +43500,7 @@ function Lobby({
       emptyText: "No finished games yet.",
       onOpen: handleOpenGame
     }
-  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.18.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
+  ))), /* @__PURE__ */ import_react.default.createElement("section", { className: "lobby lobby__top" }, /* @__PURE__ */ import_react.default.createElement("div", { className: "lobby__hero" }, /* @__PURE__ */ import_react.default.createElement("p", { className: "eyebrow" }, "dignity.js v1.19.0 \xB7 decentralized demo"), /* @__PURE__ */ import_react.default.createElement("h1", null, "3D Chess on dignity.js"), /* @__PURE__ */ import_react.default.createElement("p", null, "Peer-to-peer chess over PeerJS signaling, scoped broadcast encryption, credential-derived signing keys, dual-signed resume links, and scalable spectator feeds via PeerGroup gossip."), /* @__PURE__ */ import_react.default.createElement("label", { className: "lobby__nickname", htmlFor: usernameInputId }, "Username", /* @__PURE__ */ import_react.default.createElement(
     "input",
     {
       id: usernameInputId,

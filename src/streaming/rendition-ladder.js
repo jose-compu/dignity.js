@@ -20,6 +20,7 @@ const RENDITION_LADDERS = Object.freeze({
 });
 
 const LAYER_IDS = Object.freeze(['L0', 'L1', 'L2']);
+const AUDIO_LAYER_ID = 'A0';
 
 /**
  * @param {'hd720' | 'fhd1080'} profile
@@ -70,11 +71,52 @@ function renditionMatchesLadder(rendition) {
   );
 }
 
+/**
+ * Audio-only signed chunks use a dedicated track id (separate from video L0–L2).
+ * @param {'hd720' | 'fhd1080'} profile
+ * @returns {{ profile: string, layerId: string, width: number, height: number, videoBitrateKbps: number, audioBitrateKbps: number }}
+ */
+function resolveAudioRendition(profile) {
+  const base = resolveRendition(profile, 'L0');
+  return {
+    profile: base.profile,
+    layerId: AUDIO_LAYER_ID,
+    width: 0,
+    height: 0,
+    videoBitrateKbps: 0,
+    audioBitrateKbps: base.audioBitrateKbps
+  };
+}
+
+/**
+ * Map AV1 SVC spatial/temporal indices onto ladder layer ids (relays unchanged).
+ * @param {number} spatialLayerId
+ * @param {number} [temporalLayerId]
+ * @returns {'L0' | 'L1' | 'L2'}
+ */
+function mapSvcLayersToLayerId(spatialLayerId, temporalLayerId = 0) {
+  const spatial = Number.isFinite(spatialLayerId) ? Math.max(0, Math.floor(spatialLayerId)) : 0;
+  const temporal = Number.isFinite(temporalLayerId) ? Math.max(0, Math.floor(temporalLayerId)) : 0;
+  if (spatial >= 2) {
+    return 'L2';
+  }
+  if (spatial >= 1) {
+    return 'L1';
+  }
+  if (temporal >= 1) {
+    return 'L1';
+  }
+  return 'L0';
+}
+
 module.exports = {
   RENDITION_PROFILE_HD720,
   RENDITION_PROFILE_FHD1080,
   RENDITION_LADDERS,
   LAYER_IDS,
+  AUDIO_LAYER_ID,
   resolveRendition,
-  renditionMatchesLadder
+  resolveAudioRendition,
+  renditionMatchesLadder,
+  mapSvcLayersToLayerId
 };

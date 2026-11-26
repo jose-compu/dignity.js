@@ -5,13 +5,26 @@
 
 const naclUtil = require('tweetnacl-util');
 const { createSignedMediaChunk, DEFAULT_LAYER_ID } = require('./media-chunk');
-const { LAYER_IDS, resolveRendition } = require('./rendition-ladder');
+const { LAYER_IDS, AUDIO_LAYER_ID, resolveRendition, resolveAudioRendition } = require('./rendition-ladder');
 const { createLayerSequenceTracker } = require('./simulcast-publish');
 const {
   detectWebCodecsSupport,
   WebCodecsNotSupportedError,
-  selectVideoEncoderConfig
+  selectVideoEncoderConfig,
+  selectAudioEncoderConfig,
+  resolveEncodedChunkLayerId
 } = require('./webcodecs-support');
+
+function pickAudioTrack(mediaStream, audioTrack) {
+  if (audioTrack) {
+    return audioTrack;
+  }
+  if (!mediaStream || typeof mediaStream.getAudioTracks !== 'function') {
+    return null;
+  }
+  const tracks = mediaStream.getAudioTracks();
+  return tracks.length ? tracks[0] : null;
+}
 
 function pickVideoTrack(mediaStream, videoTrack) {
   if (videoTrack) {
@@ -86,7 +99,9 @@ async function createBrowserCaptureSource(options) {
   const VideoFrame = options.VideoFrame ?? (typeof globalThis !== 'undefined' ? globalThis.VideoFrame : undefined);
 
   const track = pickVideoTrack(mediaStream, options.videoTrack);
-  const layerIds =
+  const audioTrack = pickAudioTrack(mediaStream, options.audioTrack);
+  const enableAudio = options.enableAudio !== false && audioTrack != null;
+  let layerIds =
     Array.isArray(simulcastLayerIds) && simulcastLayerIds.length > 0
       ? simulcastLayerIds.map((id) => String(id))
       : [layerId];
@@ -96,6 +111,8 @@ async function createBrowserCaptureSource(options) {
       throw new Error(`Unknown simulcast layerId: ${id}`);
     }
   }
+
+  let useSvc = false;
 
   const sequences = createLayerSequenceTracker();
   /** @type {import('./media-chunk').SignedMediaChunk[]} */
@@ -111,7 +128,7 @@ async function createBrowserCaptureSource(options) {
   let videoEl = null;
   let canvas = null;
 
-  function emitChunk(encodedChunk, meta, encoderMeta = {}) {
+  function emitChunk(encodedChunk, meta, encoderMeta = {}, layerOverride = null) {
     let payloadBytes;
     if (encodedChunk instanceof Uint8Array) {
       payloadBytes = encodedChunk;
@@ -129,19 +146,27 @@ async function createBrowserCaptureSource(options) {
     const keyframe = encodedChunk.type === 'key';
     const timestampMs = Math.round((encodedChunk.timestamp != null ? encodedChunk.timestamp : 0) / 1000);
 
+    const resolvedLayerId =
+      layerOverride != null
+        ? layerOverride
+        : resolveEncodedChunkLayerId(encoderMeta, useSvc && !meta.audio, meta.layerId);
+    const rendition = meta.audio
+      ? resolveAudioRendition(profile)
+      : resolveRendition(profile, resolvedLayerId);
+
     const chunk = createSignedMediaChunk({
       sessionId,
       broadcasterId,
       payloadBytes,
       signingSecretKey,
       signingPublicKey,
-      sequence: sequences.next(meta.layerId),
+      sequence: sequences.next(resolvedLayerId),
       timestampMs,
-      layerId: meta.layerId,
+      layerId: meta.audio ? AUDIO_LAYER_ID : resolvedLayerId,
       mimeType: meta.mimeType,
       keyframe,
       profile,
-      rendition: resolveRendition(profile, meta.layerId)
+      rendition
     });
     const description = encoderMeta?.decoderConfig?.description;
     if (description && description.byteLength > 0) {
@@ -172,6 +197,30 @@ async function createBrowserCaptureSource(options) {
       }
     }
     encoders.clear();
+    if (audioEncoder) {
+      try {
+        audioEncoder.close();
+      } catch {
+        /* ignore */
+      }
+      audioEncoder = null;
+    }
+    if (audioReader) {
+      try {
+        audioReader.cancel();
+      } catch {
+        /* ignore */
+      }
+      audioReader = null;
+    }
+    if (audioProcessor && typeof audioProcessor.readable?.cancel === 'function') {
+      try {
+        audioProcessor.readable.cancel();
+      } catch {
+        /* ignore */
+      }
+    }
+    audioProcessor = null;
     if (reader) {
       try {
         reader.cancel();
@@ -205,18 +254,21 @@ async function createBrowserCaptureSource(options) {
     }
   }
 
-  for (const lid of layerIds) {
-    const rendition = resolveRendition(profile, lid);
-    const config = await selectVideoEncoderConfig(
-      support,
-      {
-        width: rendition.width,
-        height: rendition.height,
-        bitrate: rendition.videoBitrateKbps * 1000
-      },
-      options
-    );
-    const meta = { layerId: lid, mimeType: config.mimeType };
+  const primaryRendition = resolveRendition(profile, layerIds[0]);
+  const primaryConfigAttempt = await selectVideoEncoderConfig(
+    support,
+    {
+      width: primaryRendition.width,
+      height: primaryRendition.height,
+      bitrate: primaryRendition.videoBitrateKbps * 1000
+    },
+    options
+  );
+
+  if (primaryConfigAttempt.svc) {
+    useSvc = true;
+    layerIds = [layerId];
+    const meta = { layerId, mimeType: primaryConfigAttempt.mimeType };
     const encoder = new VideoEncoder({
       output: (chunk, metadata) => emitChunk(chunk, meta, metadata),
       error: (err) => {
@@ -224,17 +276,112 @@ async function createBrowserCaptureSource(options) {
       }
     });
     encoder.configure({
-      codec: config.codec,
-      width: config.width,
-      height: config.height,
-      bitrate: config.bitrate,
-      framerate: config.framerate,
-      latencyMode: 'realtime'
+      codec: primaryConfigAttempt.codec,
+      width: primaryConfigAttempt.width,
+      height: primaryConfigAttempt.height,
+      bitrate: primaryConfigAttempt.bitrate,
+      framerate: primaryConfigAttempt.framerate,
+      latencyMode: 'realtime',
+      scalabilityMode: primaryConfigAttempt.scalabilityMode
     });
-    encoders.set(lid, { encoder, config });
+    encoders.set(layerId, { encoder, config: primaryConfigAttempt });
+  } else {
+    for (const lid of layerIds) {
+      const rendition = resolveRendition(profile, lid);
+      const config = await selectVideoEncoderConfig(
+        support,
+        {
+          width: rendition.width,
+          height: rendition.height,
+          bitrate: rendition.videoBitrateKbps * 1000
+        },
+        { ...options, preferSvc: false }
+      );
+      const meta = { layerId: lid, mimeType: config.mimeType };
+      const encoder = new VideoEncoder({
+        output: (chunk, metadata) => emitChunk(chunk, meta, metadata),
+        error: (err) => {
+          throw err;
+        }
+      });
+      encoder.configure({
+        codec: config.codec,
+        width: config.width,
+        height: config.height,
+        bitrate: config.bitrate,
+        framerate: config.framerate,
+        latencyMode: 'realtime'
+      });
+      encoders.set(lid, { encoder, config });
+    }
+  }
+
+  let audioEncoder = null;
+  let audioConfig = null;
+  let audioProcessor = null;
+  let audioReader = null;
+  if (enableAudio && support.AudioEncoder) {
+    try {
+      audioConfig = await selectAudioEncoderConfig(
+        support,
+        resolveAudioRendition(profile).audioBitrateKbps * 1000,
+        options
+      );
+      const AudioEncoder = options.AudioEncoder ?? support.AudioEncoder;
+      audioEncoder = new AudioEncoder({
+        output: (chunk, metadata) => {
+          emitChunk(chunk, { layerId: AUDIO_LAYER_ID, mimeType: audioConfig.mimeType, audio: true }, metadata);
+        },
+        error: (err) => {
+          throw err;
+        }
+      });
+      audioEncoder.configure({
+        codec: audioConfig.codec,
+        sampleRate: audioConfig.sampleRate,
+        numberOfChannels: audioConfig.numberOfChannels,
+        bitrate: audioConfig.bitrate
+      });
+    } catch {
+      audioEncoder = null;
+    }
   }
 
   const primary = encoders.get(layerIds[0]);
+
+  async function readLoopAudioProcessor() {
+    if (!audioEncoder || !audioTrack) {
+      return;
+    }
+    const MediaStreamTrackProcessor =
+      options.MediaStreamTrackProcessor ?? support.MediaStreamTrackProcessor;
+    if (!MediaStreamTrackProcessor) {
+      return;
+    }
+    audioProcessor = new MediaStreamTrackProcessor({ track: audioTrack });
+    audioReader = audioProcessor.readable.getReader();
+    let first = true;
+    while (!stopped) {
+      let readResult;
+      try {
+        readResult = await audioReader.read();
+      } catch {
+        break;
+      }
+      const { value, done } = readResult;
+      if (done || !value || stopped) {
+        break;
+      }
+      try {
+        audioEncoder.encode(value, { keyFrame: first });
+        first = false;
+      } finally {
+        if (typeof value.close === 'function') {
+          value.close();
+        }
+      }
+    }
+  }
 
   async function readLoopTrackProcessor() {
     const MediaStreamTrackProcessor =
@@ -339,10 +486,15 @@ async function createBrowserCaptureSource(options) {
       if (stopped) {
         throw new Error('capture source already stopped');
       }
-      const usedProcessor = await readLoopTrackProcessor();
-      if (!usedProcessor) {
-        await readLoopCanvasFallback();
-      }
+      await Promise.all([
+        readLoopAudioProcessor(),
+        (async () => {
+          const usedProcessor = await readLoopTrackProcessor();
+          if (!usedProcessor) {
+            await readLoopCanvasFallback();
+          }
+        })()
+      ]);
     },
     stop
   };
